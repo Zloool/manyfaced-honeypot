@@ -1,4 +1,5 @@
 cases = {
+    'zero': 'zero',
     '/wp-login.php': 'wplogin.html',
     '/favicon.ico': 'favicon.ico',
     '/searchreplacedb2.php': 'zero',
