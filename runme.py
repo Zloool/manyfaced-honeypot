@@ -26,8 +26,13 @@ while True:
         message = connectionSocket.recv(30*1024)
         ip_addr = connectionSocket.getpeername()[0]
         create_file(message, ip_addr)
-        request = HTTPRequest(message)
-        print ip_addr + " " + request.path
+        path = ""
+        try:
+            request = HTTPRequest(message)
+            path = request.path
+        except:
+            path = str(request.error_code)
+        print ip_addr + " " + path
         # print request.error_code       # None  (check this first)
         # print request.command          # "GET"
         # print request.path             # "/who/ken/trust.html"
