@@ -35,17 +35,19 @@ while True:
         # print filename[1:]
         try:
             respfilename = cases[request.path]
+            f = open('responses\\'+respfilename)
             # TODO make parser for path traverse, etc
         except:
             respfilename = cases["zero"]
-        f = open('responses\\'+respfilename)
+            f = open('responses\\'+respfilename)
         outputdata = f.read()
         f.close()
         # Send one HTTP header line into socket
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
+        connectionSocket.send(outputdata)
         # Send the content of the requested file to the client
-        for i in range(0, len(outputdata)):
-            connectionSocket.send(outputdata[i])
+        # for i in range(0, len(outputdata)):
+        #    connectionSocket.send(outputdata[i])
         connectionSocket.close()
     except IOError:
         # Send response message for file not found
