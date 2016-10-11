@@ -3,7 +3,10 @@ import datetime
 from socket import socket, AF_INET, SOCK_STREAM
 from cases import cases
 from httphandler import HTTPRequest
-
+import signal
+# в shutdown определяешь то, что нужно сделать в таком случае.
+# такой подход сработает железобетонно-одинаково во всех случаях
+# signal.signal(signal.SIGINT, exit)
 
 def create_file(message, directory):
     if not os.path.exists("bots/"+directory):
@@ -14,6 +17,7 @@ def create_file(message, directory):
     f.close()
 
 serverSocket = socket(AF_INET, SOCK_STREAM)
+serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 serverSocket.bind(('', 80))
 serverSocket.listen(1)
 while True:
@@ -35,11 +39,11 @@ while True:
         # print filename[1:]
         try:
             respfilename = cases[request.path]
-            f = open('responses\\'+respfilename)
+            f = open('responses/'+respfilename)
             # TODO make parser for path traverse, etc
         except:
             respfilename = cases["zero"]
-            f = open('responses\\'+respfilename)
+            f = open('responses/'+respfilename)
         outputdata = f.read()
         f.close()
         # Send one HTTP header line into socket
