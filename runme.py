@@ -3,10 +3,8 @@ import datetime
 from socket import socket, AF_INET, SOCK_STREAM
 from cases import cases
 from httphandler import HTTPRequest
-import signal
-# в shutdown определяешь то, что нужно сделать в таком случае.
-# такой подход сработает железобетонно-одинаково во всех случаях
-# signal.signal(signal.SIGINT, exit)
+# import signal
+
 
 def create_file(message, directory):
     if not os.path.exists("bots/"+directory):
@@ -16,8 +14,10 @@ def create_file(message, directory):
     f.write(str(message))
     f.close()
 
+# exit -- something to do on SIGINT
+# signal.signal(signal.SIGINT, exit)
 serverSocket = socket(AF_INET, SOCK_STREAM)
-serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+# serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) FIX ME
 serverSocket.bind(('', 80))
 serverSocket.listen(1)
 while True:
