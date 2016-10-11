@@ -9,7 +9,6 @@ def create_file(message, directory):
     if not os.path.exists("bots/"+directory):
         os.makedirs("bots/"+directory)
     filename = "bots/"+directory+"/"+str(datetime.datetime.now()).replace(':', ';')
-    print filename
     f = open(filename, 'w')
     f.write(str(message))
     f.close()
@@ -24,6 +23,7 @@ while True:
         ip_addr = connectionSocket.getpeername()[0]
         create_file(message, ip_addr)
         request = HTTPRequest(message)
+        print ip_addr + " " + request.path
         # print request.error_code       # None  (check this first)
         # print request.command          # "GET"
         # print request.path             # "/who/ken/trust.html"
