@@ -15,6 +15,24 @@ def create_file(message, directory):
     f.write(str(message))
     f.close()
 
+
+def get_honey(path):
+    try:
+        respfilename = cases[path]
+        # TODO check, if cases[path] exists, instead of throwing an exc
+        # TODO implement if system for complex requests respfilename == ""
+        f = open('responses/'+respfilename)
+        print ip_addr + " " + path + " gotcha!"
+        # TODO turn off verbose by args
+    except:
+        respfilename = cases["zero"]
+        f = open('responses/'+respfilename)
+        print ip_addr + " " + path + " not detected..."
+        # TODO add to souces, if not detected
+    outputdata = f.read()
+    f.close()
+    return outputdata
+
 # exit -- something to do on SIGINT
 # signal.signal(signal.SIGINT, exit)
 # TODO implement SIGINT handler
@@ -46,20 +64,7 @@ while True:
         # filename = message.split()[1]
         # print filename[1:]
 
-        try:
-            respfilename = cases[path]
-            # TODO check, if cases[path] exists, instead of throwing an exc
-            # TODO implement if system for complex requests respfilename == ""
-            f = open('responses/'+respfilename)
-            print ip_addr + " " + path + " gotcha!"
-            # TODO turn off verbose by args
-        except:
-            respfilename = cases["zero"]
-            f = open('responses/'+respfilename)
-            print ip_addr + " " + path + " not detected..."
-            # TODO add to souces, if not detected
-        outputdata = f.read()
-        f.close()
+        outputdata = get_honey(path)
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
         connectionSocket.send(outputdata)
 
