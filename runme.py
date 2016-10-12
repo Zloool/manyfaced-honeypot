@@ -1,6 +1,6 @@
 import os
 import datetime
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from cases import cases
 from httphandler import HTTPRequest
 # import signal
@@ -37,7 +37,7 @@ def get_honey(path):
 # signal.signal(signal.SIGINT, exit)
 # TODO implement SIGINT handler
 serverSocket = socket(AF_INET, SOCK_STREAM)
-# serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) FIX ME
+serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 # TODO add socketopt to resolve socket.error: [Errno 98] Address already in use
 serverSocket.bind(('', 80))
 # TODO args or settins
