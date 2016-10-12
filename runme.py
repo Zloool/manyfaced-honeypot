@@ -44,6 +44,7 @@ serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serverSocket.bind(('', HONEYPORT))
 # TODO args
 serverSocket.listen(1)
+print "Serving honey on port %s" % HONEYPORT
 while True:
     connectionSocket, addr = serverSocket.accept()
     try:
@@ -72,4 +73,4 @@ while True:
     except socket.error, exc:
         print "Caught exception socket.error : %s" % exc
         connectionSocket.close()
-serverSocket.close() # This line is never achieved, implement in SIGINT?
+serverSocket.close()  # This line is never achieved, implement in SIGINT?
