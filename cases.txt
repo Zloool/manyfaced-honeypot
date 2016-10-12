@@ -1,6 +1,12 @@
 administrator/index.php //joomla login
 bitrix/admin/index.php?lang=en
+/joom/
+/joomla/
+/drupal/
+  '/searchreplacedb2.php': 'zero',
 admin.php
+robots.txt
+sitemap.xml
 admin/login.php
 admin/
 user/
@@ -50,14 +56,5 @@ user/
 /searchreplacedb2.php
 /new/
 /old/
-/myadmin/scripts/setup.php
-/MyAdmin/scripts/setup.php
-/phpMyAdmin/scripts/setup.php
-phpMyAdmin
-phpmyadmin
-phpmyadmon
-/joom/
-/joomla/
-/drupal/
 /m/
 /?author=1
