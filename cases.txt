@@ -1,5 +1,4 @@
 administrator/index.php //joomla login
-bitrix/admin/index.php?lang=en
 /joom/
 /joomla/
 /drupal/
