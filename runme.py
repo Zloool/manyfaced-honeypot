@@ -4,6 +4,7 @@ from socket import socket, AF_INET, SOCK_STREAM
 from cases import cases
 from httphandler import HTTPRequest
 # import signal
+# TODO unittests
 
 
 def create_file(message, directory):
@@ -20,7 +21,7 @@ def create_file(message, directory):
 serverSocket = socket(AF_INET, SOCK_STREAM)
 # serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) FIX ME
 # TODO add socketopt to resolve socket.error: [Errno 98] Address already in use
-serverSocket.bind(('', 800))
+serverSocket.bind(('', 80))
 # TODO args or settins
 serverSocket.listen(1)
 while True:
@@ -65,9 +66,11 @@ while True:
         #    connectionSocket.send(outputdata[i])
         connectionSocket.close()
     except IOError:
-        connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
+        print "Caught exception IOError"
+        # connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
         connectionSocket.close()
     except socket.error, exc:
         print "Caught exception socket.error : %s" % exc
+        connectionSocket.close()
 
 serverSocket.close()
