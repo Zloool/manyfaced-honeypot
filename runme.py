@@ -32,7 +32,6 @@ while True:
             path = request.path
         except:
             path = str(request.error_code)
-        print ip_addr + " " + path
         # print request.error_code       # None  (check this first)
         # print request.command          # "GET"
         # print request.path             # "/who/ken/trust.html"
