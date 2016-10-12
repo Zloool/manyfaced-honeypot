@@ -29,6 +29,7 @@ cases = {
     '/phpmyadmon': 'wpadmin.php',
     '/WEBDAV/': 'webdav.html',
     '/webdav/': 'webdav.html',
+    '/bitrix/admin/index.php?lang=en': 'bitrix.html',
     # robots
     # sitemap
 }
