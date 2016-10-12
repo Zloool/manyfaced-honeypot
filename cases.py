@@ -3,7 +3,6 @@ cases = {
     '/': 'zero',
     '/wp-login.php': 'wplogin.html',
     '/favicon.ico': 'favicon.ico',
-    '/searchreplacedb2.php': 'zero',
     '/wp-config.php': 'wpconfig.php',
     '/wp-config.bak': 'wpconfig.php',
     '/wp-config.old': 'wpconfig.php',
@@ -21,4 +20,15 @@ cases = {
     '/wp-config.save': 'wpconfig.php',
     '/wp-config.txt': 'wpconfig.php',
     '/%23wp-config.php%23': 'wpconfig.php',
+    '/MyAdmin/scripts/setup.php': 'wpadminsetup.php',
+    '/myadmin/scripts/setup.php': 'wpadminsetup.php',
+    '/phpMyAdmin/scripts/setup.php': 'wpadminsetup.php',
+    '/pma/scripts/setup.php': 'wpadminsetup.php',
+    '/phpMyAdmin': 'wpadmin.php',
+    '/phpmyadmin': 'wpadmin.php',
+    '/phpmyadmon': 'wpadmin.php',
+    '/WEBDAV/': 'webdav.html',
+    '/webdav/': 'webdav.html',
+    # robots
+    # sitemap
 }
