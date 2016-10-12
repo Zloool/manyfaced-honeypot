@@ -16,9 +16,12 @@ def create_file(message, directory):
 
 # exit -- something to do on SIGINT
 # signal.signal(signal.SIGINT, exit)
+# TODO implement SIGINT handler
 serverSocket = socket(AF_INET, SOCK_STREAM)
 # serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) FIX ME
+# TODO add socketopt to resolve socket.error: [Errno 98] Address already in use
 serverSocket.bind(('', 800))
+# TODO args or settins
 serverSocket.listen(1)
 while True:
     connectionSocket, addr = serverSocket.accept()
@@ -47,6 +50,7 @@ while True:
             # if respfilename == ""
             f = open('responses/'+respfilename)
             print ip_addr + " " + path + " gotcha!"
+            # TODO turn off verbose by args
         except:
             respfilename = cases["zero"]
             f = open('responses/'+respfilename)
@@ -61,8 +65,9 @@ while True:
         #    connectionSocket.send(outputdata[i])
         connectionSocket.close()
     except IOError:
-        # Send response message for file not found
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
-        # Close client socket
         connectionSocket.close()
+    except socket.error, exc:
+        print "Caught exception socket.error : %s" % exc
+
 serverSocket.close()
