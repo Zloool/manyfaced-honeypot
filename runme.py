@@ -1,4 +1,5 @@
 import os
+import sys
 import datetime
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from cases import cases
@@ -41,10 +42,16 @@ def get_honey(path):
 
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-serverSocket.bind(('', HONEYPORT))
+port = HONEYPORT
+if len(sys.argv) == 2:
+    try:
+        port = int(sys.argv[1])
+    except ValueError:
+        pass
+serverSocket.bind(('', port))
 # TODO args
 serverSocket.listen(1)
-print "Serving honey on port %s" % HONEYPORT
+print "Serving honey on port %s" % port
 while True:
     connectionSocket, addr = serverSocket.accept()
     try:
