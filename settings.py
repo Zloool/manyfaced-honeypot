@@ -1,0 +1,2 @@
+HONEYPORT = 80
+HONEYFOLDER = "bots/"
