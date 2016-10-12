@@ -72,4 +72,4 @@ while True:
     except socket.error, exc:
         print "Caught exception socket.error : %s" % exc
         connectionSocket.close()
-serverSocket.close()
+serverSocket.close() # This line is never achieved, implement in SIGINT?
