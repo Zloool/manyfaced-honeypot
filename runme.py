@@ -48,7 +48,8 @@ while True:
 
         try:
             respfilename = cases[path]
-            # if respfilename == ""
+            # TODO check, if cases[path] exists, instead of throwing an exc
+            # TODO implement if system for complex requests respfilename == ""
             f = open('responses/'+respfilename)
             print ip_addr + " " + path + " gotcha!"
             # TODO turn off verbose by args
@@ -56,6 +57,7 @@ while True:
             respfilename = cases["zero"]
             f = open('responses/'+respfilename)
             print ip_addr + " " + path + " not detected..."
+            # TODO add to souces, if not detected
         outputdata = f.read()
         f.close()
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
