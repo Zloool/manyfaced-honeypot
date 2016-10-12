@@ -46,9 +46,11 @@ while True:
             respfilename = cases[path]
             # if respfilename == ""
             f = open('responses/'+respfilename)
+            print ip_addr + " " + path + " gotcha!"
         except:
             respfilename = cases["zero"]
             f = open('responses/'+respfilename)
+            print ip_addr + " " + path + " not detected..."
         outputdata = f.read()
         f.close()
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
