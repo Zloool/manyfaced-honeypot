@@ -27,7 +27,7 @@ def create_file(message, directory):
 def compile_banner(msgsize=0,
                    code="HTTP/1.1 200 OK",
                    serverver="Apache/1.3.42 (Unix)  (Red Hat/Linux)",
-                   contenttype="text/html",
+                   contenttype='text/html; charset=utf-8',
                    connection="close",
                    date=str(datetime.datetime.now())):
     banner = ""
@@ -61,7 +61,7 @@ def get_honey(path):
             f.close()
             msgsize = sys.getsizeof(stringfile)
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
-                                         contenttype='application/xml; charset="utf-8',
+                                         contenttype='application/xml; charset=utf-8',
                                          connection=0, date=0, serverver=0)
             outputdata += stringfile
         elif respfilename == "robots":
@@ -97,7 +97,7 @@ def get_honey(path):
         stringfile = f.read()
         f.close()
         msgsize = sys.getsizeof(stringfile)
-        outputdata += compile_banner(msgsize=msgsize)
+        outputdata += compile_banner(msgsize=msgsize, contenttype="Content-Type: text/plain; charset=UTF-8")
         outputdata += stringfile
     return outputdata
 
