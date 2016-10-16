@@ -7,7 +7,7 @@ def parse():
     parser = argparse.ArgumentParser(
             description='Serve some sweet honey to the ubiquitous bots!',
             epilog='And that`s how you`d detect a sneaky chinese bot.',
-            prog='arguments.py',
+            prog='runme.py',
         )
     parser.add_argument(
             'port',
