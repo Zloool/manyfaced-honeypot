@@ -59,23 +59,17 @@ while True:
         ip_addr = connectionSocket.getpeername()[0]
         create_file(message, ip_addr)
         path = ""
-        try:
-            request = HTTPRequest(message)
+        request = HTTPRequest(message)
+        if request.error_code is None:
             path = request.path
-            # TODO check error_code, instead of exc
-        except:
-            path = str(request.error_code)
+        else:
+            path = str(request.error_code) # use non-http parser here
         outputdata = get_honey(path)
 
         connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
         # TODO add server banner
 
         connectionSocket.send(outputdata)
-        connectionSocket.close()
-    except IOError:
-        # TODO test and remove this branch
-        print "Caught exception IOError"
-        # connectionSocket.send('HTTP/1.0 200 OK\r\n\r\n')
         connectionSocket.close()
     except socket.error, exc:
         print "Caught exception socket.error : %s" % exc
