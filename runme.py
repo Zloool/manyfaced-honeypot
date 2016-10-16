@@ -27,17 +27,31 @@ def get_honey(path):
     outputdata = ""
     stringfile = ""
     msgsize = 0
-    try:
+    if path in cases:
         respfilename = cases[path]
-        # TODO check, if cases[path] exists, instead of throwing an exc
         # TODO implement if system for complex requests respfilename == ""
         f = open('responses/'+respfilename)
         stringfile = f.read()
         f.close()
-        msgsize = sys.getsizeof(stringfile)
+        if respfilename == "webdav.xml":
+            msgsize = sys.getsizeof(stringfile)
+            outputdata += 'HTTP/1.1 207 Multi-Status\r\n'
+            outputdata += 'Content-Type: application/xml; charset="utf-8\r\n'
+            outputdata += '\r\n'
+            outputdata += stringfile
+        else:
+            msgsize = sys.getsizeof(stringfile)
+            outputdata += 'HTTP/1.1 200 OK\r\n'
+            outputdata += 'Server: Apache/1.3.42 (Unix)  (Red Hat/Linux)\r\n'
+            outputdata += 'Content-Type: text/html\r\n'
+            outputdata += 'Connection: close\r\n'
+            outputdata += 'Date: ' + str(datetime.datetime.now())
+            outputdata += 'Content-Length: ' + str(msgsize)
+            outputdata += '\r\n'
+            outputdata += stringfile
         print ip_addr + " " + path + " gotcha!"
         # TODO turn off verbose by args
-    except:
+    else:
         respfilename = cases["zero"]
         f = open('responses/'+respfilename)
         stringfile = f.read()
@@ -45,14 +59,6 @@ def get_honey(path):
         msgsize = sys.getsizeof(stringfile)
         print ip_addr + " " + path + " not detected..."
         # TODO add to souces, if not detected
-    outputdata += 'HTTP/1.1 200 OK\r\n'
-    outputdata += 'Server: Apache/1.3.42 (Unix)  (Red Hat/Linux)\r\n'
-    outputdata += 'Content-Type: text/html\r\n'
-    outputdata += 'Connection: close\r\n'
-    outputdata += 'Date: ' + str(datetime.datetime.now())
-    outputdata += 'Content-Length: ' + str(msgsize)
-    outputdata += '\r\n'
-    outputdata += stringfile
     return outputdata
 
 serverSocket = socket(AF_INET, SOCK_STREAM)
