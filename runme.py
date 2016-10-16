@@ -24,6 +24,28 @@ def create_file(message, directory):
     f.close()
 
 
+def compile_banner(msgsize=0,
+                   code="HTTP/1.1 200 OK",
+                   serverver="Apache/1.3.42 (Unix)  (Red Hat/Linux)",
+                   contenttype="text/html",
+                   connection="close",
+                   date=str(datetime.datetime.now())):
+    banner = ""
+    banner += code + '\r\n'
+    if serverver != 0:
+        banner += 'Server: ' + serverver + '\r\n'
+    if contenttype != 0:
+        banner += 'Content-Type: ' + contenttype + '\r\n'
+    if connection != 0:
+        banner += 'Connection: ' + connection + '\r\n'
+    if date != 0:
+        banner += 'Date: ' + date + '\r\n'
+    if msgsize != 0:
+        banner += 'Content-Length: ' + str(msgsize)
+    banner += '\r\n'
+    return banner
+
+
 def get_honey(path):
     global unknown_cases
     outputdata = ""
@@ -36,19 +58,13 @@ def get_honey(path):
         f.close()
         if respfilename == "webdav.xml":
             msgsize = sys.getsizeof(stringfile)
-            outputdata += 'HTTP/1.1 207 Multi-Status\r\n'
-            outputdata += 'Content-Type: application/xml; charset="utf-8\r\n'
-            outputdata += '\r\n'
+            outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
+                                         contenttype='application/xml; charset="utf-8',
+                                         connection=0, date=0, serverver=0)
             outputdata += stringfile
         else:
             msgsize = sys.getsizeof(stringfile)
-            outputdata += 'HTTP/1.1 200 OK\r\n'
-            outputdata += 'Server: Apache/1.3.42 (Unix)  (Red Hat/Linux)\r\n'
-            outputdata += 'Content-Type: text/html\r\n'
-            outputdata += 'Connection: close\r\n'
-            outputdata += 'Date: ' + str(datetime.datetime.now())
-            outputdata += 'Content-Length: ' + str(msgsize)
-            outputdata += '\r\n'
+            outputdata += compile_banner(msgsize=msgsize)
             outputdata += stringfile
         print ip_addr + " " + path + " gotcha!"
         # TODO turn off verbose by args
@@ -65,13 +81,7 @@ def get_honey(path):
         stringfile = f.read()
         f.close()
         msgsize = sys.getsizeof(stringfile)
-        outputdata += 'HTTP/1.1 200 OK\r\n'
-        outputdata += 'Server: Apache/1.3.42 (Unix)  (Red Hat/Linux)\r\n'
-        outputdata += 'Content-Type: text/html\r\n'
-        outputdata += 'Connection: close\r\n'
-        outputdata += 'Date: ' + str(datetime.datetime.now())
-        outputdata += 'Content-Length: ' + str(msgsize)
-        outputdata += '\r\n'
+        outputdata += compile_banner(msgsize=msgsize)
         outputdata += stringfile
     return outputdata
 
