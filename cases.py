@@ -30,6 +30,7 @@ cases = {
     '/WEBDAV/': 'webdav.xml',
     '/webdav/': 'webdav.xml',
     '/bitrix/admin/index.php?lang=en': 'bitrix.html',
+    '/robots.txt': 'robots',
     # robots
     # sitemap
 }

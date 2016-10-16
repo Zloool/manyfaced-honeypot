@@ -42,7 +42,7 @@ def compile_banner(msgsize=0,
         banner += 'Date: ' + date + '\r\n'
     if msgsize != 0:
         banner += 'Content-Length: ' + str(msgsize)
-    banner += '\r\n'
+    banner += '\r\n\r\n'
     return banner
 
 
@@ -53,16 +53,31 @@ def get_honey(path):
     msgsize = 0
     if path in cases:
         respfilename = cases[path]
-        f = open('responses/'+respfilename)
-        stringfile = f.read()
-        f.close()
         if respfilename == "webdav.xml":
+            respfilename = cases[path]
+            f = open('responses/'+respfilename)
+            stringfile = f.read()
+            f.close()
             msgsize = sys.getsizeof(stringfile)
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
                                          contenttype='application/xml; charset="utf-8',
                                          connection=0, date=0, serverver=0)
             outputdata += stringfile
+        elif respfilename == "robots":
+            urls = set()
+            stringfile = 'User-Agent: *\r\nAllow: /\r\n'
+            for url in cases:
+                urls.add(url)
+            for url in urls:
+                stringfile += 'Disallow: ' + url + "\r\n"
+            msgsize = sys.getsizeof(stringfile)
+            outputdata += compile_banner(msgsize=msgsize, contenttype="Content-Type: text/plain; charset=UTF-8")
+            outputdata += stringfile
         else:
+            respfilename = cases[path]
+            f = open('responses/'+respfilename)
+            stringfile = f.read()
+            f.close()
             msgsize = sys.getsizeof(stringfile)
             outputdata += compile_banner(msgsize=msgsize)
             outputdata += stringfile
