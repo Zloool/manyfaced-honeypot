@@ -6,7 +6,7 @@ from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
-from settings import HONEYPORT, HONEYFOLDER
+from settings import HONEYFOLDER
 # TODO unittests
 # import signal
 # exit -- something to do on SIGINT
