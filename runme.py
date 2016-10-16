@@ -24,12 +24,12 @@ def create_file(message, directory):
 
 
 def get_honey(path):
+    global unknown_cases
     outputdata = ""
     stringfile = ""
     msgsize = 0
     if path in cases:
         respfilename = cases[path]
-        # TODO implement if system for complex requests respfilename == ""
         f = open('responses/'+respfilename)
         stringfile = f.read()
         f.close()
@@ -52,15 +52,29 @@ def get_honey(path):
         print ip_addr + " " + path + " gotcha!"
         # TODO turn off verbose by args
     else:
+        print ip_addr + " " + path + " not detected..."
+        if path not in unknown_cases:
+            unknown_cases.append(path)
+            with open("cases.txt", "a") as myfile:
+                myfile.write(path + "\n")
+            print path + " added to list"
+        # TODO add to souces, if not
         respfilename = cases["zero"]
         f = open('responses/'+respfilename)
         stringfile = f.read()
         f.close()
         msgsize = sys.getsizeof(stringfile)
-        print ip_addr + " " + path + " not detected..."
-        # TODO add to souces, if not detected
+        outputdata += 'HTTP/1.1 200 OK\r\n'
+        outputdata += 'Server: Apache/1.3.42 (Unix)  (Red Hat/Linux)\r\n'
+        outputdata += 'Content-Type: text/html\r\n'
+        outputdata += 'Connection: close\r\n'
+        outputdata += 'Date: ' + str(datetime.datetime.now())
+        outputdata += 'Content-Length: ' + str(msgsize)
+        outputdata += '\r\n'
+        outputdata += stringfile
     return outputdata
 
+unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 port = HONEYPORT
