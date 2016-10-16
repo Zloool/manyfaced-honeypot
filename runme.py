@@ -3,6 +3,7 @@ import os
 import sys
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
+from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
 from settings import HONEYPORT, HONEYFOLDER
@@ -77,15 +78,10 @@ def get_honey(path):
 unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-port = HONEYPORT
-if len(sys.argv) == 2:
-    try:
-        port = int(sys.argv[1])
-    except ValueError:
-        pass
-serverSocket.bind(('', port))
+args = parse()
+serverSocket.bind(('', args.port))
 serverSocket.listen(1)
-print "Serving honey on port %s" % port
+print "Serving honey on port %s" % args.port
 while True:
     connectionSocket, addr = serverSocket.accept()
     try:
