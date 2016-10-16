@@ -1,17 +1,17 @@
+import datetime
 import os
 import sys
-import datetime
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+
 from cases import cases
 from httphandler import HTTPRequest
 from settings import HONEYPORT, HONEYFOLDER
 # TODO unittests
-
-
 # import signal
 # exit -- something to do on SIGINT
 # signal.signal(signal.SIGINT, exit)
 # TODO implement SIGINT handler
+
 
 def create_file(message, directory):
     if not os.path.exists(HONEYFOLDER+directory):
@@ -70,7 +70,6 @@ if len(sys.argv) == 2:
     except ValueError:
         pass
 serverSocket.bind(('', port))
-# TODO args
 serverSocket.listen(1)
 print "Serving honey on port %s" % port
 while True:
