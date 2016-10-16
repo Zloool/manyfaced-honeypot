@@ -1,14 +1,14 @@
-administrator/index.php //joomla login
+/administrator/index.php
 /joom/
 /joomla/
 /drupal/
-  '/searchreplacedb2.php': 'zero',
-admin.php
-robots.txt
-sitemap.xml
-admin/login.php
-admin/
-user/
+/searchreplacedb2.php
+/admin.php
+/robots.txt
+/sitemap.xml
+/admin/login.php
+/admin/
+/user/
 /xmlrpc.php
 /../../../../../../etc/passwd
 /cgi-bin/php-cgi.bin?-d allow_url_include=on -d safe_mode=off -d suhosin.simulation=on -d disable_functions="" -d open_basedir=none -d auto_prepend_file=php://input -d cgi.force_redirect=0 -d cgi.redirect_status_env="yes" -d cgi.fix_pathinfo=1 -d auto_prepend_file=php://input -n
@@ -48,8 +48,6 @@ user/
 /mss/
 /mss/?preview_id=219&preview_nonce=6d5cf35da4&_thumbnail_id=-1&preview=true
 /searchreplacedb2.php
-/test
-/test/
 /test
 /test/
 /uoytamiw.html
