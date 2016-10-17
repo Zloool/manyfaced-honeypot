@@ -1,6 +1,5 @@
 import datetime
 import os
-import sys
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
 from arguments import parse
@@ -55,15 +54,18 @@ def get_honey_http(request):
             with file('responses/'+cases[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
-                                         contenttype='application/xml; charset=utf-8',
-                                         connection=0, date=0, serverver=0, nlcount=1)
+                                         contenttype='application/xml; '
+                                         'charset=utf-8',
+                                         connection=0, date=0, serverver=0,
+                                         nlcount=1)
             outputdata += stringfile
         elif respfilename == "robots":
             stringfile = 'User-Agent: *\r\nAllow: /\r\n'
             for url in known_cases:
                 stringfile += 'Disallow: ' + url + "\r\n"
             outputdata += compile_banner(msgsize=len(stringfile),
-                                         contenttype="Content-Type: text/plain; charset=UTF-8")
+                                         contenttype="Content-Type: text/plain"
+                                         "; charset=UTF-8")
             outputdata += stringfile
         else:
             with file('responses/'+cases[request.path]) as f:
@@ -81,7 +83,8 @@ def get_honey_http(request):
         with file('responses/'+cases["zero"]) as f:
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile),
-                                     contenttype="Content-Type: text/plain; charset=UTF-8")
+                                     contenttype="Content-Type: text/plain;"
+                                     " charset=UTF-8")
         outputdata += stringfile
     return outputdata
 
