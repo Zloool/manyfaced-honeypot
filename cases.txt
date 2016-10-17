@@ -56,6 +56,6 @@
 /old/
 /m/
 /?author=1
-/icons/blank.gif
-/icons/back.gif
-/icons/folder.gif
+/web-console/ServerInfo.jsp
+/invoker/JMXInvokerServlet
+/x
