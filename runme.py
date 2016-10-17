@@ -44,7 +44,6 @@ def compile_banner(msgsize=0,
 
 
 def get_honey_http(request):
-    # request.path
     global unknown_cases
     outputdata = ""
     stringfile = ""
@@ -72,10 +71,12 @@ def get_honey_http(request):
                 stringfile = f.read()
             outputdata += compile_banner(msgsize=len(stringfile))
             outputdata += stringfile
-        print ip_addr + " " + request.path + " gotcha!"
+        if args.verbose:
+            print ip_addr + " " + request.path + " gotcha!"
         # TODO turn off verbose by args
     else:  # if we dont know what to do
-        print ip_addr + " " + request.path + " not detected..."
+        if args.verbose:
+            print ip_addr + " " + request.path + " not detected..."
         if request.path not in unknown_cases:
             unknown_cases.append(request.path)
             with open("cases.txt", "a") as f:
