@@ -13,9 +13,8 @@ def create_file(message, directory):
         os.makedirs(HONEYFOLDER+directory)
     currtime = str(datetime.datetime.now()).replace(':', ';')
     filename = HONEYFOLDER+directory+"/"+currtime
-    f = open(filename, 'w')
-    f.write(str(message))
-    f.close()
+    with open(filename, "w") as f:
+        f.write(str(message))
 
 
 def compile_banner(msgsize=0,
