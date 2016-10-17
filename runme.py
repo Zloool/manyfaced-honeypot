@@ -7,11 +7,6 @@ from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
 from settings import HONEYFOLDER
-# TODO unittests
-# import signal
-# exit -- something to do on SIGINT
-# signal.signal(signal.SIGINT, exit)
-# TODO implement SIGINT handler
 
 
 def create_file(message, directory):
@@ -47,15 +42,16 @@ def compile_banner(msgsize=0,
     return banner
 
 
-def get_honey(path):
+def get_honey_http(request):
+    # request.path
     global unknown_cases
     outputdata = ""
     stringfile = ""
     msgsize = 0
-    if path in cases:
-        respfilename = cases[path]
+    if request.path in cases:
+        respfilename = cases[request.path]
         if respfilename == "webdav.xml":
-            respfilename = cases[path]
+            respfilename = cases[request.path]
             f = open('responses/'+respfilename)
             stringfile = f.read()
             f.close()
@@ -75,22 +71,22 @@ def get_honey(path):
             outputdata += compile_banner(msgsize=msgsize, contenttype="Content-Type: text/plain; charset=UTF-8")
             outputdata += stringfile
         else:
-            respfilename = cases[path]
+            respfilename = cases[request.path]
             f = open('responses/'+respfilename)
             stringfile = f.read()
             f.close()
             msgsize = sys.getsizeof(stringfile)
             outputdata += compile_banner(msgsize=msgsize)
             outputdata += stringfile
-        print ip_addr + " " + path + " gotcha!"
+        print ip_addr + " " + request.path + " gotcha!"
         # TODO turn off verbose by args
     else:
-        print ip_addr + " " + path + " not detected..."
-        if path not in unknown_cases:
-            unknown_cases.append(path)
+        print ip_addr + " " + request.path + " not detected..."
+        if request.path not in unknown_cases:
+            unknown_cases.append(request.path)
             with open("cases.txt", "a") as myfile:
-                myfile.write(path + "\n")
-            print path + " added to list"
+                myfile.write(request.path + "\n")
+            print request.path + " added to list"
         # TODO add to souces, if not
         respfilename = cases["zero"]
         f = open('responses/'+respfilename)
@@ -117,11 +113,10 @@ while True:
         path = ""
         request = HTTPRequest(message)
         if request.error_code is None:
-            path = request.path
-            outputdata = get_honey(path)
+            outputdata = get_honey_http(request)
         else:
             path = str(request.error_code)  # use non-http parser here
-            outputdata = get_honey(path)
+            # outputdata = get_honey(path)
         connectionSocket.send(outputdata)
         connectionSocket.close()
     except:  # rewrite this
