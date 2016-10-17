@@ -22,9 +22,10 @@ def create_file(message, directory):
 def compile_banner(msgsize=0,
                    code="HTTP/1.1 200 OK",
                    serverver="Apache/1.3.42 (Unix)  (Red Hat/Linux)",
-                   contenttype='text/html; charset=utf-8',
+                   contenttype='text/html; charset=UTF-8',
                    connection="close",
-                   date=str(datetime.datetime.now())):
+                   date=str(datetime.datetime.now()),
+                   nlcount=2):
     banner = ""
     if code != 0:
         banner += code + '\r\n'
@@ -38,7 +39,8 @@ def compile_banner(msgsize=0,
         banner += 'Date: ' + date + '\r\n'
     if msgsize != 0:
         banner += 'Content-Length: ' + str(msgsize)
-    banner += '\r\n\r\n'
+    for i in range(nlcount):
+        banner += '\r\n'
     return banner
 
 
@@ -47,57 +49,46 @@ def get_honey_http(request):
     global unknown_cases
     outputdata = ""
     stringfile = ""
-    msgsize = 0
-    if request.path in cases:
+    if request.path in cases:  # if we know what to do
         respfilename = cases[request.path]
         if respfilename == "webdav.xml":
-            respfilename = cases[request.path]
-            f = open('responses/'+respfilename)
-            stringfile = f.read()
-            f.close()
-            msgsize = sys.getsizeof(stringfile)
+            with file('responses/'+cases[request.path]) as f:
+                stringfile = f.read()
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
                                          contenttype='application/xml; charset=utf-8',
-                                         connection=0, date=0, serverver=0)
+                                         connection=0, date=0, serverver=0, nlcount=1)
             outputdata += stringfile
         elif respfilename == "robots":
-            urls = set()
             stringfile = 'User-Agent: *\r\nAllow: /\r\n'
-            for url in cases:
-                urls.add(url)
-            for url in urls:
+            for url in known_cases:
                 stringfile += 'Disallow: ' + url + "\r\n"
-            msgsize = sys.getsizeof(stringfile)
-            outputdata += compile_banner(msgsize=msgsize, contenttype="Content-Type: text/plain; charset=UTF-8")
+            outputdata += compile_banner(msgsize=len(stringfile),
+                                         contenttype="Content-Type: text/plain; charset=UTF-8")
             outputdata += stringfile
         else:
-            respfilename = cases[request.path]
-            f = open('responses/'+respfilename)
-            stringfile = f.read()
-            f.close()
-            msgsize = sys.getsizeof(stringfile)
-            outputdata += compile_banner(msgsize=msgsize)
+            with file('responses/'+cases[request.path]) as f:
+                stringfile = f.read()
+            outputdata += compile_banner(msgsize=len(stringfile))
             outputdata += stringfile
         print ip_addr + " " + request.path + " gotcha!"
         # TODO turn off verbose by args
-    else:
+    else:  # if we dont know what to do
         print ip_addr + " " + request.path + " not detected..."
         if request.path not in unknown_cases:
             unknown_cases.append(request.path)
-            with open("cases.txt", "a") as myfile:
-                myfile.write(request.path + "\n")
-            print request.path + " added to list"
-        # TODO add to souces, if not
-        respfilename = cases["zero"]
-        f = open('responses/'+respfilename)
-        stringfile = f.read()
-        f.close()
-        msgsize = sys.getsizeof(stringfile)
-        outputdata += compile_banner(msgsize=msgsize, contenttype="Content-Type: text/plain; charset=UTF-8")
+            with open("cases.txt", "a") as f:
+                f.write(request.path + "\n")
+        with file('responses/'+cases["zero"]) as f:
+            stringfile = f.read()
+        outputdata += compile_banner(msgsize=len(stringfile),
+                                     contenttype="Content-Type: text/plain; charset=UTF-8")
         outputdata += stringfile
     return outputdata
 
 unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
+known_cases = set()
+for url in cases:
+    known_cases.add(url)
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 args = parse()
