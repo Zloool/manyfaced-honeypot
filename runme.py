@@ -19,7 +19,8 @@ def create_file(message, directory):
 
 def compile_banner(msgsize=0,
                    code="HTTP/1.1 200 OK",
-                   serverver="Apache/1.3.42 (Unix)  (Red Hat/Linux)",
+                   serverver="Apache/1.3.42 (Unix)  (Red Hat/Linux)  "
+                             "OpenSSL/1.0.1e PHP/5.5.9 ",
                    contenttype='text/html; charset=UTF-8',
                    connection="close",
                    date=str(datetime.datetime.now()),
@@ -91,9 +92,9 @@ unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
 known_cases = set()
 for url in cases:
     known_cases.add(url)
+args = parse()
 serverSocket = socket(AF_INET, SOCK_STREAM)
 serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-args = parse()
 serverSocket.bind(('', args.port))
 serverSocket.listen(1)
 print "Serving honey on port %s" % args.port
