@@ -33,11 +33,11 @@ def compile_banner(msgsize=0,
                    nlcount=2):
     """
     This function creates an HTTP banner and returns it as string. Works well
-    with default arguments in most cases, any of them can be ovverriden.
+    with default arguments in most cases, any of them can be overridden.
     `msgsize` needs to be equal to len() of the content string (will work with
     incorrect values in some browsers, but not in YaBrowser, so maybe in all
     of the chrome based browsers).
-    `nlcount` is the number of blank lines in the end of sever banner. number
+    `nlcount` is the number of blank lines in the end of server banner. Number
     of the lines depends on Content-Type of the response. Should be:
     2 - `text/html`; 1 - `application/xml`
     """
@@ -61,12 +61,12 @@ def compile_banner(msgsize=0,
 
 def get_honey_http(request):
     """
-    This is the place where magick happens. Function recieves parsed HTTP
-    request as an argument and compilse an returns an output as a string. If it
+    This is the place where magic happens. Function recieves parsed HTTP
+    request as an argument and returns an output as a string. If it
     is kind of static content, its being read from responses/. In some kind of
-    harder case i use ifelse to determine which code should i use. As an
+    harder case i use if-else to determine which code should i use. As an
     example, WEBDAV protocol uses different server banner and Content-Type of
-    robots.txt should be test/plain(they are also dynamically generated).
+    robots.txt should be text/plain(they are also dynamically generated).
     """
     global unknown_cases
     outputdata = ""
@@ -97,7 +97,6 @@ def get_honey_http(request):
             outputdata += stringfile
         if args.verbose:
             print ip_addr + " " + request.path + " gotcha!"
-        # TODO turn off verbose by args
     else:  # If we dont know what to do whith that request
         if args.verbose:
             print ip_addr + " " + request.path + " not detected..."
