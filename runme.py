@@ -59,7 +59,7 @@ def compile_banner(msgsize=0,
     return banner
 
 
-def get_honey_http(request):
+def get_honey_http(request, ip_addr):
     """
     This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
@@ -68,7 +68,6 @@ def get_honey_http(request):
     example, WEBDAV protocol uses different server banner and Content-Type of
     robots.txt should be text/plain(they are also dynamically generated).
     """
-    global unknown_cases
     outputdata = ""
     stringfile = ""
     if request.path in cases:  # If we know what to do with request
@@ -112,42 +111,51 @@ def get_honey_http(request):
         outputdata += stringfile
     return outputdata
 
-# Get our unimplemented requests list, so we can add something to it
-unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
-# Create a known_cases set, so we can generate robots.txt
-known_cases = set()
-for url in cases:
-    known_cases.add(url)
-# Parse arguments
-args = parse()
-# Create socket
-serverSocket = socket(AF_INET, SOCK_STREAM)
-# Need to set setsockopt to resolve "port already in use" issue
-serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-# Bind our socket to a port. Will use one from settings, if not given in args
-serverSocket.bind(('', args.port))
-serverSocket.listen(1)
-print "Serving honey on port %s" % args.port
-# Endless loop for handling requests
-while True:
-    connectionSocket, addr = serverSocket.accept()
-    # Need to use try, because socket will generate a lot of exceptions
-    try:
-        # Argument is the number of bytes to recieve from client. Why 30000?idk
-        message = connectionSocket.recv(30000)
-        ip_addr = connectionSocket.getpeername()[0]
-        create_file(message, ip_addr)
-        # Try to parse request parameters from message
-        request = HTTPRequest(message)
-        if request.error_code is None:
-            outputdata = get_honey_http(request)
-        # If it's not an HTTP request, it goes here
-        else:
-            path = str(request.error_code)  # use non-http parser here
-            outputdata = ""
-        connectionSocket.send(outputdata)
-        connectionSocket.close()
-    except:  # rewrite this
-        # print "Caught exception socket.error : %s" % e
-        connectionSocket.close()
-serverSocket.close()  # This line is never achieved, implement in SIGINT?
+
+def main():
+    # Get our unimplemented requests list, so we can add something to it
+    global unknown_cases
+    unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
+    # Create a known_cases set, so we can generate robots.txt
+    global known_cases
+    known_cases = set()
+    for url in cases:
+        known_cases.add(url)
+    # Create socket
+    serverSocket = socket(AF_INET, SOCK_STREAM)
+    # Need to set setsockopt to resolve "port already in use" issue
+    serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    # Bind our socket to a port
+    # Will use one from settings, if not given in args
+    serverSocket.bind(('', args.port))
+    serverSocket.listen(1)
+    print "Serving honey on port %s" % args.port
+    # Endless loop for handling requests
+    while True:
+        connectionSocket, addr = serverSocket.accept()
+        # Need to use try, because socket will generate a lot of exceptions
+        try:
+            # Argument is the number of bytes to recieve from client
+            # Why 30000?idk
+            message = connectionSocket.recv(30000)
+            ip_addr = connectionSocket.getpeername()[0]
+            create_file(message, ip_addr)
+            # Try to parse request parameters from message
+            request = HTTPRequest(message)
+            if request.error_code is None:
+                outputdata = get_honey_http(request, ip_addr)
+            # If it's not an HTTP request, it goes here
+            else:
+                path = str(request.error_code)  # use non-http parser here
+                outputdata = ""
+            connectionSocket.send(outputdata)
+            connectionSocket.close()
+        except:  # rewrite this
+            # print "Caught exception socket.error : %s" % e
+            connectionSocket.close()
+    serverSocket.close()  # This line is never achieved, implement in SIGINT?
+
+if __name__ == '__main__':
+    # Parse arguments
+    args = parse()
+    main()
