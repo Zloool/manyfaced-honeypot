@@ -61,7 +61,7 @@ def compile_banner(msgsize=0,
 
 def get_honey_http(request):
     """
-    This is the place where magic happens. Function recieves parsed HTTP
+    This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
     is kind of static content, its being read from responses/. In some kind of
     harder case i use if-else to determine which code should i use. As an
@@ -90,14 +90,14 @@ def get_honey_http(request):
                                          contenttype="Content-Type: text/plain"
                                          "; charset=UTF-8")
             outputdata += stringfile
-        else:  # If our request dont require special treatment, it goes here
+        else:  # If our request doesnt require special treatment, it goes here
             with file('responses/'+cases[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(msgsize=len(stringfile))
             outputdata += stringfile
         if args.verbose:
             print ip_addr + " " + request.path + " gotcha!"
-    else:  # If we dont know what to do whith that request
+    else:  # If we dont know what to do with that request
         if args.verbose:
             print ip_addr + " " + request.path + " not detected..."
         if request.path not in unknown_cases:
@@ -112,7 +112,7 @@ def get_honey_http(request):
         outputdata += stringfile
     return outputdata
 
-# Get our unimplemented requests list, so we cann add something to it
+# Get our unimplemented requests list, so we can add something to it
 unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
 # Create a known_cases set, so we can generate robots.txt
 known_cases = set()
@@ -131,7 +131,7 @@ print "Serving honey on port %s" % args.port
 # Endless loop for handling requests
 while True:
     connectionSocket, addr = serverSocket.accept()
-    # Need to use try, because socket will generate a lot of exc
+    # Need to use try, because socket will generate a lot of exceptions
     try:
         # Argument is the number of bytes to recieve from client. Why 30000?idk
         message = connectionSocket.recv(30000)
@@ -141,7 +141,7 @@ while True:
         request = HTTPRequest(message)
         if request.error_code is None:
             outputdata = get_honey_http(request)
-        # If its not an HTTP request, it goes here
+        # If it's not an HTTP request, it goes here
         else:
             path = str(request.error_code)  # use non-http parser here
             outputdata = ""
