@@ -4,7 +4,9 @@ from StringIO import StringIO
 
 class HTTPRequest(BaseHTTPRequestHandler):
     """
-    Code from
+    This class is just an incapsulation of BaseHTTPRequestHandler, so it can be
+    created from string.
+    Code from:
     http://stackoverflow.com/questions/2115410/does-python-have-a-module-for-parsing-http-requests-and-responses
 
     print request.command          # "GET"

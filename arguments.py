@@ -2,25 +2,33 @@ import argparse
 
 from settings import HONEYPORT
 
+"""
+Here we define command line arguments.
+`port` stands for port, to listen on.
+`-v` to increase verbose of the server
+"""
+
 
 def parse():
     parser = argparse.ArgumentParser(
-            description='Serve some sweet honey to the ubiquitous bots!',
-            epilog='And that`s how you`d detect a sneaky chinese bot.',
-            prog='runme.py',
+        description='Serve some sweet honey to the ubiquitous bots!',
+        epilog='And that`s how you`d detect a sneaky chinese bot.',
+        prog='runme.py',
         )
+
     parser.add_argument(
-            'port',
-            default=HONEYPORT,
-            help='port to start a listener on (default: %(default)s, %(type)s)',
-            nargs='?',
-            type=int,
+        'port',
+        default=HONEYPORT,
+        help='port to start a listener on (default: %(default)s, %(type)s)',
+        nargs='?',
+        type=int,
         )
+
     parser.add_argument(
-            '-v',
-            '--verbose',
-            action='store_true',
-            help='increase output verbosity',
+        '-v',
+        '--verbose',
+        action='store_true',
+        help='increase output verbosity',
         )
 
     return parser.parse_args()
