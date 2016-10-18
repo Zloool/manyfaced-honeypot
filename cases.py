@@ -1,3 +1,8 @@
+"""
+This is a dictionary of '/request_address':'filename'. So, for an easy cases we
+can just get data from file, concatinate it with default server banned and send
+back to client.
+"""
 cases = {
     'zero': 'zero',
     '/': 'zero',
