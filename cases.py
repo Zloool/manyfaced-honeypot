@@ -37,6 +37,7 @@ cases = {
     '/bitrix/admin/index.php?lang=en': 'bitrix.html',
     '/robots.txt': 'robots',
     '/wp-content': 'wp-content.html',
+    '/cases': '../cases.txt',
     # robots
     # sitemap
 }
