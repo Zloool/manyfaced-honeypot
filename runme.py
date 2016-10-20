@@ -86,7 +86,7 @@ def get_honey_http(request, ip_addr):
             for url in known_cases:
                 stringfile += 'Disallow: ' + url + "\r\n"
             outputdata += compile_banner(msgsize=len(stringfile),
-                                         contenttype="Content-Type: text/plain"
+                                         contenttype="text/plain"
                                          "; charset=UTF-8")
             outputdata += stringfile
         else:  # If our request doesnt require special treatment, it goes here
