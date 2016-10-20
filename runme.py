@@ -1,14 +1,31 @@
 import datetime
 import os
+import sys
+import pickle
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
 from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
-from settings import HONEYFOLDER
+from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from myenc import AESCipher
+from bearstorage import BearStorage
 
 
-def create_file(message, directory):
+def send_report(data, client, password):
+    ciper = AESCipher(password)
+    message = client + ":"
+    message += ciper.encrypt(pickle.dumps(data))
+    s = socket(AF_INET, SOCK_STREAM)
+    s.connect((HIVEHOST, HIVEPORT))
+    print message
+    s.sendall(message)
+    response = s.recv(1024)
+    s.close()
+    print 'Received', repr(response)
+
+
+def create_file(message, directory, dt):
     """
     Temporary function, being used for storing honeypot data, before i
     add ClickHouse as the storage. I am using it to save each packet to a
@@ -17,8 +34,7 @@ def create_file(message, directory):
     """
     if not os.path.exists(HONEYFOLDER+directory):
         os.makedirs(HONEYFOLDER+directory)
-    currtime = str(datetime.datetime.now()).replace(':', ';')
-    filename = HONEYFOLDER+directory+"/"+currtime
+    filename = HONEYFOLDER+directory+"/"+dt
     with open(filename, "w") as f:
         f.write(str(message))
 
@@ -134,25 +150,31 @@ def main():
     while True:
         connectionSocket, addr = serverSocket.accept()
         # Need to use try, because socket will generate a lot of exceptions
-        try:
+        #try:
+        if True:
             # Argument is the number of bytes to recieve from client
             # Why 30000?idk
             message = connectionSocket.recv(30000)
             ip_addr = connectionSocket.getpeername()[0]
-            create_file(message, ip_addr)
+            dt = str(datetime.datetime.now()).replace(':', ';')
+            create_file(message, ip_addr, dt)
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
                 outputdata = get_honey_http(request, ip_addr)
+                bs = BearStorage(ip_addr, message,
+                                 dt,
+                                 request, True)
+                send_report(bs, HIVELOGIN, HIVEPASS)
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
-        except:  # rewrite this
-            # print "Caught exception socket.error : %s" % e
-            connectionSocket.close()
+        #except:
+        #    print "Unexpected error:", sys.exc_info()[0]
+        #    connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
 
 if __name__ == '__main__':
