@@ -118,7 +118,7 @@ def get_honey_http(request, ip_addr):
         if request.path not in unknown_cases:
             # Lets add him to our todo list ;) (if we dont already have it)
             unknown_cases.append(request.path)
-            with open("cases.txt", "a") as f:
+            with open("local_cases.txt", "a") as f:
                 f.write(request.path + "\n")
         # Send default response
         with file('responses/'+cases["zero"]) as f:
@@ -131,7 +131,13 @@ def get_honey_http(request, ip_addr):
 def main():
     # Get our unimplemented requests list, so we can add something to it
     global unknown_cases
+    if not os.path.isfile("settings.py"):
+        copyfile("settings.py.example", "settings.py")
+    if not os.path.isfile("local_cases.txt"):
+        f = file("local_cases.txt", "w")
+        f.close()
     unknown_cases = [line.rstrip('\n') for line in open('cases.txt')]
+    unknown_cases += [line.rstrip('\n') for line in open('local_cases.txt')]
     # Create a known_cases set, so we can generate robots.txt
     global known_cases
     known_cases = set()
@@ -164,7 +170,10 @@ def main():
                 bs = BearStorage(ip_addr, message,
                                  dt,
                                  request, True)
-                send_report(bs, HIVELOGIN, HIVEPASS)
+                try:
+                    send_report(bs, HIVELOGIN, HIVEPASS)
+                except:
+                    print "Hive server is not responding :("
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
@@ -177,8 +186,6 @@ def main():
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
 
 if __name__ == '__main__':
-    if not os.path.isfile("settings.py"):
-        copyfile("settings.py.example", "settings.py")
     # Parse arguments
     args = parse()
     main()
