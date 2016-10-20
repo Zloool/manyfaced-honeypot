@@ -2,6 +2,7 @@ import datetime
 import os
 import sys
 import pickle
+from shutil import copyfile
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
 from arguments import parse
@@ -149,8 +150,7 @@ def main():
     while True:
         connectionSocket, addr = serverSocket.accept()
         # Need to use try, because socket will generate a lot of exceptions
-        #try:
-        if True:
+        try:
             # Argument is the number of bytes to recieve from client
             # Why 30000?idk
             message = connectionSocket.recv(30000)
@@ -177,6 +177,8 @@ def main():
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
 
 if __name__ == '__main__':
+    if not os.path.isfile("settings.py"):
+        copyfile("settings.py.example", "settings.py")
     # Parse arguments
     args = parse()
     main()
