@@ -18,8 +18,7 @@ def main():
     print "Awaiting for bears on port %s" % HIVEPORT
     while True:
         connectionSocket, addr = serverSocket.accept()
-        # try:
-        if True:
+        try:
             message = connectionSocket.recv(30000)
             request = message.split(":")
             key = authorised_probes[request[0]]
