@@ -10,20 +10,20 @@ class BearStorage():
         self.path = parsed_request.path  # String
         self.command = parsed_request.command  # String
         self.version = parsed_request.request_version  # String
-        self.headers = parsed_request.headers  # String
+        self.headers = parsed_request.headers  # Dictionary
         self.isDetected = isDetected  # Bool
         location = geolite2.lookup(ip)
         if location is not None:
-            self.country = location.country
-            self.continent = location.continent
-            self.timezone = location.timezone
+            self.country = location.country  # String
+            self.continent = location.continent  # String
+            self.timezone = location.timezone  # String
         else:
             self.country = ''
             self.continent = ''
             self.timezone = ''
         self.tracert = ""  # TODO
         try:
-            self.dnsname = socket.gethostbyaddr('192.30.252.130')[0]
+            self.dnsname = socket.gethostbyaddr('192.30.252.130')[0]  # String
         except:
             self.dnsname = ""
 
