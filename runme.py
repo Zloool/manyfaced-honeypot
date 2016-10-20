@@ -147,7 +147,7 @@ def main():
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
-                outputdata = ""
+                outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except:  # rewrite this
