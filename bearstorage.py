@@ -23,7 +23,7 @@ class BearStorage():
             self.timezone = ''
         self.tracert = ""  # TODO
         try:
-            self.dnsname = socket.gethostbyaddr('192.30.252.130')[0]  # String
+            self.dnsname = socket.gethostbyaddr(ip)[0]  # String
         except:
             self.dnsname = ""
 
