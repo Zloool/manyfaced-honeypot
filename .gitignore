@@ -90,3 +90,4 @@ ENV/
 
 bots/
 settings.py
+local_cases.txt
