@@ -27,6 +27,22 @@ class BearStorage():
         except:
             self.dnsname = ""
 
+    def __str__(self):
+        output = "IP: " + self.ip
+        output += "rawrequest: " + self.rawrequest
+        output += "timestamp: " + self.timestamp
+        output += "path: " + self.path
+        output += "command: " + self.command
+        output += "version: " + self.version
+        output += "headers: " + str(self.headers)
+        output += "country: " + self.country
+        output += "continent: " + self.continent
+        output += "timezone: " + self.timezone
+        return output
+
+    def __repr__(self):
+        return self.__str__()
+
 # import subprocess
 # host = 'www.microsoft.com'
 # p = subprocess.Popen(["tracert", '-d', '-w', '100', host],
