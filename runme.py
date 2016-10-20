@@ -18,7 +18,6 @@ def send_report(data, client, password):
     message += ciper.encrypt(pickle.dumps(data))
     s = socket(AF_INET, SOCK_STREAM)
     s.connect((HIVEHOST, HIVEPORT))
-    print message
     s.sendall(message)
     response = s.recv(1024)
     s.close()
@@ -172,9 +171,9 @@ def main():
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
-        #except:
-        #    print "Unexpected error:", sys.exc_info()[0]
-        #    connectionSocket.close()
+        except:
+            print "Unexpected error:", sys.exc_info()[0]
+            connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
 
 if __name__ == '__main__':
