@@ -1,9 +1,13 @@
 import pickle
+import os
+from shutil import copyfile
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
+if not os.path.isfile("settings.py"):
+    copyfile("settings.py.example", "settings.py")
+from settings import HIVEPORT, AUTHORISEDBEARS
 from arguments import parse
 from myenc import AESCipher
-from settings import HIVEPORT, AUTHORISEDBEARS
 
 
 def main():
