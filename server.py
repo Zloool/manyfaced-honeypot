@@ -33,7 +33,7 @@ def main():
             print data
             db.append(data)
             with open('temp.db', "w") as f:
-                f.write(str(pickle.dumps(data)))
+                f.write(str(pickle.dumps(db)))
             connectionSocket.send("200")
             connectionSocket.close()
         except:
