@@ -3,14 +3,10 @@ from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
 from arguments import parse
 from myenc import AESCipher
-from settings import HIVEPORT
-
-
-authorised_probes = {'CHORDCOLLISION': 'test', 'WINTERKAREN': ''}
+from settings import HIVEPORT, AUTHORISEDBEARS
 
 
 def main():
-    global authorised_probes
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     serverSocket.bind(('', HIVEPORT))
@@ -20,8 +16,9 @@ def main():
         connectionSocket, addr = serverSocket.accept()
         try:
             message = connectionSocket.recv(30000)
+            print message
             request = message.split(":")
-            key = authorised_probes[request[0]]
+            key = AUTHORISEDBEARS[request[0]]
             print key
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
