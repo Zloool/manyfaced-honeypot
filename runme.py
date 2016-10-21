@@ -170,7 +170,7 @@ def main():
                 outputdata = get_honey_http(request, ip_addr)
                 bs = BearStorage(ip_addr, message,
                                  dt,
-                                 request, True)
+                                 request, True, HIVELOGIN)
                 try:
                     send_report(bs, HIVELOGIN, HIVEPASS)
                 except:
