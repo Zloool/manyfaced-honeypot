@@ -16,10 +16,8 @@ def main():
         connectionSocket, addr = serverSocket.accept()
         try:
             message = connectionSocket.recv(30000)
-            print message
             request = message.split(":")
             key = AUTHORISEDBEARS[request[0]]
-            print key
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
             print data
