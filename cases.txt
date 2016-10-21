@@ -47,3 +47,5 @@ http://www.baidu.com/favicon.ico
 //MyAdmin/scripts/setup.php
 /manager/html
 /webdav/info.php
+/feed2js/magpie_debug.php
+/bitrix/admin/
