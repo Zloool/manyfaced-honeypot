@@ -3,7 +3,8 @@ from geoip import geolite2
 
 
 class BearStorage():
-    def __init__(self, ip, rawrequest, timestamp, parsed_request, isDetected):
+    def __init__(self, ip, rawrequest, timestamp, parsed_request, isDetected,
+                 hostname):
         self.ip = ip  # String
         self.rawrequest = rawrequest  # String
         self.timestamp = timestamp  # Datetime
@@ -12,6 +13,7 @@ class BearStorage():
         self.version = parsed_request.request_version  # String
         self.headers = parsed_request.headers  # Dictionary
         self.isDetected = isDetected  # Bool
+        self.hostname = hostname  # Bool
         location = geolite2.lookup(ip)
         if location is not None:
             self.country = location.country  # String
@@ -28,13 +30,14 @@ class BearStorage():
             self.dnsname = ""
 
     def __str__(self):
-        output = "IP: " + self.ip
-        output += "rawrequest: " + self.rawrequest + "\r\n"
+        output = "hostname: " + self.hostname + "\r\n"
+        output += "IP: " + self.ip + "\r\n"
+        # output += "rawrequest: " + self.rawrequest + "\r\n"
         output += "timestamp: " + self.timestamp + "\r\n"
         output += "path: " + self.path + "\r\n"
         output += "command: " + self.command + "\r\n"
-        output += "version: " + self.version + "\r\n" + "\r\n"
-        output += "headers: " + str(self.headers) + "\r\n"
+        output += "version: " + self.version + "\r\n"
+        # output += "headers: " + str(self.headers) + "\r\n"
         output += "country: " + self.country + "\r\n"
         output += "continent: " + self.continent + "\r\n"
         output += "timezone: " + self.timezone + "\r\n"
