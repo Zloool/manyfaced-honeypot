@@ -29,15 +29,15 @@ class BearStorage():
 
     def __str__(self):
         output = "IP: " + self.ip
-        output += "rawrequest: " + self.rawrequest
-        output += "timestamp: " + self.timestamp
-        output += "path: " + self.path
-        output += "command: " + self.command
-        output += "version: " + self.version
-        output += "headers: " + str(self.headers)
-        output += "country: " + self.country
-        output += "continent: " + self.continent
-        output += "timezone: " + self.timezone
+        output += "rawrequest: " + self.rawrequest + "\r\n"
+        output += "timestamp: " + self.timestamp + "\r\n"
+        output += "path: " + self.path + "\r\n"
+        output += "command: " + self.command + "\r\n"
+        output += "version: " + self.version + "\r\n" + "\r\n"
+        output += "headers: " + str(self.headers) + "\r\n"
+        output += "country: " + self.country + "\r\n"
+        output += "continent: " + self.continent + "\r\n"
+        output += "timezone: " + self.timezone + "\r\n"
         return output
 
     def __repr__(self):
