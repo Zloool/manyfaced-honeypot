@@ -131,7 +131,10 @@ def get_honey_http(request, ip_addr):
     return outputdata
 
 
-def main():
+def main(queue):
+    global args
+    # Parse arguments
+    args = parse()
     # Get our unimplemented requests list, so we can add something to it
     global unknown_cases
     if not os.path.isfile("local_cases.txt"):
@@ -155,6 +158,10 @@ def main():
     print "Serving honey on port %s" % args.port
     # Endless loop for handling requests
     while True:
+        if not queue.empty():
+            item = queue.get(True, 1)
+            if item == 'quit':
+                break
         connectionSocket, addr = serverSocket.accept()
         # Need to use try, because socket will generate a lot of exceptions
         try:
@@ -185,8 +192,3 @@ def main():
             print "Unexpected error:", sys.exc_info()[0]
             connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
-
-if __name__ == '__main__':
-    # Parse arguments
-    args = parse()
-    main()
