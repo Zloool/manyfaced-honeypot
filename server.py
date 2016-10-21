@@ -37,8 +37,10 @@ def main():
             connectionSocket.send("200")
             connectionSocket.close()
         except:
-            connectionSocket.send("300")
-            connectionSocket.close()
+            try:
+                connectionSocket.send("CODE 300 FUCK YOU")
+            finally:
+                connectionSocket.close()
     serverSocket.close()
 
 if __name__ == '__main__':
