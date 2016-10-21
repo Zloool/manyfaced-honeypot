@@ -5,10 +5,13 @@ import pickle
 from shutil import copyfile
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 
+
+if not os.path.isfile("settings.py"):
+    copyfile("settings.py.example", "settings.py")
+from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
-from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from myenc import AESCipher
 from bearstorage import BearStorage
 
@@ -131,8 +134,6 @@ def get_honey_http(request, ip_addr):
 def main():
     # Get our unimplemented requests list, so we can add something to it
     global unknown_cases
-    if not os.path.isfile("settings.py"):
-        copyfile("settings.py.example", "settings.py")
     if not os.path.isfile("local_cases.txt"):
         f = file("local_cases.txt", "w")
         f.close()
