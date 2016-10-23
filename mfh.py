@@ -1,42 +1,36 @@
-import mfhclient
 import os
-import Queue
 import sys
-import threading
-import trigger
+import time
+from multiprocessing import Process, Event
+
+import mfhclient
 import update
+from arguments import parse
 
 
 def main():
-    q = Queue.Queue()
-    updateq = Queue.Queue()
-    mfhclient_thread = threading.Thread(
-        args=(q,),
-        name="mfhclient_thread",
+    q = Event()
+    mfhclient_process = Process(
+        args=(args, q,),
+        name="mfhclient_process",
         target=mfhclient.main,
         )
-    mfhclient_thread.start()
-    trigger_thread = threading.Thread(
-        args=(updateq,),
-        name="trigger_thread",
-        target=trigger.trigger,
+    mfhclient_process.start()
+    trigger_process = Process(
+        args=(q,),
+        name="trigger_process",
+        target=update.trigger,
         )
-    trigger_thread.start()
-    count = 0
-    while True:
-        if updateq.empty() and updateq.get() == "update":
-            q.put("quit")
-        if not mfhclient_thread.is_alive():
-            updater_thread = threading.Thread(
-                args=("origin", "master"),
-                name="updater_thread",
-                target=update.pull,
-                )
-            updater_thread.start()
-            updater_thread.join()
-            sys.stdout.flush()
-            os.execl(sys.executable, sys.executable, *sys.argv)
-        count += 1
+    trigger_process.start()
+    trigger_process.join()
+    while mfhclient_process.is_alive():
+        time.sleep(5)
+    else:
+        update.pull("origin", "master")
+        sys.stdout.flush()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == '__main__':
+    # Parse arguments
+    args = parse()
     main()
