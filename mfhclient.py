@@ -9,7 +9,6 @@ from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
 from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
-from arguments import parse
 from cases import cases
 from httphandler import HTTPRequest
 from myenc import AESCipher
@@ -131,10 +130,9 @@ def get_honey_http(request, ip_addr):
     return outputdata
 
 
-def main(queue):
+def main(arguments, update_event):
     global args
-    # Parse arguments
-    args = parse()
+    args = arguments
     # Get our unimplemented requests list, so we can add something to it
     global unknown_cases
     if not os.path.isfile("local_cases.txt"):
@@ -158,10 +156,8 @@ def main(queue):
     print "Serving honey on port %s" % args.port
     # Endless loop for handling requests
     while True:
-        if not queue.empty():
-            item = queue.get(True, 1)
-            if item == 'quit':
-                break
+        if update_event.is_set():
+            break
         connectionSocket, addr = serverSocket.accept()
         # Need to use try, because socket will generate a lot of exceptions
         try:
