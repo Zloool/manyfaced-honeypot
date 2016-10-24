@@ -24,7 +24,7 @@ def send_report(data, client, password):
     s.sendall(message)
     response = s.recv(1024)
     s.close()
-    print 'Received', repr(response)
+    return response
 
 
 def create_file(message, directory, dt):
@@ -153,7 +153,8 @@ def main(arguments, update_event):
     # Will use one from settings, if not given in args
     serverSocket.bind(('', args.port))
     serverSocket.listen(1)
-    print "Serving honey on port %s" % args.port
+    if args.verbose:
+        print "Serving honey on port %s" % args.port
     # Endless loop for handling requests
     while True:
         if update_event.is_set():
@@ -175,9 +176,12 @@ def main(arguments, update_event):
                                  dt,
                                  request, True, HIVELOGIN)
                 try:
-                    send_report(bs, HIVELOGIN, HIVEPASS)
+                    resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                    if args.verbose:
+                        print resp
                 except:
-                    print "Hive server is not responding :("
+                    if args.verbose:
+                        print "Hive server is not responding :("
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
@@ -185,6 +189,7 @@ def main(arguments, update_event):
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except:
-            print "Unexpected error:", sys.exc_info()[0]
+            if args.verbose:
+                print "Unexpected error:", sys.exc_info()[0]
             connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
