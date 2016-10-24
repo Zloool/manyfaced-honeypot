@@ -41,6 +41,10 @@ class BearStorage():
         output += "country: " + self.country + "\r\n"
         output += "continent: " + self.continent + "\r\n"
         output += "timezone: " + self.timezone + "\r\n"
+        if self.isDetected:
+            output += "Detected: Yes" + "\r\n"
+        else:
+            output += "Detected: No" + "\r\n"
         return output
 
     def __repr__(self):
