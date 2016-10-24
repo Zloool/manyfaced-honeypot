@@ -127,7 +127,7 @@ def get_honey_http(request, ip_addr):
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile))
         outputdata += stringfile
-    return outputdata
+    return outputdata, request.path in cases
 
 
 def main(arguments, update_event):
@@ -171,10 +171,10 @@ def main(arguments, update_event):
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
-                outputdata = get_honey_http(request, ip_addr)
+                outputdata, detected = get_honey_http(request, ip_addr)
                 bs = BearStorage(ip_addr, message,
                                  dt,
-                                 request, True, HIVELOGIN)
+                                 request, detected, HIVELOGIN)
                 try:
                     resp = send_report(bs, HIVELOGIN, HIVEPASS)
                     if args.verbose:
