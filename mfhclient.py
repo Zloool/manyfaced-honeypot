@@ -166,8 +166,8 @@ def main(arguments, update_event):
             # Why 30000?idk
             message = connectionSocket.recv(30000)
             ip_addr = connectionSocket.getpeername()[0]
-            dt = str(datetime.datetime.now()).replace(':', ';')
-            create_file(message, ip_addr, dt)
+            dt = str(datetime.datetime.now())
+            create_file(message, ip_addr, dt.replace(':', ';'))
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
