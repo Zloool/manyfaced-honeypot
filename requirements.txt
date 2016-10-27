@@ -1,3 +1,4 @@
 python-geoip
 python-geoip-geolite2
 pycrypto
+infi.clickhouse_orm

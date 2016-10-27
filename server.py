@@ -7,6 +7,7 @@ if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
 from settings import HIVEPORT, AUTHORISEDBEARS
 from myenc import AESCipher
+from dbconnect import Insert
 
 
 def main(args, update_event):
@@ -35,6 +36,7 @@ def main(args, update_event):
             if args.verbose:
                 print data
             db.append(data)
+            Insert(data)
             with open('temp.db', "w") as f:
                 f.write(str(pickle.dumps(db)))
             connectionSocket.send("200")
