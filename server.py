@@ -36,7 +36,10 @@ def main(args, update_event):
             if args.verbose:
                 print data
             db.append(data)
-            Insert(data)
+            try:
+                Insert(data)
+            except:
+                print "Error writing data to clickhouse"
             with open('temp.db', "w") as f:
                 f.write(str(pickle.dumps(db)))
             connectionSocket.send("200")
