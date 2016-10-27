@@ -37,6 +37,22 @@ def parse():
         type=int,
         )
 
+    server_group = parser.add_mutually_exclusive_group()
+
+    server_group.add_argument(
+        '-s',
+        action='store_true',
+        help='launch server with on port defined in settings',
+        )
+
+    server_group.add_argument(
+        '--server',
+        help='port to start a server on',
+        metavar='PORT',
+        nargs='?',
+        type=int,
+        )
+
     parser.add_argument(
         '-u',
         '--updater',
