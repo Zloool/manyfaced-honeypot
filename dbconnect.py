@@ -31,8 +31,7 @@ class BearRequests(models.Model):
 
 
 def Insert(Bear):
-    date = Bear.timestamp.replace(';', ':')
-    date = datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f")
+    date = datetime.strptime(Bear.timestamp, "%Y-%m-%d %H:%M:%S.%f")
     db = Database('Honeypot', db_url=CLICKHOUSEIP + ':' + CLICKHOUSEPORT,
                   username=CLICKHOUSEUSER, password=CLICKHOUSEPASSWORD)
     DBBear = BearRequests(
