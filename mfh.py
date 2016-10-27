@@ -18,19 +18,21 @@ def main():
         )
     if args.client is not None:
         mfhclient_process.start()
-    trigger_process = Process(
-        args=(update_event,),
-        name="trigger_process",
-        target=update.trigger,
-        )
-    trigger_process.start()
-    trigger_process.join()
+    if args.updater:
+        trigger_process = Process(
+            args=(update_event,),
+            name="trigger_process",
+            target=update.trigger,
+            )
+        trigger_process.start()
+        trigger_process.join()
     while mfhclient_process.is_alive():
         time.sleep(5)
     else:
-        update.pull("origin", "master")
-        sys.stdout.flush()
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        if args.updater:
+            update.pull("origin", "master")
+            sys.stdout.flush()
+            os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == '__main__':
     # Parse arguments
