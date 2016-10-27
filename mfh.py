@@ -14,35 +14,32 @@ from settings import HONEYPORT, HIVEPORT
 
 def main():
     update_event = Event()
-    mfhclient_process = Process(
-        args=(args, update_event,),
-        name="mfhclient_process",
-        target=mfhclient.main,
-        )
-    server_process = Process(
-        args=(args, update_event,),
-        name="server_process",
-        target=server.main,
-        )
+    client = create_process("client", mfhclient.main, args, update_event)
+    serv = create_process("server", server.main, args, update_event)
     if args.client is not None:
-        mfhclient_process.start()
+        client.start()
     if args.client is not None:
-        server_process.start()
+        serv.start()
     if args.updater:
-        trigger_process = Process(
-            args=(update_event,),
-            name="trigger_process",
-            target=update.trigger,
-            )
-        trigger_process.start()
-        trigger_process.join()
-    while mfhclient_process.is_alive() or server_process.is_alive():
+        trigger = create_process("trigger", update.trigger, update_event)
+        trigger.start()
+        trigger.join()
+    while client.is_alive() or serv.is_alive():
         time.sleep(5)
     else:
         if args.updater:
-            # update.pull("origin", "master")
+            update.pull("origin", "master")
             sys.stdout.flush()
             os.execl(sys.executable, sys.executable, *sys.argv)
+
+
+def create_process(name, function,  *arguments):
+    process = Process(
+        args=arguments,
+        name="{0}_process".format(name),
+        target=function,
+        )
+    return process
 
 if __name__ == '__main__':
     # Parse arguments
@@ -51,4 +48,5 @@ if __name__ == '__main__':
         args.client = HONEYPORT
     if args.s:
         args.server = HIVEPORT
+    processes = {}
     main()
