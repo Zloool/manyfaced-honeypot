@@ -151,10 +151,10 @@ def main(arguments, update_event):
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     # Bind our socket to a port
     # Will use one from settings, if not given in args
-    serverSocket.bind(('', args.port))
+    serverSocket.bind(('', args.client))
     serverSocket.listen(1)
     if args.verbose:
-        print "Serving honey on port %s" % args.port
+        print "Serving honey on port %s" % args.client
     # Endless loop for handling requests
     while True:
         if update_event.is_set():
