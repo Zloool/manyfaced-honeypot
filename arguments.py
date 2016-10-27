@@ -13,13 +13,21 @@ def parse():
     parser = argparse.ArgumentParser(
         description='Serve some sweet honey to the ubiquitous bots!',
         epilog='And that`s how you`d detect a sneaky chinese bot.',
-        prog='runme.py',
+        prog='mfh.py',
         )
 
-    parser.add_argument(
-        'port',
-        default=HONEYPORT,
-        help='port to start a listener on (default: %(default)s, %(type)s)',
+    client_group = parser.add_mutually_exclusive_group()
+
+    client_group.add_argument(
+        '-c',
+        action='store_true',
+        help='launch client with on port defined in settings',
+        )
+
+    client_group.add_argument(
+        '--client',
+        help='port to start a client on',
+        metavar='PORT',
         nargs='?',
         type=int,
         )
