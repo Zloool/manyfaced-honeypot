@@ -33,6 +33,13 @@ def parse():
         )
 
     parser.add_argument(
+        '-u',
+        '--updater',
+        action='store_true',
+        help='enable self updating',
+        )
+
+    parser.add_argument(
         '-v',
         '--verbose',
         action='store_true',
