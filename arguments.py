@@ -3,9 +3,16 @@ import argparse
 from settings import HONEYPORT
 
 """
-Here we define command line arguments.
-`port` stands for port, to listen on.
-`-v` to increase verbose of the server
+usage: mfh.py [-h] [-c | --client [PORT]] [-u] [-v]
+
+Serve some sweet honey to the ubiquitous bots!
+
+optional arguments:
+  -h, --help       show this help message and exit
+  -c               launch client with on port defined in settings
+  --client [PORT]  port to start a client on
+  -u, --updater    enable self updating
+  -v, --verbose    increase output verbosity
 """
 
 
