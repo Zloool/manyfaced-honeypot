@@ -8,6 +8,7 @@ if not os.path.isfile("settings.py"):
 from settings import HIVEPORT, AUTHORISEDBEARS
 from arguments import parse
 from myenc import AESCipher
+from dbconnect import Insert
 
 
 def main():
@@ -32,6 +33,7 @@ def main():
             data = pickle.loads(deciper.decrypt(request[1]))
             print data
             db.append(data)
+            Insert(data)
             with open('temp.db', "w") as f:
                 f.write(str(pickle.dumps(db)))
             connectionSocket.send("200")
