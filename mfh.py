@@ -1,10 +1,13 @@
 import os
 import sys
 import time
+
 from multiprocessing import Process, Event
 
 import mfhclient
+import server
 import update
+
 from arguments import parse
 from settings import HONEYPORT
 
@@ -16,8 +19,14 @@ def main():
         name="mfhclient_process",
         target=mfhclient.main,
         )
+    server_process = Process(
+        args=(args, update_event,),
+        name="server_process",
+        target=server.main,
+        )
     if args.client is not None:
         mfhclient_process.start()
+    server_process.start()
     if args.updater:
         trigger_process = Process(
             args=(update_event,),
