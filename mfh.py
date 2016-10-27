@@ -6,18 +6,20 @@ from multiprocessing import Process, Event
 import mfhclient
 import update
 from arguments import parse
+from settings import HONEYPORT
 
 
 def main():
-    q = Event()
+    update_event = Event()
     mfhclient_process = Process(
-        args=(args, q,),
+        args=(args, update_event,),
         name="mfhclient_process",
         target=mfhclient.main,
         )
-    mfhclient_process.start()
+    if args.client is not None:
+        mfhclient_process.start()
     trigger_process = Process(
-        args=(q,),
+        args=(update_event,),
         name="trigger_process",
         target=update.trigger,
         )
@@ -33,4 +35,6 @@ def main():
 if __name__ == '__main__':
     # Parse arguments
     args = parse()
+    if args.c:
+        args.client = HONEYPORT
     main()
