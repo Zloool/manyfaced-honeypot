@@ -9,7 +9,7 @@ import server
 import update
 
 from arguments import parse
-from settings import HONEYPORT
+from settings import HONEYPORT, HIVEPORT
 
 
 def main():
@@ -26,7 +26,8 @@ def main():
         )
     if args.client is not None:
         mfhclient_process.start()
-    server_process.start()
+    if args.client is not None:
+        server_process.start()
     if args.updater:
         trigger_process = Process(
             args=(update_event,),
@@ -35,11 +36,11 @@ def main():
             )
         trigger_process.start()
         trigger_process.join()
-    while mfhclient_process.is_alive():
+    while mfhclient_process.is_alive() or server_process.is_alive():
         time.sleep(5)
     else:
         if args.updater:
-            update.pull("origin", "master")
+            # update.pull("origin", "master")
             sys.stdout.flush()
             os.execl(sys.executable, sys.executable, *sys.argv)
 
@@ -48,4 +49,6 @@ if __name__ == '__main__':
     args = parse()
     if args.c:
         args.client = HONEYPORT
+    if args.s:
+        args.server = HIVEPORT
     main()
