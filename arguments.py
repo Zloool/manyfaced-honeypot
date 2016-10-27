@@ -1,7 +1,5 @@
 import argparse
 
-from settings import HONEYPORT
-
 """
 usage: mfh.py [-h] [-c | --client [PORT]] [-u] [-v]
 
