@@ -12,6 +12,10 @@ class BearStorage():
         self.command = parsed_request.command  # String
         self.version = parsed_request.request_version  # String
         self.headers = parsed_request.headers  # Dictionary
+        try:
+            self.ua = parsed_request.headers['User-Agent']  # Dictionary
+        except:
+            self.ua = ""
         self.isDetected = isDetected  # Bool
         self.hostname = hostname  # Bool
         location = geolite2.lookup(ip)
@@ -34,6 +38,7 @@ class BearStorage():
         output += "IP: " + self.ip + "\r\n"
         # output += "rawrequest: " + self.rawrequest + "\r\n"
         output += "timestamp: " + self.timestamp + "\r\n"
+        output += "User-Agent: " + self.ua + "\r\n"
         output += "path: " + self.path + "\r\n"
         output += "command: " + self.command + "\r\n"
         output += "version: " + self.version + "\r\n"
