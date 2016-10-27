@@ -6,11 +6,10 @@ from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
 from settings import HIVEPORT, AUTHORISEDBEARS
-from arguments import parse
 from myenc import AESCipher
 
 
-def main():
+def main(args, update_event):
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     serverSocket.bind(('', HIVEPORT))
@@ -21,8 +20,11 @@ def main():
         db = pickle.loads(stringfile)
     except:
         db = list()
-    print "Awaiting for bears on port %s" % HIVEPORT
+    if args.verbose:
+        print "Awaiting for bears on port %s" % HIVEPORT
     while True:
+        if update_event.is_set():
+            break
         connectionSocket, addr = serverSocket.accept()
         try:
             message = connectionSocket.recv(30000)
@@ -30,7 +32,8 @@ def main():
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
-            print data
+            if args.verbose:
+                print data
             db.append(data)
             with open('temp.db', "w") as f:
                 f.write(str(pickle.dumps(db)))
@@ -42,7 +45,3 @@ def main():
             finally:
                 connectionSocket.close()
     serverSocket.close()
-
-if __name__ == '__main__':
-    args = parse()
-    main()
