@@ -18,7 +18,7 @@ def main():
     server_proc = create_process("server", server.main, args, update_event)
     if args.client is not None:
         client_proc.start()
-    if args.client is not None:
+    if args.server is not None:
         server_proc.start()
     if args.updater:
         trigger = create_process("trigger", update.trigger, update_event)
