@@ -28,7 +28,7 @@ def main():
         time.sleep(5)
     else:
         if args.updater:
-            # update.pull("origin", "master")
+            update.pull("origin", "master")
             sys.stdout.flush()
             os.execl(sys.executable, sys.executable, *sys.argv)
 
