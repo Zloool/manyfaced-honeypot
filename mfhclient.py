@@ -34,9 +34,9 @@ def create_file(message, directory, dt):
     separate file, using timestamp as a filename, and SRC_IP as a foldername.
     HONEYFOLDER is the name of a root directory to save all data into.
     """
-    if not os.path.exists(HONEYFOLDER+directory):
-        os.makedirs(HONEYFOLDER+directory)
-    filename = HONEYFOLDER+directory+"/"+dt
+    if not os.path.exists(os.path.join(HONEYFOLDER, directory)):
+        os.makedirs(HONEYFOLDER, directory)
+    filename = os.path.join(HONEYFOLDER, directory, dt)
     with open(filename, "w") as f:
         f.write(str(message))
 
