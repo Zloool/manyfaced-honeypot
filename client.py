@@ -24,7 +24,7 @@ def send_report(data, client, password):
     s.sendall(message)
     response = s.recv(1024)
     s.close()
-    print 'Received', repr(response)
+    return response
 
 
 def create_file(message, directory, dt):
@@ -34,9 +34,9 @@ def create_file(message, directory, dt):
     separate file, using timestamp as a filename, and SRC_IP as a foldername.
     HONEYFOLDER is the name of a root directory to save all data into.
     """
-    if not os.path.exists(HONEYFOLDER+directory):
-        os.makedirs(HONEYFOLDER+directory)
-    filename = HONEYFOLDER+directory+"/"+dt
+    if not os.path.exists(os.path.join(HONEYFOLDER, directory)):
+        os.makedirs(HONEYFOLDER, directory)
+    filename = os.path.join(HONEYFOLDER, directory, dt)
     with open(filename, "w") as f:
         f.write(str(message))
 
@@ -127,7 +127,7 @@ def get_honey_http(request, ip_addr):
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile))
         outputdata += stringfile
-    return outputdata
+    return outputdata, request.path in cases
 
 
 def main(arguments, update_event):
@@ -151,9 +151,10 @@ def main(arguments, update_event):
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     # Bind our socket to a port
     # Will use one from settings, if not given in args
-    serverSocket.bind(('', args.port))
+    serverSocket.bind(('', args.client))
     serverSocket.listen(1)
-    print "Serving honey on port %s" % args.port
+    if args.verbose:
+        print "Serving honey on port %s" % args.client
     # Endless loop for handling requests
     while True:
         if update_event.is_set():
@@ -165,19 +166,22 @@ def main(arguments, update_event):
             # Why 30000?idk
             message = connectionSocket.recv(30000)
             ip_addr = connectionSocket.getpeername()[0]
-            dt = str(datetime.datetime.now()).replace(':', ';')
-            create_file(message, ip_addr, dt)
+            dt = str(datetime.datetime.now())
+            create_file(message, ip_addr, dt.replace(':', ';'))
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
-                outputdata = get_honey_http(request, ip_addr)
+                outputdata, detected = get_honey_http(request, ip_addr)
                 bs = BearStorage(ip_addr, message,
                                  dt,
-                                 request, True, HIVELOGIN)
+                                 request, detected, HIVELOGIN)
                 try:
-                    send_report(bs, HIVELOGIN, HIVEPASS)
+                    resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                    if args.verbose:
+                        print resp
                 except:
-                    print "Hive server is not responding :("
+                    if args.verbose:
+                        print "Hive server is not responding :("
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
@@ -185,6 +189,7 @@ def main(arguments, update_event):
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except:
-            print "Unexpected error:", sys.exc_info()[0]
+            if args.verbose:
+                print "Unexpected error:", sys.exc_info()[0]
             connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
