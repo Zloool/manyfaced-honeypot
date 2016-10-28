@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 """
 usage: mfh.py [-h] [-c | --client [PORT]] [-s | --server [PORT]] [-u] [-v]
@@ -70,5 +71,7 @@ def parse():
         action='store_true',
         help='increase output verbosity',
         )
-
+    if len(sys.argv[1:]) == 0:
+        parser.print_usage()
+        parser.exit()
     return parser.parse_args()
