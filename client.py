@@ -35,7 +35,7 @@ def create_file(message, directory, dt):
     HONEYFOLDER is the name of a root directory to save all data into.
     """
     if not os.path.exists(os.path.join(HONEYFOLDER, directory)):
-        os.makedirs(HONEYFOLDER, directory)
+        os.makedirs(os.path.join(HONEYFOLDER, directory))
     filename = os.path.join(HONEYFOLDER, directory, dt)
     with open(filename, "w") as f:
         f.write(str(message))
