@@ -35,7 +35,6 @@ def connect():
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     processes = []
-    connect()
     for i in range(10):
         processes.append(multiprocessing.Process(
             target=connect,
