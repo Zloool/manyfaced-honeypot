@@ -6,13 +6,13 @@ import time
 
 HOST = '127.0.0.1'    # The remote host
 PORT = 80              # The same port as used by the server
+ptr = string.ascii_uppercase + string.digits
+ptr += "!@#$%^&*()_+`-~ .,"
 for i in range(1, 10000):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((HOST, PORT))
         N = i
-        ptr = string.ascii_uppercase + string.digits
-        ptr += "!@#$%^&*()_+`-~"
         str = ''.join(random.choice(ptr) for _ in range(N))
         s.sendall(str)
         s.close()
