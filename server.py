@@ -1,13 +1,15 @@
 import pickle
 import os
 from shutil import copyfile
-from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
+                    error as sockerror)
 
 if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
 from settings import HIVEPORT, AUTHORISEDBEARS
 from myenc import AESCipher
 from dbconnect import Insert
+
 
 def DumpToFile(data):
     try:
@@ -48,9 +50,12 @@ def main(args, update_event):
                     print "Error writing data to clickhouse, writing to file"
             connectionSocket.send("200")
             connectionSocket.close()
+        except sockerror:
+            continue
         except:
             try:
                 connectionSocket.send("CODE 300 FUCK YOU")
-            finally:
-                connectionSocket.close()
+            except:
+                continue
+
     serverSocket.close()
