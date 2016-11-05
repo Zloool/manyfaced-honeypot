@@ -3,7 +3,8 @@ import os
 import sys
 import pickle
 from shutil import copyfile
-from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
+                    error as sockerror)
 
 
 if not os.path.isfile("settings.py"):
@@ -188,6 +189,8 @@ def main(arguments, update_event):
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
+        except sockerror:
+            continue
         except:
             if args.verbose:
                 print "Unexpected error:", sys.exc_info()[0]
