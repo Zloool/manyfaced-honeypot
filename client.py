@@ -165,7 +165,7 @@ def main(arguments, update_event):
         try:
             # Argument is the number of bytes to recieve from client
             # Why 30000?idk
-            message = connectionSocket.recv(30000)
+            message = connectionSocket.recv(4000)
             ip_addr = connectionSocket.getpeername()[0]
             dt = str(datetime.datetime.now())
             create_file(message, ip_addr, dt.replace(':', ';'))

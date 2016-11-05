@@ -37,7 +37,7 @@ def main(args, update_event):
             break
         connectionSocket, addr = serverSocket.accept()
         try:
-            message = connectionSocket.recv(30000)
+            message = connectionSocket.recv(16000)
             request = message.split(":")
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
