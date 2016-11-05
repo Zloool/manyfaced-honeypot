@@ -117,7 +117,7 @@ def get_honey_http(request, ip_addr):
             print ip_addr + " " + request.path + " gotcha!"
     else:  # If we dont know what to do with that request
         if args.verbose:
-            print ip_addr + " " + request.path + " not detected..."
+            print ip_addr + " " + request.path[:50] + " not detected..."
         if request.path not in unknown_faces:
             # Lets add him to our todo list ;) (if we dont already have it)
             unknown_faces.append(request.path)
