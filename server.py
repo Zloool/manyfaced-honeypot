@@ -1,5 +1,7 @@
 import pickle
 import os
+
+from requests.exceptions import ConnectionError
 from shutil import copyfile
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
@@ -44,7 +46,7 @@ def main(args, update_event):
                 print data
             try:
                 Insert(data)
-            except:
+            except ConnectionError:
                 DumpToFile(data)
                 if args.verbose:
                     print "Error writing data to clickhouse, writing to file"
@@ -52,10 +54,7 @@ def main(args, update_event):
             connectionSocket.close()
         except sockerror:
             continue
-        except:
-            try:
-                connectionSocket.send("CODE 300 FUCK YOU")
-            except:
-                continue
+        except KeyError:
+            connectionSocket.send("CODE 300 FUCK YOU")
 
     serverSocket.close()
