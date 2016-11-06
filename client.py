@@ -172,17 +172,20 @@ def main(arguments, update_event):
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
-                outputdata, detected = get_honey_http(request, ip_addr)
-                bs = BearStorage(ip_addr, message,
-                                 dt,
-                                 request, detected, HIVELOGIN)
-                try:
-                    resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                    if args.verbose:
-                        print resp
-                except:
-                    if args.verbose:
-                        print "Hive server is not responding :("
+                if hasattr(request, 'path'):
+                    outputdata, detected = get_honey_http(request, ip_addr)
+                    bs = BearStorage(ip_addr, message,
+                                     dt,
+                                     request, detected, HIVELOGIN)
+                    try:
+                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                        if args.verbose:
+                            print resp
+                    except:
+                        if args.verbose:
+                            print "Hive server is not responding :("
+                else:
+                    outputdata = message
             # If it's not an HTTP request, it goes here
             else:
                 path = str(request.error_code)  # use non-http parser here
@@ -191,8 +194,4 @@ def main(arguments, update_event):
             connectionSocket.close()
         except sockerror:
             continue
-        except:
-            if args.verbose:
-                print "Unexpected error:", sys.exc_info()[0]
-            connectionSocket.close()
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
