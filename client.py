@@ -1,6 +1,5 @@
 import datetime
 import os
-import sys
 import pickle
 from shutil import copyfile
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
