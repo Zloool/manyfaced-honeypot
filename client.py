@@ -159,7 +159,12 @@ def main(arguments, update_event):
     while True:
         if update_event.is_set():
             break
-        connectionSocket, addr = serverSocket.accept()
+        try:
+            connectionSocket, addr = serverSocket.accept()
+        except KeyboardInterrupt:
+            if 'connectionSocket' in locals():
+                connectionSocket.close()
+            break
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
