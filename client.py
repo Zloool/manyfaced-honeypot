@@ -181,7 +181,7 @@ def main(arguments, update_event):
                         resp = send_report(bs, HIVELOGIN, HIVEPASS)
                         if args.verbose:
                             print resp
-                    except:
+                    except sockerror:
                         if args.verbose:
                             print "Hive server is not responding :("
                 else:
