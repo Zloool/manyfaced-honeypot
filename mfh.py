@@ -25,7 +25,13 @@ def main():
         trigger.start()
         trigger.join()
     while client_proc.is_alive() or server_proc.is_alive():
-        time.sleep(5)
+        try:
+            time.sleep(5)
+        except KeyboardInterrupt:
+            if client_proc.is_alive():
+                client_proc.terminate()
+            if server_proc.is_alive():
+                server_proc.terminate()
     else:
         if args.updater:
             update.pull("origin", "master")
