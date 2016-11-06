@@ -35,7 +35,12 @@ def main(args, update_event):
     while True:
         if update_event.is_set():
             break
-        connectionSocket, addr = serverSocket.accept()
+        try:
+            connectionSocket, addr = serverSocket.accept()
+        except KeyboardInterrupt:
+            if 'connectionSocket' in locals():
+                connectionSocket.close()
+            break
         try:
             message = connectionSocket.recv(16000)
             request = message.split(":")
