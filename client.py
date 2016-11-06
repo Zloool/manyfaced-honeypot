@@ -188,7 +188,7 @@ def main(arguments, update_event):
                     outputdata = message
             # If it's not an HTTP request, it goes here
             else:
-                path = str(request.error_code)  # use non-http parser here
+                #  use non-http parser here
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
