@@ -54,4 +54,7 @@ if __name__ == '__main__':
         args.client = HONEYPORT
     if args.s:
         args.server = HIVEPORT
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit()
