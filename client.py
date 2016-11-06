@@ -1,9 +1,9 @@
 import datetime
 import os
-import sys
 import pickle
 from shutil import copyfile
-from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
+                    error as sockerror)
 
 
 if not os.path.isfile("settings.py"):
@@ -116,7 +116,7 @@ def get_honey_http(request, ip_addr):
             print ip_addr + " " + request.path + " gotcha!"
     else:  # If we dont know what to do with that request
         if args.verbose:
-            print ip_addr + " " + request.path + " not detected..."
+            print ip_addr + " " + request.path[:50] + " not detected..."
         if request.path not in unknown_faces:
             # Lets add him to our todo list ;) (if we dont already have it)
             unknown_faces.append(request.path)
@@ -164,32 +164,33 @@ def main(arguments, update_event):
         try:
             # Argument is the number of bytes to recieve from client
             # Why 30000?idk
-            message = connectionSocket.recv(30000)
+            message = connectionSocket.recv(4000)
             ip_addr = connectionSocket.getpeername()[0]
             dt = str(datetime.datetime.now())
             create_file(message, ip_addr, dt.replace(':', ';'))
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
-                outputdata, detected = get_honey_http(request, ip_addr)
-                bs = BearStorage(ip_addr, message,
-                                 dt,
-                                 request, detected, HIVELOGIN)
-                try:
-                    resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                    if args.verbose:
-                        print resp
-                except:
-                    if args.verbose:
-                        print "Hive server is not responding :("
+                if hasattr(request, 'path'):
+                    outputdata, detected = get_honey_http(request, ip_addr)
+                    bs = BearStorage(ip_addr, message,
+                                     dt,
+                                     request, detected, HIVELOGIN)
+                    try:
+                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                        if args.verbose:
+                            print resp
+                    except sockerror:
+                        if args.verbose:
+                            print "Hive server is not responding :("
+                else:
+                    outputdata = message
             # If it's not an HTTP request, it goes here
             else:
-                path = str(request.error_code)  # use non-http parser here
+                #  use non-http parser here
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
-        except:
-            if args.verbose:
-                print "Unexpected error:", sys.exc_info()[0]
-            connectionSocket.close()
+        except sockerror:
+            continue
     serverSocket.close()  # This line is never achieved, implement in SIGINT?

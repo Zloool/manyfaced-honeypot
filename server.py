@@ -1,13 +1,17 @@
 import pickle
 import os
+
+from requests.exceptions import ConnectionError
 from shutil import copyfile
-from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
+                    error as sockerror)
 
 if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
 from settings import HIVEPORT, AUTHORISEDBEARS
 from myenc import AESCipher
 from dbconnect import Insert
+
 
 def DumpToFile(data):
     try:
@@ -33,7 +37,7 @@ def main(args, update_event):
             break
         connectionSocket, addr = serverSocket.accept()
         try:
-            message = connectionSocket.recv(30000)
+            message = connectionSocket.recv(16000)
             request = message.split(":")
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
@@ -42,15 +46,17 @@ def main(args, update_event):
                 print data
             try:
                 Insert(data)
-            except:
+            except ConnectionError:
                 DumpToFile(data)
                 if args.verbose:
                     print "Error writing data to clickhouse, writing to file"
             connectionSocket.send("200")
             connectionSocket.close()
-        except:
-            try:
-                connectionSocket.send("CODE 300 FUCK YOU")
-            finally:
-                connectionSocket.close()
+        except sockerror:
+            continue
+        except TypeError:
+            continue
+        except KeyError:
+            connectionSocket.send("CODE 300 FUCK YOU")
+
     serverSocket.close()
