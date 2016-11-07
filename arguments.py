@@ -29,6 +29,7 @@ def parse():
     parser.add_argument(
         '-c',
         const=settings.HONEYPORT,
+        dest='client',
         help='port to start a CLIENT on',
         metavar='PORT',
         nargs='?',
@@ -38,6 +39,7 @@ def parse():
     parser.add_argument(
         '-s',
         const=settings.HIVEPORT,
+        dest='server',
         help='port to start a SERVER on',
         metavar='PORT',
         nargs='?',
@@ -47,6 +49,7 @@ def parse():
     parser.add_argument(
         '-u',
         action='store_true',
+        dest='updater',
         help='enable self updating',
         )
 
