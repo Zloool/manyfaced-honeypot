@@ -1,13 +1,9 @@
 import pickle
-import os
 
 from requests.exceptions import ConnectionError
-from shutil import copyfile
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
-if not os.path.isfile("settings.py"):
-    copyfile("settings.py.example", "settings.py")
 from settings import HIVEPORT, AUTHORISEDBEARS
 from myenc import AESCipher
 from dbconnect import Insert
