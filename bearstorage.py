@@ -8,13 +8,25 @@ class BearStorage():
         self.ip = ip  # String
         self.rawrequest = rawrequest  # String
         self.timestamp = timestamp  # Datetime
-        self.path = parsed_request.path  # String
-        self.command = parsed_request.command  # String
-        self.version = parsed_request.request_version  # String
-        self.headers = parsed_request.headers  # Dictionary
-        try:
+        if hasattr(parsed_request, 'path'):
+            self.path = parsed_request.path  # String
+        else:
+            self.path = ""
+        if hasattr(parsed_request, 'command'):
+            self.command = parsed_request.command  # String
+        else:
+            self.command = ""
+        if hasattr(parsed_request, 'request_version'):
+            self.version = parsed_request.request_version  # String
+        else:
+            self.version = ""
+        if hasattr(parsed_request, 'headers'):
+            self.headers = parsed_request.headers  # Dictionary
+        else:
+            self.headers = ""
+        if 'User-Agent' in parsed_request.headers.keys():
             self.ua = parsed_request.headers['User-Agent']  # Dictionary
-        except:
+        else:
             self.ua = ""
         self.isDetected = isDetected  # Bool
         self.hostname = hostname  # Bool
