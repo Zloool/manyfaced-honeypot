@@ -25,7 +25,6 @@ def main():
         )
         client_proc.start()
     if args.server is not None:
-        print "Sterting server"
         server_proc = Process(
             args=(args, update_event,),
             name="server",
