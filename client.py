@@ -5,11 +5,12 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
 
-from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
 from bearstorage import BearStorage
+from server import DumpToFile
 
 
 def send_report(data, client, password):
@@ -22,20 +23,6 @@ def send_report(data, client, password):
     response = s.recv(1024)
     s.close()
     return response
-
-
-def create_file(message, directory, dt):
-    """
-    Temporary function, being used for storing honeypot data, before i
-    add ClickHouse as the storage. I am using it to save each packet to a
-    separate file, using timestamp as a filename, and SRC_IP as a foldername.
-    HONEYFOLDER is the name of a root directory to save all data into.
-    """
-    if not os.path.exists(os.path.join(HONEYFOLDER, directory)):
-        os.makedirs(os.path.join(HONEYFOLDER, directory))
-    filename = os.path.join(HONEYFOLDER, directory, dt)
-    with open(filename, "w") as f:
-        f.write(str(message))
 
 
 def compile_banner(msgsize=0,
@@ -169,7 +156,6 @@ def main(arguments, update_event):
             message = connectionSocket.recv(4000)
             ip_addr = connectionSocket.getpeername()[0]
             dt = str(datetime.datetime.now())
-            create_file(message, ip_addr, dt.replace(':', ';'))
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
@@ -185,8 +171,20 @@ def main(arguments, update_event):
                     except sockerror:
                         if args.verbose:
                             print "Hive server is not responding :("
+                        DumpToFile(bs)
                 else:
+                    bs = BearStorage(ip_addr, message,
+                                     dt,
+                                     request, detected, HIVELOGIN)
                     outputdata = message
+                    try:
+                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                        if args.verbose:
+                            print resp
+                    except sockerror:
+                        if args.verbose:
+                            print "Hive server is not responding :("
+                        DumpToFile(bs)
             # If it's not an HTTP request, it goes here
             else:
                 #  use non-http parser here
