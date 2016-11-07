@@ -5,7 +5,7 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
 
-from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from settings import HIVEHOST, HIVELOGIN, HIVEPASS
 from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
@@ -18,7 +18,7 @@ def send_report(data, client, password):
     message = client + ":"
     message += ciper.encrypt(pickle.dumps(data))
     s = socket(AF_INET, SOCK_STREAM)
-    s.connect((HIVEHOST, HIVEPORT))
+    s.connect((HIVEHOST, args.server))
     s.sendall(message)
     response = s.recv(1024)
     s.close()
