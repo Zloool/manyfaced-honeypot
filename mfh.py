@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from shutil import copyfile
 
 from multiprocessing import Process, Event
 
@@ -8,8 +9,10 @@ import client
 import server
 import update
 
-from arguments import parse
+if not os.path.isfile("settings.py"):
+    copyfile("settings.py.example", "settings.py")
 from settings import HONEYPORT, HIVEPORT
+from arguments import parse
 
 
 def main():
@@ -46,12 +49,11 @@ def main():
 
 
 def create_process(name, function,  *arguments):
-    process = Process(
+    return Process(
         args=arguments,
         name=name,
         target=function,
         )
-    return process
 
 if __name__ == '__main__':
     # Parse arguments
