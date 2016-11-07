@@ -24,10 +24,10 @@ def DumpToFile(data):
 def main(args, update_event):
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    serverSocket.bind(('', HIVEPORT))
+    serverSocket.bind(('', args.server))
     serverSocket.listen(1)
     if args.verbose:
-        print "Awaiting for bears on port %s" % HIVEPORT
+        print "Awaiting for bears on port %s" % args.server
     while True:
         if update_event.is_set():
             break
