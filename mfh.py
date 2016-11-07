@@ -2,20 +2,17 @@ import os
 import sys
 import time
 from shutil import copyfile
-
 from multiprocessing import Process, Event
 
 import client
 import server
 import update
-
-if not os.path.isfile("settings.py"):
-    copyfile("settings.py.example", "settings.py")
-from settings import HONEYPORT, HIVEPORT
 from arguments import parse
 
 
 def main():
+    if not os.path.isfile("settings.py"):
+        copyfile("settings.py.example", "settings.py")
     update_event = Event()
     if args.client is not None:
         client_proc = Process(
