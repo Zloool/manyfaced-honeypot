@@ -30,7 +30,6 @@ def parse():
 
     parser.add_argument(
         '-c',
-        '--client',
         const=settings.HONEYPORT,
         help='port to start a CLIENT on',
         metavar='PORT',
@@ -40,7 +39,6 @@ def parse():
 
     parser.add_argument(
         '-s',
-        '--server',
         const=settings.HIVEPORT,
         help='port to start a SERVER on',
         metavar='PORT',
@@ -50,7 +48,6 @@ def parse():
 
     parser.add_argument(
         '-u',
-        '--updater',
         action='store_true',
         help='enable self updating',
         )
