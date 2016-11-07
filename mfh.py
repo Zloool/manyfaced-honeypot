@@ -18,13 +18,25 @@ from arguments import parse
 def main():
     update_event = Event()
     if args.client is not None:
-        client_proc = create_process("client", client.main, args, update_event)
+        client_proc = Process(
+            args=(args, update_event,),
+            name="client",
+            target=client.main,
+        )
         client_proc.start()
     if args.server is not None:
-        server_proc = create_process("server", server.main, args, update_event)
+        server_proc = Process(
+            args=(args, update_event,),
+            name="server",
+            target=server.main,
+        )
         server_proc.start()
     if args.updater:
-        trigger_proc = create_process("trigger", update.trigger, update_event)
+        trigger_proc = Process(
+            args=(update_event,),
+            name="trigger",
+            target=update.trigger,
+        )
         trigger_proc.start()
         trigger_proc.join()
     while True:
@@ -46,14 +58,6 @@ def main():
             update.pull("origin", "master")
             sys.stdout.flush()
             os.execl(sys.executable, sys.executable, *sys.argv)
-
-
-def create_process(name, function,  *arguments):
-    return Process(
-        args=arguments,
-        name=name,
-        target=function,
-        )
 
 if __name__ == '__main__':
     # Parse arguments
