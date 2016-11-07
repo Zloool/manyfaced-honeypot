@@ -1,13 +1,10 @@
 import datetime
 import os
 import pickle
-from shutil import copyfile
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
 
-if not os.path.isfile("settings.py"):
-    copyfile("settings.py.example", "settings.py")
 from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from faces import faces
 from httphandler import HTTPRequest
