@@ -4,18 +4,16 @@ import sys
 import settings
 
 """
-usage: mfh.py [-h] [-c | --client [PORT]] [-s | --server [PORT]] [-u] [-v]
+usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-u] [-v]
 
 Serve some sweet honey to the ubiquitous bots!
 
 optional arguments:
-  -h, --help       show this help message and exit
-  -c               launch client with on port defined in settings
-  --client [PORT]  port to start a client on
-  -s               launch server with on port defined in settings
-  --server [PORT]  port to start a server on
-  -u, --updater    enable self updating
-  -v, --verbose    increase output verbosity
+  -h, --help     show this help message and exit
+  -c [PORT]      port to start a CLIENT on
+  -s [PORT]      port to start a SERVER on
+  -u             enable self updating
+  -v, --verbose  increase output verbosity
 
 And that`s how you`d detect a sneaky chinese bot.
 """
