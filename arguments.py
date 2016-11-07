@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+import settings
+
 """
 usage: mfh.py [-h] [-c | --client [PORT]] [-s | --server [PORT]] [-u] [-v]
 
@@ -26,33 +28,21 @@ def parse():
         prog='mfh.py',
         )
 
-    client_group = parser.add_mutually_exclusive_group()
-
-    client_group.add_argument(
+    parser.add_argument(
         '-c',
-        action='store_true',
-        help='launch client with on port defined in settings',
-        )
-
-    client_group.add_argument(
         '--client',
-        help='port to start a client on',
+        const=settings.HONEYPORT,
+        help='port to start a CLIENT on',
         metavar='PORT',
         nargs='?',
         type=int,
         )
 
-    server_group = parser.add_mutually_exclusive_group()
-
-    server_group.add_argument(
+    parser.add_argument(
         '-s',
-        action='store_true',
-        help='launch server with on port defined in settings',
-        )
-
-    server_group.add_argument(
         '--server',
-        help='port to start a server on',
+        const=settings.HIVEPORT,
+        help='port to start a SERVER on',
         metavar='PORT',
         nargs='?',
         type=int,
