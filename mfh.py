@@ -25,6 +25,7 @@ def main():
         )
         client_proc.start()
     if args.server is not None:
+        print "Sterting server"
         server_proc = Process(
             args=(args, update_event,),
             name="server",
@@ -62,10 +63,6 @@ def main():
 if __name__ == '__main__':
     # Parse arguments
     args = parse()
-    if args.c:
-        args.client = HONEYPORT
-    if args.s:
-        args.server = HIVEPORT
     try:
         main()
     except KeyboardInterrupt:
