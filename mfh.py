@@ -14,24 +14,30 @@ from settings import HONEYPORT, HIVEPORT
 
 def main():
     update_event = Event()
-    client_proc = create_process("client", client.main, args, update_event)
-    server_proc = create_process("server", server.main, args, update_event)
     if args.client is not None:
+        client_proc = create_process("client", client.main, args, update_event)
         client_proc.start()
     if args.server is not None:
+        server_proc = create_process("server", server.main, args, update_event)
         server_proc.start()
     if args.updater:
-        trigger = create_process("trigger", update.trigger, update_event)
-        trigger.start()
-        trigger.join()
-    while client_proc.is_alive() or server_proc.is_alive():
+        trigger_proc = create_process("trigger", update.trigger, update_event)
+        trigger_proc.start()
+        trigger_proc.join()
+    while True:
         try:
             time.sleep(5)
         except KeyboardInterrupt:
-            if client_proc.is_alive():
-                client_proc.terminate()
-            if server_proc.is_alive():
-                server_proc.terminate()
+            if 'client_proc' in locals():
+                if client_proc.is_alive():
+                    client_proc.terminate()
+            if 'server_proc' in locals():
+                if server_proc.is_alive():
+                    server_proc.terminate()
+            if 'trigger_proc' in locals():
+                if trigger_proc.is_alive():
+                    trigger_proc.terminate()
+            break
     else:
         if args.updater:
             update.pull("origin", "master")
