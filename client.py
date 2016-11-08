@@ -79,7 +79,7 @@ def get_honey_http(args, request, ip_addr):
     if request.path in faces:  # If we know what to do with request
         respfilename = faces[request.path]
         if respfilename == "webdav.xml":  # Compile response for WEBDAV listing
-            with file('responses/'+faces[request.path]) as f:
+            with file('responses/' + faces[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
                                          contenttype='application/xml; '
@@ -96,7 +96,7 @@ def get_honey_http(args, request, ip_addr):
                                          "; charset=UTF-8")
             outputdata += stringfile
         else:  # If our request doesnt require special treatment, it goes here
-            with file('responses/'+faces[request.path]) as f:
+            with file('responses/' + faces[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(msgsize=len(stringfile))
             outputdata += stringfile
@@ -111,7 +111,7 @@ def get_honey_http(args, request, ip_addr):
             with open("local_faces.txt", "a") as f:
                 f.write(request.path + "\n")
         # Send default response
-        with file('responses/'+faces["zero"]) as f:
+        with file('responses/' + faces["zero"]) as f:
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile))
         outputdata += stringfile
@@ -156,6 +156,7 @@ def main(args, update_event):
             # Argument is the number of bytes to recieve from client
             message = connectionSocket.recv(4000)
         except sockerror:
+            print "Failed to recieve data from bot"
             continue
         ip_addr = connectionSocket.getpeername()[0]
         dt = str(datetime.datetime.utcnow())
@@ -174,12 +175,14 @@ def main(args, update_event):
                 print "Got non-http request"
             detected = -2
             outputdata = message
-        bs = BearStorage(ip_addr, message, dt,
+        bs = BearStorage(ip_addr, message,
+                         dt,
                          request, detected, HIVELOGIN)
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
+            print "Failed to send response to bot"
             continue
         try:
             resp = send_report(bs, HIVELOGIN, HIVEPASS)
