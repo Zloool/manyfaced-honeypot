@@ -26,7 +26,7 @@ def send_report(data, client, password):
     except sockerror:
         if args.verbose:
             return "Hive server is not responding :("
-        DumpToFile(bs)
+        DumpToFile(data)
     return response
 
 
