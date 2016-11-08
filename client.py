@@ -155,26 +155,29 @@ def main(args, update_event):
         try:
             # Argument is the number of bytes to recieve from client
             message = connectionSocket.recv(4000)
-            ip_addr = connectionSocket.getpeername()[0]
-            dt = str(datetime.datetime.utcnow())
-            # Try to parse request parameters from message
-            request = HTTPRequest(message)
-            if request.error_code is None:
-                if hasattr(request, 'path'):
-                    outputdata, detected = get_honey_http(
-                        args, request, ip_addr)
-                else:
-                    outputdata = message
-                    detected = -1
-            # If it's not an HTTP request, it goes here
+        except sockerror:
+            continue
+        ip_addr = connectionSocket.getpeername()[0]
+        dt = str(datetime.datetime.utcnow())
+        # Try to parse request parameters from message
+        request = HTTPRequest(message)
+        if request.error_code is None:
+            if hasattr(request, 'path'):
+                outputdata, detected = get_honey_http(
+                    args, request, ip_addr)
             else:
-                if args.verbose:
-                    print "Got non-http request"
-                detected = -2
                 outputdata = message
-            bs = BearStorage(ip_addr, message,
-                             dt,
-                             request, detected, HIVELOGIN)
+                detected = -1
+        # If it's not an HTTP request, it goes here
+        else:
+            if args.verbose:
+                print "Got non-http request"
+            detected = -2
+            outputdata = message
+        bs = BearStorage(ip_addr, message,
+                         dt,
+                         request, detected, HIVELOGIN)
+        try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
