@@ -4,7 +4,7 @@ from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
-from settings import HIVEPORT, AUTHORISEDBEARS
+from settings import AUTHORISEDBEARS
 from myenc import AESCipher
 from dbconnect import Insert
 
@@ -19,6 +19,7 @@ def DumpToFile(data):
     db.append(data)
     with open('temp.db', "w") as f:
         f.write(str(pickle.dumps(db)))
+
 
 def DataSaving(data, args):
     try:
