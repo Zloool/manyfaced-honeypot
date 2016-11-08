@@ -169,24 +169,18 @@ def main(arguments, update_event):
                 else:
                     outputdata = message
                     detected = -1
-                bs = BearStorage(ip_addr, message,
-                                 dt,
-                                 request, detected, HIVELOGIN)
-                resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                if args.verbose:
-                    print resp
             # If it's not an HTTP request, it goes here
             else:
                 if args.verbose:
                     print "Got non-http request"
                 detected = -2
-                bs = BearStorage(ip_addr, message,
-                                 dt,
-                                 request, detected, HIVELOGIN)
-                resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                if args.verbose:
-                    print resp
                 outputdata = message  # Fuck you
+            bs = BearStorage(ip_addr, message,
+                             dt,
+                             request, detected, HIVELOGIN)
+            resp = send_report(bs, HIVELOGIN, HIVEPASS)
+            if args.verbose:
+                print resp
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
