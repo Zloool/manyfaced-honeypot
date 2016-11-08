@@ -60,14 +60,13 @@ def main(args, update_event):
                 target=DataSaving
             ).start()
             connectionSocket.send("200")
-            connectionSocket.close()
         except sockerror:
             continue
         except TypeError:
             continue
         except KeyError:
             connectionSocket.send("CODE 300 FUCK YOU")
-        except:
-            connectionSocket.send("CODE 300 FUCK YOU")
+        finally:
+            connectionSocket.close()
 
     serverSocket.close()
