@@ -5,7 +5,7 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
 
-from settings import HIVEHOST, HIVELOGIN, HIVEPASS
+from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
@@ -18,10 +18,15 @@ def send_report(data, client, password):
     message = client + ":"
     message += ciper.encrypt(pickle.dumps(data))
     s = socket(AF_INET, SOCK_STREAM)
-    s.connect((HIVEHOST, args.server))
-    s.sendall(message)
-    response = s.recv(1024)
-    s.close()
+    try:
+        s.connect((HIVEHOST, HIVEPORT))
+        s.sendall(message)
+        response = s.recv(1024)
+        s.close()
+    except sockerror:
+        if args.verbose:
+            return "Hive server is not responding :("
+        DumpToFile(bs)
     return response
 
 
@@ -161,33 +166,26 @@ def main(arguments, update_event):
             if request.error_code is None:
                 if hasattr(request, 'path'):
                     outputdata, detected = get_honey_http(request, ip_addr)
-                    bs = BearStorage(ip_addr, message,
-                                     dt,
-                                     request, detected, HIVELOGIN)
-                    try:
-                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                        if args.verbose:
-                            print resp
-                    except sockerror:
-                        if args.verbose:
-                            print "Hive server is not responding :("
-                        DumpToFile(bs)
                 else:
-                    bs = BearStorage(ip_addr, message,
-                                     dt,
-                                     request, detected, HIVELOGIN)
                     outputdata = message
-                    try:
-                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                        if args.verbose:
-                            print resp
-                    except sockerror:
-                        if args.verbose:
-                            print "Hive server is not responding :("
-                        DumpToFile(bs)
+                    detected = -1
+                bs = BearStorage(ip_addr, message,
+                                 dt,
+                                 request, detected, HIVELOGIN)
+                resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                if args.verbose:
+                    print resp
             # If it's not an HTTP request, it goes here
             else:
-                #  use non-http parser here
+                if args.verbose:
+                    print "Got non-http request"
+                detected = -2
+                bs = BearStorage(ip_addr, message,
+                                 dt,
+                                 request, detected, HIVELOGIN)
+                resp = send_report(bs, HIVELOGIN, HIVEPASS)
+                if args.verbose:
+                    print resp
                 outputdata = message  # Fuck you
             connectionSocket.send(outputdata)
             connectionSocket.close()
