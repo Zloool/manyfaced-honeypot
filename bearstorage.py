@@ -5,23 +5,27 @@ from geoip import geolite2
 class BearStorage():
     def __init__(self, ip, rawrequest, timestamp, parsed_request, isDetected,
                  hostname):
-        self.ip = ip  # String
-        self.rawrequest = rawrequest  # String
-        self.timestamp = timestamp  # Datetime
+        self.ip = ip
+        self.rawrequest = rawrequest
+        self.timestamp = timestamp
         if hasattr(parsed_request, 'path'):
-            self.path = parsed_request.path  # String
+            self.path = parsed_request.path
         else:
             self.path = ""
-        if hasattr(parsed_request, 'command'):
-            self.command = parsed_request.command  # String
+        if parsed_request.command is not None:
+            self.command = parsed_request.command
         else:
             self.command = ""
         if hasattr(parsed_request, 'request_version'):
-            self.version = parsed_request.request_version  # String
+            self.version = parsed_request.request_version
         else:
             self.version = ""
         if hasattr(parsed_request, 'headers'):
-            self.headers = parsed_request.headers  # Dictionary
+            self.headers = parsed_request.headers
+            if 'User-Agent' in parsed_request.headers.keys():
+                self.ua = parsed_request.headers['User-Agent']
+            else:
+                self.ua = ""
         else:
             self.headers = ""
         if 'User-Agent' in parsed_request.headers.keys():
@@ -48,13 +52,11 @@ class BearStorage():
     def __str__(self):
         output = "hostname: " + self.hostname + "\r\n"
         output += "IP: " + self.ip + "\r\n"
-        # output += "rawrequest: " + self.rawrequest + "\r\n"
         output += "timestamp: " + self.timestamp + "\r\n"
         output += "User-Agent: " + self.ua + "\r\n"
         output += "path: " + self.path + "\r\n"
         output += "command: " + self.command + "\r\n"
         output += "version: " + self.version + "\r\n"
-        # output += "headers: " + str(self.headers) + "\r\n"
         output += "country: " + self.country + "\r\n"
         output += "continent: " + self.continent + "\r\n"
         output += "timezone: " + self.timezone + "\r\n"
@@ -66,14 +68,3 @@ class BearStorage():
 
     def __repr__(self):
         return self.__str__()
-
-# import subprocess
-# host = 'www.microsoft.com'
-# p = subprocess.Popen(["tracert", '-d', '-w', '100', host],
-#                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-# while True:
-#     line = p.stdout.readline()
-#     if not line:
-#         break
-#     print '-->', line,
-# p.wait()
