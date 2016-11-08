@@ -59,5 +59,7 @@ def main(args, update_event):
             continue
         except KeyError:
             connectionSocket.send("CODE 300 FUCK YOU")
+        except:
+            connectionSocket.send("CODE 300 FUCK YOU")
 
     serverSocket.close()
