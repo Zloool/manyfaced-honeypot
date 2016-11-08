@@ -3,6 +3,7 @@ import os
 import pickle
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
+from threading import Thread
 
 
 from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
@@ -25,8 +26,8 @@ def send_report(data, client, password):
         s.close()
     except sockerror:
         DumpToFile(data)
-        return "Hive server is not responding :("
-    return response
+        print "Hive server is not responding :("
+    print response
 
 
 def compile_banner(msgsize=0,
@@ -184,7 +185,10 @@ def main(args, update_event):
         except sockerror:
             print "Failed to send response to bot"
             continue
-        resp = send_report(bs, HIVELOGIN, HIVEPASS)
-        if args.verbose:
-            print resp
+        response = Thread(
+            args=(bs, HIVELOGIN, HIVEPASS,),
+            target=send_report,
+            )
+        response.start()
+        response.join()
     serverSocket.close()
