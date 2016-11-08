@@ -160,7 +160,7 @@ def main(arguments, update_event):
             # Why 30000?idk
             message = connectionSocket.recv(4000)
             ip_addr = connectionSocket.getpeername()[0]
-            dt = str(datetime.datetime.now())
+            dt = str(datetime.datetime.utcnow())
             # Try to parse request parameters from message
             request = HTTPRequest(message)
             if request.error_code is None:
