@@ -184,10 +184,7 @@ def main(args, update_event):
         except sockerror:
             print "Failed to send response to bot"
             continue
-        try:
-            resp = send_report(bs, HIVELOGIN, HIVEPASS)
-            if args.verbose:
-                print resp
-        except sockerror:
-            continue
+        resp = send_report(bs, HIVELOGIN, HIVEPASS)
+        if args.verbose:
+            print resp
     serverSocket.close()
