@@ -8,18 +8,15 @@ class BearStorage():
         self.ip = ip
         self.rawrequest = rawrequest
         self.timestamp = timestamp
+        self.path = ""
+        self.command = ""
+        self.version = ""
         if hasattr(parsed_request, 'path'):
             self.path = parsed_request.path
-        else:
-            self.path = ""
         if parsed_request.command is not None:
             self.command = parsed_request.command
-        else:
-            self.command = ""
         if hasattr(parsed_request, 'request_version'):
             self.version = parsed_request.request_version
-        else:
-            self.version = ""
         if hasattr(parsed_request, 'headers'):
             self.headers = parsed_request.headers
             if 'User-Agent' in parsed_request.headers.keys():
