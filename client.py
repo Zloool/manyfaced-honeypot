@@ -1,18 +1,16 @@
 import datetime
 import os
 import pickle
-from shutil import copyfile
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
 
-if not os.path.isfile("settings.py"):
-    copyfile("settings.py.example", "settings.py")
-from settings import HONEYFOLDER, HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
 from bearstorage import BearStorage
+from server import DumpToFile
 
 
 def send_report(data, client, password):
@@ -20,25 +18,15 @@ def send_report(data, client, password):
     message = client + ":"
     message += ciper.encrypt(pickle.dumps(data))
     s = socket(AF_INET, SOCK_STREAM)
-    s.connect((HIVEHOST, HIVEPORT))
-    s.sendall(message)
-    response = s.recv(1024)
-    s.close()
+    try:
+        s.connect((HIVEHOST, HIVEPORT))
+        s.sendall(message)
+        response = s.recv(1024)
+        s.close()
+    except sockerror:
+        DumpToFile(data)
+        return "Hive server is not responding :("
     return response
-
-
-def create_file(message, directory, dt):
-    """
-    Temporary function, being used for storing honeypot data, before i
-    add ClickHouse as the storage. I am using it to save each packet to a
-    separate file, using timestamp as a filename, and SRC_IP as a foldername.
-    HONEYFOLDER is the name of a root directory to save all data into.
-    """
-    if not os.path.exists(os.path.join(HONEYFOLDER, directory)):
-        os.makedirs(os.path.join(HONEYFOLDER, directory))
-    filename = os.path.join(HONEYFOLDER, directory, dt)
-    with open(filename, "w") as f:
-        f.write(str(message))
 
 
 def compile_banner(msgsize=0,
@@ -77,7 +65,7 @@ def compile_banner(msgsize=0,
     return banner
 
 
-def get_honey_http(request, ip_addr):
+def get_honey_http(args, request, ip_addr):
     """
     This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
@@ -91,7 +79,7 @@ def get_honey_http(request, ip_addr):
     if request.path in faces:  # If we know what to do with request
         respfilename = faces[request.path]
         if respfilename == "webdav.xml":  # Compile response for WEBDAV listing
-            with file('responses/'+faces[request.path]) as f:
+            with file('responses/' + faces[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(code='HTTP/1.1 207 Multi-Status',
                                          contenttype='application/xml; '
@@ -108,7 +96,7 @@ def get_honey_http(request, ip_addr):
                                          "; charset=UTF-8")
             outputdata += stringfile
         else:  # If our request doesnt require special treatment, it goes here
-            with file('responses/'+faces[request.path]) as f:
+            with file('responses/' + faces[request.path]) as f:
                 stringfile = f.read()
             outputdata += compile_banner(msgsize=len(stringfile))
             outputdata += stringfile
@@ -123,16 +111,14 @@ def get_honey_http(request, ip_addr):
             with open("local_faces.txt", "a") as f:
                 f.write(request.path + "\n")
         # Send default response
-        with file('responses/'+faces["zero"]) as f:
+        with file('responses/' + faces["zero"]) as f:
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile))
         outputdata += stringfile
     return outputdata, request.path in faces
 
 
-def main(arguments, update_event):
-    global args
-    args = arguments
+def main(args, update_event):
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
     if not os.path.isfile("local_faces.txt"):
@@ -168,34 +154,37 @@ def main(arguments, update_event):
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
-            # Why 30000?idk
             message = connectionSocket.recv(4000)
-            ip_addr = connectionSocket.getpeername()[0]
-            dt = str(datetime.datetime.now())
-            create_file(message, ip_addr, dt.replace(':', ';'))
-            # Try to parse request parameters from message
-            request = HTTPRequest(message)
-            if request.error_code is None:
-                if hasattr(request, 'path'):
-                    outputdata, detected = get_honey_http(request, ip_addr)
-                    bs = BearStorage(ip_addr, message,
-                                     dt,
-                                     request, detected, HIVELOGIN)
-                    try:
-                        resp = send_report(bs, HIVELOGIN, HIVEPASS)
-                        if args.verbose:
-                            print resp
-                    except sockerror:
-                        if args.verbose:
-                            print "Hive server is not responding :("
-                else:
-                    outputdata = message
-            # If it's not an HTTP request, it goes here
+        except sockerror:
+            print "Failed to recieve data from bot"
+            continue
+        ip_addr = connectionSocket.getpeername()[0]
+        dt = str(datetime.datetime.utcnow())
+        # Try to parse request parameters from message
+        request = HTTPRequest(message)
+        if request.error_code is None:
+            if hasattr(request, 'path'):
+                outputdata, detected = get_honey_http(
+                    args, request, ip_addr)
             else:
-                #  use non-http parser here
-                outputdata = message  # Fuck you
+                outputdata = message
+                detected = -1
+        # If it's not an HTTP request, it goes here
+        else:
+            if args.verbose:
+                print "Got non-http request"
+            detected = -2
+            outputdata = message
+        bs = BearStorage(ip_addr, message,
+                         dt,
+                         request, detected, HIVELOGIN)
+        try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
+            print "Failed to send response to bot"
             continue
-    serverSocket.close()  # This line is never achieved, implement in SIGINT?
+        resp = send_report(bs, HIVELOGIN, HIVEPASS)
+        if args.verbose:
+            print resp
+    serverSocket.close()
