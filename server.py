@@ -1,5 +1,5 @@
 import pickle
-
+from threading import Thread
 from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
@@ -19,6 +19,14 @@ def DumpToFile(data):
     db.append(data)
     with open('temp.db', "w") as f:
         f.write(str(pickle.dumps(db)))
+
+def DataSaving(data, args):
+    try:
+        Insert(data)
+    except ConnectionError:
+        DumpToFile(data)
+        if args.verbose:
+            print "Error writing data to clickhouse, writing to file"
 
 
 def main(args, update_event):
@@ -45,12 +53,11 @@ def main(args, update_event):
             data = pickle.loads(deciper.decrypt(request[1]))
             if args.verbose:
                 print data
-            try:
-                Insert(data)
-            except ConnectionError:
-                DumpToFile(data)
-                if args.verbose:
-                    print "Error writing data to clickhouse, writing to file"
+            Thread(
+                args=(data, args),
+                name="DataSaving",
+                target=DataSaving
+            ).start()
             connectionSocket.send("200")
             connectionSocket.close()
         except sockerror:
