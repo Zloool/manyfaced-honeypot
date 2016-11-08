@@ -1,12 +1,8 @@
-import os
-from shutil import copyfile
 from datetime import datetime
 
 from infi.clickhouse_orm import models, fields, engines
 from infi.clickhouse_orm.database import Database
 
-if not os.path.isfile("settings.py"):
-    copyfile("settings.py.example", "settings.py")
 from settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
                       CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
 
@@ -51,5 +47,3 @@ def Insert(Bear):
         BotDNSName=Bear.dnsname,
     )
     db.insert({DBBear, })
-# db = Database('Honeypot')
-# print db.select("SELECT * FROM $table", model_class=BearRequests)
