@@ -6,7 +6,7 @@ import time
 import multiprocessing
 
 
-def connect():
+def connect_http():
     while True:
         try:
             HOST = '127.0.0.1'
@@ -16,16 +16,31 @@ def connect():
             N = 10000
             ptr = string.ascii_uppercase + string.digits
             ptr += "!@#$%^&*()_+`-~"
-            request = 'GET /'
-            request += ''.join(random.choice(ptr) for _ in range(N))
+            request = 'GET /'.join(random.choice(ptr) for _ in range(N))
             request += 'HTTP/1.1'
             request += '\r\n'
             request += 'Content-Type: text/html'
             request += '\r\n'
-            request += 'Content-Length: 75'
+            request += 'Content-Length: 1000000'
             request += '\r\n'
             request += '\r\n'
             request += ''.join(random.choice(ptr) for _ in range(N))
+            s.send(request)
+            print "-",
+        except:
+            print "!",
+
+
+def connect():
+    while True:
+        try:
+            HOST = '127.0.0.1'
+            PORT = 666
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((HOST, PORT))
+            N = 10000
+            ptr = string.ascii
+            request = ''.join(random.choice(ptr) for _ in range(N))
             s.send(request)
             print "-",
         except:
