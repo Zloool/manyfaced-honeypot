@@ -174,8 +174,7 @@ def main(args, update_event):
                 print "Got non-http request"
             detected = -2
             outputdata = message
-        bs = BearStorage(ip_addr, message,
-                         dt,
+        bs = BearStorage(ip_addr, message, dt,
                          request, detected, HIVELOGIN)
         try:
             connectionSocket.send(outputdata)
