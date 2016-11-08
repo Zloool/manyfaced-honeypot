@@ -24,9 +24,8 @@ def send_report(data, client, password):
         response = s.recv(1024)
         s.close()
     except sockerror:
-        if args.verbose:
-            return "Hive server is not responding :("
         DumpToFile(data)
+        return "Hive server is not responding :("
     return response
 
 
@@ -66,7 +65,7 @@ def compile_banner(msgsize=0,
     return banner
 
 
-def get_honey_http(request, ip_addr):
+def get_honey_http(args, request, ip_addr):
     """
     This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
@@ -119,9 +118,7 @@ def get_honey_http(request, ip_addr):
     return outputdata, request.path in faces
 
 
-def main(arguments, update_event):
-    global args
-    args = arguments
+def main(args, update_event):
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
     if not os.path.isfile("local_faces.txt"):
@@ -157,7 +154,6 @@ def main(arguments, update_event):
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
-            # Why 30000?idk
             message = connectionSocket.recv(4000)
             ip_addr = connectionSocket.getpeername()[0]
             dt = str(datetime.datetime.utcnow())
@@ -165,7 +161,8 @@ def main(arguments, update_event):
             request = HTTPRequest(message)
             if request.error_code is None:
                 if hasattr(request, 'path'):
-                    outputdata, detected = get_honey_http(request, ip_addr)
+                    outputdata, detected = get_honey_http(
+                        args, request, ip_addr)
                 else:
                     outputdata = message
                     detected = -1
@@ -174,7 +171,7 @@ def main(arguments, update_event):
                 if args.verbose:
                     print "Got non-http request"
                 detected = -2
-                outputdata = message  # Fuck you
+                outputdata = message
             bs = BearStorage(ip_addr, message,
                              dt,
                              request, detected, HIVELOGIN)
@@ -188,4 +185,4 @@ def main(arguments, update_event):
                 print resp
         except sockerror:
             continue
-    serverSocket.close()  # This line is never achieved, implement in SIGINT?
+    serverSocket.close()
