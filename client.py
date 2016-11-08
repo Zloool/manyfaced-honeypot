@@ -178,11 +178,14 @@ def main(arguments, update_event):
             bs = BearStorage(ip_addr, message,
                              dt,
                              request, detected, HIVELOGIN)
+            connectionSocket.send(outputdata)
+            connectionSocket.close()
+        except sockerror:
+            continue
+        try:
             resp = send_report(bs, HIVELOGIN, HIVEPASS)
             if args.verbose:
                 print resp
-            connectionSocket.send(outputdata)
-            connectionSocket.close()
         except sockerror:
             continue
     serverSocket.close()  # This line is never achieved, implement in SIGINT?
