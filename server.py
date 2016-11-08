@@ -38,7 +38,7 @@ def main(args, update_event):
                 connectionSocket.close()
             break
         try:
-            message = connectionSocket.recv(16000)
+            message = connectionSocket.recv(32000)
             request = message.split(":")
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
