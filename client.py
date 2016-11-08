@@ -26,8 +26,8 @@ def send_report(data, client, password):
         s.close()
     except sockerror:
         DumpToFile(data)
-        print "Hive server is not responding :("
-    print response
+        return "Hive server is not responding :("
+    return response
 
 
 def compile_banner(msgsize=0,
