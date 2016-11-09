@@ -47,8 +47,11 @@ def main(args, update_event):
                 connectionSocket.close()
             break
         try:
-            message = connectionSocket.recv(32000)
+            message = connectionSocket.recv(100000)
             request = message.split(":")
+            if len(request) is not 2:
+                connectionSocket.send("CODE 300 FUCK YOU")
+                continue
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
@@ -60,11 +63,17 @@ def main(args, update_event):
                 target=DataSaving
             ).start()
             connectionSocket.send("200")
-        except sockerror:
+        except sockerror, e:
+            print e
             continue
-        except TypeError:
-            continue
-        except KeyError:
+        except TypeError, e:
+            print e
+            connectionSocket.send("CODE 300 FUCK YOU")
+        except KeyError, e:
+            print e
+            connectionSocket.send("CODE 300 FUCK YOU")
+        except ValueError, e:
+            print e
             connectionSocket.send("CODE 300 FUCK YOU")
         finally:
             connectionSocket.close()
