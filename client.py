@@ -26,7 +26,7 @@ def send_report(data, client, password):
         s.close()
     except sockerror:
         DumpToFile(data)
-        return "Hive server is not responding :("
+        response = "Hive server is not responding :("
     return response
 
 
@@ -169,12 +169,12 @@ def main(args, update_event):
                     args, request, ip_addr)
             else:
                 outputdata = message
-                detected = -1
+                detected = 4294967295 - 1
         # If it's not an HTTP request, it goes here
         else:
             if args.verbose:
                 print "Got non-http request"
-            detected = -2
+            detected = 4294967295 - 2
             outputdata = message
         bs = BearStorage(ip_addr, message,
                          dt,
