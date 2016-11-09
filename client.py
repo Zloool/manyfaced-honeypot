@@ -176,7 +176,7 @@ def main(args, update_event):
                 print "Got non-http request"
             detected = 4294967295 - 2
             outputdata = message
-        bs = BearStorage(ip_addr, message,
+        bs = BearStorage(ip_addr, str(message),
                          dt,
                          request, detected, HIVELOGIN)
         try:
