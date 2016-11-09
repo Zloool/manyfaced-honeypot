@@ -177,8 +177,7 @@ def main(args, update_event):
             detected = 4294967295 - 2
             outputdata = message
         bs = BearStorage(ip_addr, unicode(message, errors='replace'),
-                         dt,
-                         request, detected, HIVELOGIN)
+                         dt, request, detected, HIVELOGIN)
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
