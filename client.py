@@ -157,7 +157,8 @@ def main(args, update_event):
             # Argument is the number of bytes to recieve from client
             message = connectionSocket.recv(4000)
         except sockerror:
-            print "Failed to recieve data from bot"
+            if args.verbose:
+                print "Failed to recieve data from bot"
             continue
         ip_addr = connectionSocket.getpeername()[0]
         dt = str(datetime.datetime.utcnow())
@@ -178,16 +179,14 @@ def main(args, update_event):
             outputdata = message
         bs = BearStorage(ip_addr, unicode(message, errors='replace'),
                          dt, request, detected, HIVELOGIN)
+        response = Thread(args=(bs, HIVELOGIN, HIVEPASS,), target=send_report,)
+        response.start()
+        response.join()
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
-            print "Failed to send response to bot"
+            if args.verbose:
+                print "Failed to send response to bot"
             continue
-        response = Thread(
-            args=(bs, HIVELOGIN, HIVEPASS,),
-            target=send_report,
-            )
-        response.start()
-        response.join()
     serverSocket.close()
