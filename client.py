@@ -177,18 +177,18 @@ def main(args, update_event):
             detected = 4294967295 - 2
             outputdata = message
         bs = BearStorage(ip_addr, unicode(message, errors='replace'),
-                         dt,
-                         request, detected, HIVELOGIN)
+                         dt, request, detected, HIVELOGIN)
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
         except sockerror:
             print "Failed to send response to bot"
             continue
-        response = Thread(
-            args=(bs, HIVELOGIN, HIVEPASS,),
-            target=send_report,
-            )
-        response.start()
-        response.join()
+        if args.server:
+            response = Thread(
+                args=(bs, HIVELOGIN, HIVEPASS,),
+                target=send_report,
+                )
+            response.start()
+            response.join()
     serverSocket.close()
