@@ -56,7 +56,7 @@ def main(args, update_event):
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
             if args.verbose:
-                print data
+                print data.encode('utf-8')
             Thread(
                 args=(data, args),
                 name="DataSaving",
