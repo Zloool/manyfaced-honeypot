@@ -16,7 +16,7 @@ class BearRequests(models.Model):
     RequestVersion = fields.StringField()
     RequestRaw = fields.StringField()
     ProbeName = fields.StringField()
-    RequestDetectionID = fields.Int32Field()
+    RequestDetectionID = fields.UInt32Field()
     BotIP = fields.StringField()
     BotCountry = fields.StringField()
     BotUA = fields.StringField()
