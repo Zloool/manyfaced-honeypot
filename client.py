@@ -184,11 +184,10 @@ def main(args, update_event):
         except sockerror:
             print "Failed to send response to bot"
             continue
-        if args.server:
-            response = Thread(
-                args=(bs, HIVELOGIN, HIVEPASS,),
-                target=send_report,
-                )
-            response.start()
-            response.join()
+        response = Thread(
+            args=(bs, HIVELOGIN, HIVEPASS,),
+            target=send_report,
+            )
+        response.start()
+        response.join()
     serverSocket.close()
