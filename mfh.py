@@ -43,12 +43,15 @@ def main():
             if 'client_proc' in locals():
                 if client_proc.is_alive():
                     client_proc.terminate()
+                    client_proc.join()
             if 'server_proc' in locals():
                 if server_proc.is_alive():
                     server_proc.terminate()
+                    server_proc.join()
             if 'trigger_proc' in locals():
                 if trigger_proc.is_alive():
                     trigger_proc.terminate()
+                    server_proc.join()
             break
     else:
         if args.updater:

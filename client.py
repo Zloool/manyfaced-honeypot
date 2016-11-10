@@ -3,7 +3,7 @@ import os
 import pickle
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
-from threading import Thread
+from multiprocessing import Process, Lock
 
 
 from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
@@ -14,20 +14,25 @@ from bearstorage import BearStorage
 from server import DumpToFile
 
 
-def send_report(data, client, password):
-    ciper = AESCipher(password)
-    message = client + ":"
-    message += ciper.encrypt(pickle.dumps(data))
-    s = socket(AF_INET, SOCK_STREAM)
-    try:
-        s.connect((HIVEHOST, HIVEPORT))
-        s.sendall(message)
-        response = s.recv(1024)
-        s.close()
-    except sockerror:
-        DumpToFile(data)
-        response = "Hive server is not responding :("
-    return response
+def send_report(data, client, password, lock):
+    with lock:
+        ciper = AESCipher(password)
+        message = client + ":"
+        message += ciper.encrypt(pickle.dumps(data))
+        s = socket(AF_INET, SOCK_STREAM)
+        try:
+            s.connect((HIVEHOST, HIVEPORT))
+            s.sendall(message)
+            response = s.recv(1024)
+            if response != '200':
+                raise sockerror
+            s.close()
+        except sockerror:
+            DumpToFile(data)
+            # response = "Hive server is not responding :("
+        except KeyboardInterrupt:
+            pass
+    # return response
 
 
 def compile_banner(msgsize=0,
@@ -120,6 +125,7 @@ def get_honey_http(args, request, ip_addr):
 
 
 def main(args, update_event):
+    report_lock = Lock()
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
     if not os.path.isfile("local_faces.txt"):
@@ -144,6 +150,7 @@ def main(args, update_event):
         print "Serving honey on port %s" % args.client
     # Endless loop for handling requests
     while True:
+
         if update_event.is_set():
             break
         try:
@@ -179,7 +186,10 @@ def main(args, update_event):
             outputdata = message
         bs = BearStorage(ip_addr, unicode(message, errors='replace'),
                          dt, request, detected, HIVELOGIN)
-        response = Thread(args=(bs, HIVELOGIN, HIVEPASS,), target=send_report,)
+        response = Process(
+            args=(bs, HIVELOGIN, HIVEPASS, report_lock),
+            name="send_report",
+            target=send_report,)
         response.start()
         response.join()
         try:
