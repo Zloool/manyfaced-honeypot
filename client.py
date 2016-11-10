@@ -11,7 +11,7 @@ from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
 from bearstorage import BearStorage
-from server import DumpToFile
+from server import DumpToFile, recv_timeout
 
 
 def send_report(data, client, password, lock):
@@ -162,7 +162,7 @@ def main(args, update_event):
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
-            message = connectionSocket.recv(4000)
+            message = recv_timeout(connectionSocket)
         except sockerror:
             if args.verbose:
                 print "Failed to recieve data from bot"
