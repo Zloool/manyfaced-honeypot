@@ -168,7 +168,7 @@ def main(args, update_event):
                 print "Failed to recieve data from bot"
             continue
         ip_addr = connectionSocket.getpeername()[0]
-        dt = str(datetime.datetime.utcnow())
+        dt = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         # Try to parse request parameters from message
         request = HTTPRequest(message)
         if request.error_code is None:
