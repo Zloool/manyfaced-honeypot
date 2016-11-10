@@ -70,7 +70,6 @@ def recv_timeout(the_socket, timeout=2):
     return ''.join(total_data)
 
 
-
 def main(args, update_event):
     db_lock = Lock()
     serverSocket = socket(AF_INET, SOCK_STREAM)
