@@ -1,5 +1,5 @@
 import pickle
-from threading import Thread
+from multiprocessing import Process, Lock
 from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
@@ -21,16 +21,20 @@ def DumpToFile(data):
         f.write(str(pickle.dumps(db)))
 
 
-def DataSaving(data, args):
-    try:
-        Insert(data)
-    except ConnectionError:
-        DumpToFile(data)
-        if args.verbose:
-            print "Error writing data to clickhouse, writing to file"
+def DataSaving(data, args, lock):
+    with lock:
+        try:
+            Insert(data)
+        except ConnectionError:
+            DumpToFile(data)
+            if args.verbose:
+                print "Error writing data to clickhouse, writing to file"
+        except KeyboardInterrupt:
+            pass
 
 
 def main(args, update_event):
+    db_lock = Lock()
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     serverSocket.bind(('', args.server))
@@ -51,17 +55,20 @@ def main(args, update_event):
             request = message.split(":")
             if len(request) is not 2:
                 connectionSocket.send("CODE 300 FUCK YOU")
+                connectionSocket.close()
                 continue
             key = AUTHORISEDBEARS[request[0]]
             deciper = AESCipher(key)
             data = pickle.loads(deciper.decrypt(request[1]))
             if args.verbose:
-                print data
-            Thread(
-                args=(data, args),
+                print unicode(data).encode('utf-8')
+            ds = Process(
+                args=(data, args, db_lock),
                 name="DataSaving",
                 target=DataSaving
-            ).start()
+            )
+            ds.start()
+            ds.join()
             connectionSocket.send("200")
         except sockerror, e:
             print e
