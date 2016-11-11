@@ -122,7 +122,11 @@ def get_honey_http(args, request, ip_addr):
             stringfile = f.read()
         outputdata += compile_banner(msgsize=len(stringfile))
         outputdata += stringfile
-    return outputdata, request.path in faces
+    try:
+        detected = map(itemgetter(0), faces).index(request.path)
+    except:
+        detected = 4294967295 - 3
+    return outputdata, detected
 
 
 def main(args, update_event):
