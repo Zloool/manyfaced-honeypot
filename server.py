@@ -1,5 +1,6 @@
 import pickle
 import time
+import os
 from multiprocessing import Process, Lock
 from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
@@ -32,6 +33,7 @@ def DataSaving(data, args, lock):
                 print "Error writing data to clickhouse, writing to file"
         except KeyboardInterrupt:
             pass
+    os._exit(0)
 
 
 def recv_timeout(the_socket, timeout=2):
@@ -105,7 +107,6 @@ def main(args, update_event):
                 target=DataSaving
             )
             ds.start()
-            ds.join()
             connectionSocket.send("200")
         except sockerror, e:
             print e
