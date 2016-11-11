@@ -11,6 +11,13 @@ class BearStorage():
         self.path = ""
         self.command = ""
         self.version = ""
+        self.ua = ""
+        self.headers = ""
+        self.country = ""
+        self.continent = ""
+        self.timezone = ""
+        self.dnsname = ""
+        self.tracert = ""  # TODO
         if hasattr(parsed_request, 'path'):
             self.path = parsed_request.path
         if parsed_request.command is not None:
@@ -19,14 +26,8 @@ class BearStorage():
             self.version = parsed_request.request_version
         if hasattr(parsed_request, 'headers'):
             self.headers = parsed_request.headers
-            if 'User-Agent' in parsed_request.headers.keys():
-                self.ua = parsed_request.headers['User-Agent']
-            else:
-                self.ua = ""
-        else:
-            self.headers = ""
-            self.ua = ""
-            self.version = ""
+            if 'user-agent' in parsed_request.headers:
+                self.ua = parsed_request.headers['user-agent']
         self.isDetected = isDetected
         self.hostname = hostname
         location = geolite2.lookup(ip)
@@ -34,15 +35,10 @@ class BearStorage():
             self.country = location.country
             self.continent = location.continent
             self.timezone = location.timezone
-        else:
-            self.country = ''
-            self.continent = ''
-            self.timezone = ''
-        self.tracert = ""  # TODO
         try:
             self.dnsname = socket.gethostbyaddr(ip)[0]
         except:
-            self.dnsname = ""
+            pass
 
     def __str__(self):
         if self.path is not "":
