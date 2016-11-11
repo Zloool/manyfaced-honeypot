@@ -1,6 +1,7 @@
 import pickle
 import time
 import os
+import signal
 from multiprocessing import Process, Lock
 from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
@@ -73,6 +74,7 @@ def recv_timeout(the_socket, timeout=2):
 
 
 def main(args, update_event):
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     db_lock = Lock()
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
