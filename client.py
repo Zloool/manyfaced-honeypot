@@ -162,7 +162,7 @@ def main(args, update_event):
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
-            message = recv_timeout(connectionSocket)
+            message = recv_timeout(connectionSocket, 0.25)
         except sockerror:
             if args.verbose:
                 print "Failed to recieve data from bot"
