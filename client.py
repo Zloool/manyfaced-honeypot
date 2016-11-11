@@ -126,7 +126,8 @@ def get_honey_http(args, request, ip_addr):
 
 
 def main(args, update_event):
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    if getattr(signal, 'SIGCHLD', None) is not None:
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
