@@ -1,6 +1,7 @@
 import datetime
 import os
 import pickle
+import signal
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 from multiprocessing import Process, Lock
@@ -125,6 +126,7 @@ def get_honey_http(args, request, ip_addr):
 
 
 def main(args, update_event):
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
