@@ -1,4 +1,7 @@
 import pickle
+import time
+import os
+import signal
 from multiprocessing import Process, Lock
 from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
@@ -31,9 +34,47 @@ def DataSaving(data, args, lock):
                 print "Error writing data to clickhouse, writing to file"
         except KeyboardInterrupt:
             pass
+    os._exit(0)
+
+
+def recv_timeout(the_socket, timeout=2):
+    # make socket non blocking
+    the_socket.setblocking(0)
+
+    # total data partwise in an array
+    total_data = []
+    data = ''
+
+    # beginning time
+    begin = time.time()
+    while 1:
+        # if you got some data, then break after timeout
+        if total_data and time.time() - begin > timeout:
+            break
+
+        # if you got no data at all, wait a little longer, twice the timeout
+        elif time.time() - begin > timeout * 2:
+            break
+
+        # recv something
+        try:
+            data = the_socket.recv(8192)
+            if data:
+                total_data.append(data)
+                # change the beginning time for measurement
+                begin = time.time()
+            else:
+                # sleep for sometime to indicate a gap
+                time.sleep(0.1)
+        except:
+            pass
+
+    # join all parts to make final string
+    return ''.join(total_data)
 
 
 def main(args, update_event):
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     db_lock = Lock()
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -51,7 +92,7 @@ def main(args, update_event):
                 connectionSocket.close()
             break
         try:
-            message = connectionSocket.recv(100000)
+            message = recv_timeout(connectionSocket)
             request = message.split(":")
             if len(request) is not 2:
                 connectionSocket.send("CODE 300 FUCK YOU")
@@ -68,7 +109,6 @@ def main(args, update_event):
                 target=DataSaving
             )
             ds.start()
-            ds.join()
             connectionSocket.send("200")
         except sockerror, e:
             print e
