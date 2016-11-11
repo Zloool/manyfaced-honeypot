@@ -1,6 +1,7 @@
 import datetime
 import os
 import pickle
+import signal
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 from multiprocessing import Process, Lock
@@ -11,7 +12,7 @@ from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
 from bearstorage import BearStorage
-from server import DumpToFile
+from server import DumpToFile, recv_timeout
 
 
 def send_report(data, client, password, lock):
@@ -32,7 +33,7 @@ def send_report(data, client, password, lock):
             # response = "Hive server is not responding :("
         except KeyboardInterrupt:
             pass
-    # return response
+    os._exit(0)
 
 
 def compile_banner(msgsize=0,
@@ -125,6 +126,7 @@ def get_honey_http(args, request, ip_addr):
 
 
 def main(args, update_event):
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
     # Get our unimplemented requests list, so we can add something to it
     global unknown_faces
@@ -162,13 +164,13 @@ def main(args, update_event):
         # Need to use try, because socket will generate a lot of exceptions
         try:
             # Argument is the number of bytes to recieve from client
-            message = connectionSocket.recv(4000)
+            message = recv_timeout(connectionSocket, 0.25)
         except sockerror:
             if args.verbose:
                 print "Failed to recieve data from bot"
             continue
         ip_addr = connectionSocket.getpeername()[0]
-        dt = str(datetime.datetime.utcnow())
+        dt = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         # Try to parse request parameters from message
         request = HTTPRequest(message)
         if request.error_code is None:
@@ -191,7 +193,6 @@ def main(args, update_event):
             name="send_report",
             target=send_report,)
         response.start()
-        response.join()
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
