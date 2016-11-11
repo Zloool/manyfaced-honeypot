@@ -32,7 +32,7 @@ def send_report(data, client, password, lock):
             # response = "Hive server is not responding :("
         except KeyboardInterrupt:
             pass
-    # return response
+    os._exit(0)
 
 
 def compile_banner(msgsize=0,
@@ -191,7 +191,6 @@ def main(args, update_event):
             name="send_report",
             target=send_report,)
         response.start()
-        response.join()
         try:
             connectionSocket.send(outputdata)
             connectionSocket.close()
