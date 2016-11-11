@@ -50,7 +50,7 @@ class BearStorage():
             output += "command: " + self.command + "\r\n"
             output += "version: " + self.version + "\r\n"
             output += "country: " + self.country + "\r\n"
-            if self.isDetected:
+            if self.isDetected != 4294967295 - 3:
                 output += "Detected: Yes" + "\r\n"
             else:
                 output += "Detected: No" + "\r\n"
