@@ -1,0 +1,5 @@
+max_db_int = 4294967295
+UNKNOWN_HTTP = max_db_int - 1
+UNKNOWN_NON_HTTP = max_db_int - 3
+BOT_TIMEOUT = 0.25
+CLIENT_TIMEOUT = 2
