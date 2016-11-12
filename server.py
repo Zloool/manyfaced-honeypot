@@ -12,11 +12,11 @@ from myenc import AESCipher
 from dbconnect import Insert
 
 
-def DumpToFile(data):
+def dump_file(data):
     try:
         with file('temp.db') as f:
-            stringfile = f.read()
-        db = pickle.loads(stringfile)
+            string_file = f.read()
+        db = pickle.loads(string_file)
     except:
         db = list()
     db.append(data)
@@ -24,12 +24,12 @@ def DumpToFile(data):
         f.write(str(pickle.dumps(db)))
 
 
-def DataSaving(data, args, lock):
+def data_saving(data, args, lock):
     with lock:
         try:
             Insert(data)
         except ConnectionError:
-            DumpToFile(data)
+            dump_file(data)
             if args.verbose:
                 print "Error writing data to clickhouse, writing to file"
         except KeyboardInterrupt:
@@ -43,7 +43,6 @@ def recv_timeout(the_socket, timeout=2):
 
     # total data partwise in an array
     total_data = []
-    data = ''
 
     # beginning time
     begin = time.time()
@@ -77,53 +76,52 @@ def main(args, update_event):
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     db_lock = Lock()
-    serverSocket = socket(AF_INET, SOCK_STREAM)
-    serverSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    serverSocket.bind(('', args.server))
-    serverSocket.listen(1)
+    server_socket = socket(AF_INET, SOCK_STREAM)
+    server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    server_socket.bind(('', args.server))
+    server_socket.listen(1)
     if args.verbose:
         print "Awaiting for bears on port %s" % args.server
     while True:
         if update_event.is_set():
             break
         try:
-            connectionSocket, addr = serverSocket.accept()
+            connection_socket, addr = server_socket.accept()
         except KeyboardInterrupt:
-            if 'connectionSocket' in locals():
-                connectionSocket.close()
+            if 'connection_socket' in locals():
+                connection_socket.close()
             break
         try:
-            message = recv_timeout(connectionSocket)
+            message = recv_timeout(connection_socket)
             request = message.split(":")
             if len(request) is not 2:
-                connectionSocket.send("CODE 300 FUCK YOU")
-                connectionSocket.close()
+                connection_socket.send("CODE 300 FUCK YOU")
+                connection_socket.close()
                 continue
             key = AUTHORISEDBEARS[request[0]]
-            deciper = AESCipher(key)
-            data = pickle.loads(deciper.decrypt(request[1]))
+            decipher = AESCipher(key)
+            data = pickle.loads(decipher.decrypt(request[1]))
             if args.verbose:
                 print unicode(data).encode('utf-8')
-            ds = Process(
+            Process(
                 args=(data, args, db_lock),
-                name="DataSaving",
-                target=DataSaving
-            )
-            ds.start()
-            connectionSocket.send("200")
+                name="data_saving",
+                target=data_saving
+            ).start()
+            connection_socket.send("200")
         except sockerror, e:
             print e
             continue
         except TypeError, e:
             print e
-            connectionSocket.send("CODE 300 FUCK YOU")
+            connection_socket.send("CODE 300 FUCK YOU")
         except KeyError, e:
             print e
-            connectionSocket.send("CODE 300 FUCK YOU")
+            connection_socket.send("CODE 300 FUCK YOU")
         except ValueError, e:
             print e
-            connectionSocket.send("CODE 300 FUCK YOU")
+            connection_socket.send("CODE 300 FUCK YOU")
         finally:
-            connectionSocket.close()
+            connection_socket.close()
 
-    serverSocket.close()
+    server_socket.close()
