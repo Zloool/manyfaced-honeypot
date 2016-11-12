@@ -2,18 +2,18 @@ import datetime
 import os
 import pickle
 import signal
-from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as sockerror)
 from multiprocessing import Process, Lock
 from operator import itemgetter
+from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
+                    error as sockerror)
 
-
-from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+import status
+from bearstorage import BearStorage
 from faces import faces
 from httphandler import HTTPRequest
 from myenc import AESCipher
-from bearstorage import BearStorage
 from server import dump_file, recv_timeout
+from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 
 
 def send_report(data, client, password, lock):
@@ -39,7 +39,7 @@ def send_report(data, client, password, lock):
 def compile_banner(msg_size=0,
                    code="HTTP/1.1 200 OK",
                    server_version="Apache/1.3.42 (Unix)  (Red Hat/Linux)  "
-                             "OpenSSL/1.0.1e PHP/5.5.9 ",
+                        "OpenSSL/1.0.1e PHP/5.5.9 ",
                    content_type='text/html; charset=UTF-8',
                    connection="close",
                    date=str(datetime.datetime.now()),
@@ -87,18 +87,17 @@ def get_honey_http(request, ip_addr, verbose):
             with file('responses/' + faces[request.path]) as f:
                 body = f.read()
             output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
-                                        content_type='application/xml; '
-                                        'charset=utf-8',
-                                        connection=0, date=0, server_version=0,
-                                        nl_count=1)
+                                         content_type='application/xml; '
+                                         'charset=utf-8', connection=0,
+                                         date=0, server_version=0, nl_count=1)
             output_data += body
         elif resp_filename == "robots":  # Generate robots.txt from faces dict
             body = 'User-Agent: *\r\nAllow: /\r\n'
             for url in known_faces:
                 body += 'Disallow: ' + url + "\r\n"
             output_data = compile_banner(msg_size=len(body),
-                                        content_type="text/plain"
-                                        "; charset=UTF-8")
+                                         content_type="text/plain"
+                                         "; charset=UTF-8")
             output_data += body
         else:  # If our request doesnt require special treatment, it goes here
             with file('responses/' + faces[request.path]) as f:
@@ -121,7 +120,7 @@ def get_honey_http(request, ip_addr, verbose):
     try:
         detected = map(itemgetter(0), faces).index(request.path)
     except ValueError:
-        detected = 4294967295 - 3
+        detected = status.UNKNOWN_HTTP
     return output_data, detected
 
 
@@ -132,11 +131,11 @@ def handle_request(message, request_time, bot_ip, verbose, report_lock):
             output_data, detected = get_honey_http(request, bot_ip, verbose)
         else:
             output_data = message
-            detected = 4294967295 - 1
+            detected = status.UNKNOWN_HTTP
     else:
         if verbose:
             print "Got non-http request"
-        detected = 4294967295 - 2
+        detected = status.UNKNOWN_NON_HTTP
         output_data = message
     bs = BearStorage(bot_ip, unicode(message, errors='replace'),
                      request_time, request, detected, HIVELOGIN)
@@ -164,7 +163,7 @@ def create_server(port, report_lock, verbose, update_event):
                 connection_socket.close()
             break
         try:
-            message = recv_timeout(connection_socket, 0.25)
+            message = recv_timeout(connection_socket, status.BOT_TIMEOUT)
         except sockerror:
             if verbose:
                 print "Failed to receive data from bot"
