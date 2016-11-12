@@ -93,3 +93,4 @@ settings.py
 local_cases.txt
 local_faces.txt
 temp.db
+.idea/
