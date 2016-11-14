@@ -82,46 +82,63 @@ def get_honey_http(request, ip_addr, verbose):
     robots.txt should be text/plain(they are also dynamically generated).
     """
     if request.path in faces:  # If we know what to do with request
-        resp_filename = faces[request.path]
-        if resp_filename == "webdav.xml":  # Compile response for WEBDAV listing
-            with file('responses/' + faces[request.path]) as f:
-                body = f.read()
-            output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
-                                         content_type='application/xml; '
-                                         'charset=utf-8', connection='',
-                                         date='', server_version='', nl_count=1)
-            output_data += body
-        elif resp_filename == "robots":  # Generate robots.txt from faces dict
-            body = 'User-Agent: *\r\nAllow: /\r\n'
-            for url in known_faces:
-                body += 'Disallow: ' + url + "\r\n"
-            output_data = compile_banner(msg_size=len(body),
-                                         content_type="text/plain"
-                                         "; charset=UTF-8")
-            output_data += body
+        face = faces[request.path]
+        if face == "webdav.xml":  # Compile response for WEBDAV listing
+            output_data = honey_webdav(face)
+        elif face == "robots":  # Generate robots.txt from faces dict
+            output_data = honey_robots()
         else:  # If our request doesnt require special treatment, it goes here
-            with file('responses/' + faces[request.path]) as f:
-                body = f.read()
-            output_data = compile_banner(msg_size=len(body))
-            output_data += body
+            output_data = honey_generic(face)
         if verbose:
             print ip_addr + " " + request.path + " gotcha!"
     else:  # If we dont know what to do with that request
         if verbose:
             print ip_addr + " " + request.path[:50] + " not detected..."
-        if request.path not in unknown_faces:
-            unknown_faces.append(request.path)
-            with open("local_faces.txt", "a") as f:
-                f.write(request.path + "\n")
-        with file('responses/' + faces["zero"]) as f:
-            body = f.read()
-        output_data = compile_banner(msg_size=len(body))
-        output_data += body
+        output_data = honey_unknown(request)
     try:
         detected = map(itemgetter(0), faces).index(request.path)
     except ValueError:
         detected = status.UNKNOWN_HTTP
     return output_data, detected
+
+
+def honey_unknown(request):
+    if request.path not in unknown_faces:
+        unknown_faces.append(request.path)
+        with open("local_faces.txt", "a") as f:
+            f.write(request.path + "\n")
+    output_data = honey_generic(faces["zero"])
+    return output_data
+
+
+def honey_generic(face):
+    with file('responses/' + face) as f:
+        body = f.read()
+    output_data = compile_banner(msg_size=len(body))
+    output_data += body
+    return output_data
+
+
+def honey_robots():
+    body = 'User-Agent: *\r\nAllow: /\r\n'
+    for url in known_faces:
+        body += 'Disallow: ' + url + "\r\n"
+    output_data = compile_banner(msg_size=len(body),
+                                 content_type="text/plain"
+                                              "; charset=UTF-8")
+    output_data += body
+    return output_data
+
+
+def honey_webdav(face):
+    with file('responses/' + face) as f:
+        body = f.read()
+    output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
+                                 content_type='application/xml; '
+                                              'charset=utf-8', connection='',
+                                 date='', server_version='', nl_count=1)
+    output_data += body
+    return output_data
 
 
 def handle_request(message, request_time, bot_ip, verbose, report_lock):
