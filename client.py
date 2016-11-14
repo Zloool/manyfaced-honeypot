@@ -57,15 +57,15 @@ def compile_banner(msg_size=0,
     banner = ""
     if code != 0:
         banner += code + '\r\n'
-    if server_version != 0:
+    if server_version != '':
         banner += 'Server: ' + server_version + '\r\n'
-    if content_type != 0:
+    if content_type != '':
         banner += 'Content-Type: ' + content_type + '\r\n'
-    if connection != 0:
+    if connection != '':
         banner += 'Connection: ' + connection + '\r\n'
-    if date != 0:
+    if date != '':
         banner += 'Date: ' + date + '\r\n'
-    if msg_size != 0:
+    if msg_size != '':
         banner += 'Content-Length: ' + str(msg_size)
     for i in range(nl_count):
         banner += '\r\n'
@@ -88,8 +88,8 @@ def get_honey_http(request, ip_addr, verbose):
                 body = f.read()
             output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
                                          content_type='application/xml; '
-                                         'charset=utf-8', connection=0,
-                                         date=0, server_version=0, nl_count=1)
+                                         'charset=utf-8', connection='',
+                                         date='', server_version='', nl_count=1)
             output_data += body
         elif resp_filename == "robots":  # Generate robots.txt from faces dict
             body = 'User-Agent: *\r\nAllow: /\r\n'
