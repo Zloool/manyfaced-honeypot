@@ -7,10 +7,10 @@ from requests.exceptions import ConnectionError
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
-import status
-from dbconnect import Insert
-from myenc import AESCipher
-from settings import AUTHORISEDBEARS
+from common.status import CLIENT_TIMEOUT
+from common.myenc import AESCipher
+from common.settings import AUTHORISEDBEARS
+from db.dbconnect import Insert
 
 
 def dump_file(data):
@@ -38,7 +38,7 @@ def data_saving(data, args, lock):
     os._exit(0)
 
 
-def recv_timeout(the_socket, timeout=status.CLIENT_TIMEOUT):
+def recv_timeout(the_socket, timeout=CLIENT_TIMEOUT):
     # make socket non blocking
     the_socket.setblocking(0)
 
