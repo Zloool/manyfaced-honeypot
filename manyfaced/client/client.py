@@ -7,13 +7,13 @@ from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as sockerror)
 
-import status
-from bearstorage import BearStorage
-from faces import faces
-from httphandler import HTTPRequest
-from myenc import AESCipher
-from server import dump_file, recv_timeout
-from settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from common.bearstorage import BearStorage
+from common.faces import faces
+from common.httphandler import HTTPRequest
+from common.myenc import AESCipher
+from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
+from server.server import dump_file, recv_timeout
 
 
 def send_report(data, client, password, lock):
@@ -98,21 +98,21 @@ def get_honey_http(request, ip_addr, verbose):
     try:
         detected = map(itemgetter(0), faces).index(request.path)
     except ValueError:
-        detected = status.UNKNOWN_HTTP
+        detected = UNKNOWN_HTTP
     return output_data, detected
 
 
 def honey_unknown(request):
     if request.path not in unknown_faces:
         unknown_faces.append(request.path)
-        with open("local_faces.txt", "a") as f:
+        with open("common/local_faces.txt", "a") as f:
             f.write(request.path + "\n")
     output_data = honey_generic(faces["zero"])
     return output_data
 
 
 def honey_generic(face):
-    with file('responses/' + face) as f:
+    with file('common/responses/' + face) as f:
         body = f.read()
     output_data = compile_banner(msg_size=len(body))
     output_data += body
@@ -131,7 +131,7 @@ def honey_robots():
 
 
 def honey_webdav(ip_addr):
-    with file('responses/webdav.xml') as f:
+    with file('common/responses/webdav.xml') as f:
         body = f.read()
     output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
                                  content_type='application/xml; '
@@ -148,11 +148,11 @@ def handle_request(message, request_time, bot_ip, verbose, report_lock):
             output_data, detected = get_honey_http(request, bot_ip, verbose)
         else:
             output_data = message
-            detected = status.UNKNOWN_HTTP
+            detected = UNKNOWN_HTTP
     else:
         if verbose:
             print "Got non-http request"
-        detected = status.UNKNOWN_NON_HTTP
+        detected = UNKNOWN_NON_HTTP
         output_data = message
     bs = BearStorage(bot_ip, unicode(message, errors='replace'),
                      request_time, request, detected, HIVELOGIN)
@@ -180,7 +180,7 @@ def create_server(port, report_lock, verbose, update_event):
                 connection_socket.close()
             break
         try:
-            message = recv_timeout(connection_socket, status.BOT_TIMEOUT)
+            message = recv_timeout(connection_socket, BOT_TIMEOUT)
         except sockerror:
             if verbose:
                 print "Failed to receive data from bot"
@@ -204,11 +204,11 @@ def main(args, update_event):
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
     global unknown_faces
-    if not os.path.isfile("local_faces.txt"):
-        f = file("local_faces.txt", "w")
+    if not os.path.isfile("common/local_faces.txt"):
+        f = file("common/local_faces.txt", "w")
         f.close()
-    unknown_faces = [line.rstrip('\n') for line in open('faces.txt')]
-    unknown_faces += [line.rstrip('\n') for line in open('local_faces.txt')]
+    unknown_faces = [line.rstrip('\n') for line in open('common/faces.txt')]
+    unknown_faces += [line.rstrip('\n') for line in open('common/local_faces.txt')]
     global known_faces
     known_faces = set()
     for url in faces:
