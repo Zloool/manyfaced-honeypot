@@ -185,7 +185,7 @@ def create_server(port, report_lock, verbose, update_event):
             if verbose:
                 print "Failed to receive data from bot"
             continue
-        bot_ip = connection_socket.getpeername()[0]
+        bot_ip = addr[0]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         outputdata = handle_request(message, request_time, bot_ip,
                                     verbose, report_lock)
