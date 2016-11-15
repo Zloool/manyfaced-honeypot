@@ -3,8 +3,8 @@ from datetime import datetime
 from infi.clickhouse_orm import models, fields, engines
 from infi.clickhouse_orm.database import Database
 
-from settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
-                      CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
+from common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
+                             CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
 
 
 class BearRequests(models.Model):
