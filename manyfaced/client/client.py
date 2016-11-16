@@ -102,15 +102,6 @@ def get_honey_http(request, ip_addr, verbose):
     return output_data, detected
 
 
-def honey_unknown(request):
-    if request.path not in unknown_faces:
-        unknown_faces.append(request.path)
-        with open("common/local_faces.txt", "a") as f:
-            f.write(request.path + "\n")
-    output_data = honey_generic(faces["zero"])
-    return output_data
-
-
 def honey_generic(face):
     with file('common/responses/' + face) as f:
         body = f.read()
@@ -121,7 +112,7 @@ def honey_generic(face):
 
 def honey_robots():
     body = 'User-Agent: *\r\nAllow: /\r\n'
-    for url in known_faces:
+    for url in set(faces.keys()):
         body += 'Disallow: ' + url + "\r\n"
     output_data = compile_banner(msg_size=len(body),
                                  content_type="text/plain"
@@ -203,14 +194,4 @@ def main(args, update_event):
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
-    global unknown_faces
-    if not os.path.isfile("common/local_faces.txt"):
-        f = file("common/local_faces.txt", "w")
-        f.close()
-    unknown_faces = [line.rstrip('\n') for line in open('common/faces.txt')]
-    unknown_faces += [line.rstrip('\n') for line in open('common/local_faces.txt')]
-    global known_faces
-    known_faces = set()
-    for url in faces:
-        known_faces.add(url)
     create_server(args.client, report_lock, args.verbose, update_event)
