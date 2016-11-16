@@ -13,7 +13,7 @@ from common.httphandler import HTTPRequest
 from common.myenc import AESCipher
 from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
-from server.server import dump_file, recv_timeout
+from common.utils import dump_file, recv_timeout
 
 
 def send_report(data, client, password, lock):
