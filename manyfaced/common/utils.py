@@ -17,7 +17,7 @@ def dump_file(data):
         f.write(str(pickle.dumps(db)))
 
 
-def recv_timeout(the_socket, timeout=CLIENT_TIMEOUT):
+def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
     # make socket non blocking
     the_socket.setblocking(0)
 
