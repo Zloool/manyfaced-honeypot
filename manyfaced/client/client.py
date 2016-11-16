@@ -83,6 +83,7 @@ def get_honey_http(request, ip_addr, verbose):
     """
     if request.path in faces:  # If we know what to do with request
         face = faces[request.path]
+        detected = map(itemgetter(0), faces).index(request.path)
         if face == "webdav.xml":  # Compile response for WEBDAV listing
             output_data = honey_webdav(ip_addr)
         elif face == "robots":  # Generate robots.txt from faces dict
@@ -94,10 +95,7 @@ def get_honey_http(request, ip_addr, verbose):
     else:  # If we dont know what to do with that request
         if verbose:
             print ip_addr + " " + request.path[:50] + " not detected..."
-        output_data = honey_unknown(request)
-    try:
-        detected = map(itemgetter(0), faces).index(request.path)
-    except ValueError:
+        output_data = honey_generic(faces['zero'])
         detected = UNKNOWN_HTTP
     return output_data, detected
 
