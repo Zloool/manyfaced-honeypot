@@ -5,7 +5,7 @@ import signal
 from multiprocessing import Process, Lock
 from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as sockerror)
+                    error as socket_error)
 
 from common.bearstorage import BearStorage
 from common.faces import faces
@@ -13,7 +13,7 @@ from common.httphandler import HTTPRequest
 from common.myenc import AESCipher
 from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
-from common.utils import dump_file, recv_timeout
+from common.utils import dump_file, receive_timeout
 
 
 def send_report(data, client, password, lock):
@@ -27,9 +27,9 @@ def send_report(data, client, password, lock):
             s.sendall(message)
             response = s.recv(1024)
             if response != '200':
-                raise sockerror
+                raise socket_error
             s.close()
-        except sockerror:
+        except socket_error:
             dump_file(data)
         except KeyboardInterrupt:
             pass
@@ -72,7 +72,7 @@ def compile_banner(msg_size=0,
     return banner
 
 
-def get_honey_http(request, ip_addr, verbose):
+def get_honey_http(request, bot_ip, verbose):
     """
     This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
@@ -85,16 +85,16 @@ def get_honey_http(request, ip_addr, verbose):
         face = faces[request.path]
         detected = map(itemgetter(0), faces).index(request.path)
         if face == "webdav.xml":  # Compile response for WEBDAV listing
-            output_data = honey_webdav(ip_addr)
+            output_data = honey_webdav(bot_ip)
         elif face == "robots":  # Generate robots.txt from faces dict
             output_data = honey_robots()
         else:  # If our request doesnt require special treatment, it goes here
             output_data = honey_generic(face)
         if verbose:
-            print ip_addr + " " + request.path + " gotcha!"
+            print bot_ip + " " + request.path + " gotcha!"
     else:  # If we dont know what to do with that request
         if verbose:
-            print ip_addr + " " + request.path[:50] + " not detected..."
+            print bot_ip + " " + request.path[:50] + " not detected..."
         output_data = honey_generic(faces['zero'])
         detected = UNKNOWN_HTTP
     return output_data, detected
@@ -119,7 +119,7 @@ def honey_robots():
     return output_data
 
 
-def honey_webdav(ip_addr):
+def honey_webdav(bot_ip):
     with file('common/responses/webdav.xml') as f:
         body = f.read()
     output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
@@ -163,25 +163,25 @@ def create_server(port, report_lock, verbose, update_event):
         if update_event.is_set():
             break
         try:
-            connection_socket, addr = server_socket.accept()
+            connection_socket, bot_socket = server_socket.accept()
         except KeyboardInterrupt:
             if 'connection_socket' in locals():
                 connection_socket.close()
             break
         try:
-            message = recv_timeout(connection_socket, BOT_TIMEOUT)
-        except sockerror:
+            message = receive_timeout(connection_socket, BOT_TIMEOUT)
+        except socket_error:
             if verbose:
                 print "Failed to receive data from bot"
             continue
-        bot_ip = addr[0]
+        bot_ip = bot_socket[0]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
-        outputdata = handle_request(message, request_time, bot_ip,
-                                    verbose, report_lock)
+        output_data = handle_request(message, request_time, bot_ip,
+                                     verbose, report_lock)
         try:
-            connection_socket.send(outputdata)
+            connection_socket.send(output_data)
             connection_socket.close()
-        except sockerror:
+        except socket_error:
             if verbose:
                 print "Failed to send response to bot"
             continue

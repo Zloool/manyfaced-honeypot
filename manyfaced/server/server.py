@@ -8,7 +8,7 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
 
 from common.myenc import AESCipher
 from common.settings import AUTHORISEDBEARS
-from common.utils import dump_file, recv_timeout
+from common.utils import dump_file, receive_timeout
 from db.dbconnect import Insert
 
 
@@ -45,7 +45,7 @@ def main(args, update_event):
                 connection_socket.close()
             break
         try:
-            message = recv_timeout(connection_socket)
+            message = receive_timeout(connection_socket)
             request = message.split(":")
             if len(request) is not 2:
                 connection_socket.send("CODE 300 FUCK YOU")
