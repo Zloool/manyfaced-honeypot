@@ -4,12 +4,12 @@ import time
 from shutil import copyfile
 from multiprocessing import Process, Event
 
-if not os.path.isfile("settings.py"):
-        copyfile("settings.py.example", "settings.py")
-import client
-import server
-import update
-from arguments import parse
+if not os.path.isfile("common/settings.py"):
+        copyfile("common/settings.py.example", "common/settings.py")
+from client import client
+from server import server
+from common.update import trigger, pull
+from common.arguments import parse
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
         trigger_proc = Process(
             args=(update_event,),
             name="trigger",
-            target=update.trigger,
+            target=trigger,
         )
         trigger_proc.start()
         trigger_proc.join()
@@ -55,7 +55,7 @@ def main():
             break
     else:
         if args.updater:
-            update.pull("origin", "master")
+            pull("origin", "master")
             sys.stdout.flush()
             os.execl(sys.executable, sys.executable, *sys.argv)
 
