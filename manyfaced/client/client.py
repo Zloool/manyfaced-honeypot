@@ -2,6 +2,7 @@ import datetime
 import os
 import pickle
 import signal
+import sys
 from multiprocessing import Process, Lock
 from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
@@ -102,7 +103,7 @@ def get_honey_http(request, bot_ip, verbose):
 
 
 def honey_generic(face):
-    with file('common/responses/' + face) as f:
+    with file(sys.path[0] + '/common/responses/' + face) as f:
         body = f.read()
     output_data = compile_banner(msg_size=len(body))
     output_data += body
@@ -121,7 +122,7 @@ def honey_robots():
 
 
 def honey_webdav(bot_ip):
-    with file('common/responses/webdav.xml') as f:
+    with file(sys.path[0] + '/common/responses/webdav.xml') as f:
         body = f.read()
     output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
                                  content_type='application/xml; '
