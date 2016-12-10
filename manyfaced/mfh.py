@@ -4,8 +4,9 @@ import time
 from shutil import copyfile
 from multiprocessing import Process, Event
 
-if not os.path.isfile("common/settings.py"):
-        copyfile("common/settings.py.example", "common/settings.py")
+if not os.path.isfile(sys.path[0] + "/common/settings.py"):
+        copyfile(sys.path[0] + "/common/settings.py.example",
+                 sys.path[0] + "/common/settings.py")
 from client import client
 from server import server
 from common.update import trigger, pull
