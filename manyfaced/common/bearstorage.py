@@ -46,6 +46,7 @@ class BearStorage:
             output += "IP: " + self.ip + "\r\n"
             output += "timestamp: " + self.timestamp + "\r\n"
             output += "User-Agent: " + self.ua + "\r\n"
+            output += "datected: " + str(self.isDetected) + "\r\n"
             output += "path: " + self.path + "\r\n"
             output += "command: " + self.command + "\r\n"
             output += "version: " + self.version + "\r\n"
