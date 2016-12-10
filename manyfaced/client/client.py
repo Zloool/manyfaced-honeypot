@@ -83,7 +83,8 @@ def get_honey_http(request, bot_ip, verbose):
     """
     if request.path in faces:  # If we know what to do with request
         face = faces[request.path]
-        detected = map(itemgetter(0), faces).index(request.path)
+        # useless detected = map(itemgetter(0), faces).index(request.path)
+        detected = 1
         if face == "webdav.xml":  # Compile response for WEBDAV listing
             output_data = honey_webdav(bot_ip)
         elif face == "robots":  # Generate robots.txt from faces dict
