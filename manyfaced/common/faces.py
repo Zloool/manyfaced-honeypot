@@ -3,7 +3,7 @@ This is a dictionary of '/request_address':'filename'. So, for an easy cases we
 can just get data from file, concatinate it with default server banned and send
 back to client.
 """
-cases = {
+faces = {
     'zero': 'zero',
     '/': 'zero',
     '/wp-login.php': 'wplogin.html',
@@ -25,10 +25,13 @@ cases = {
     '/wp-config.save': 'wpconfig.php',
     '/wp-config.txt': 'wpconfig.php',
     '/%23wp-config.php%23': 'wpconfig.php',
-    '/MyAdmin/scripts/setup.php': 'wpadminsetup.php',
-    '/myadmin/scripts/setup.php': 'wpadminsetup.php',
-    '/phpMyAdmin/scripts/setup.php': 'wpadminsetup.php',
-    '/pma/scripts/setup.php': 'wpadminsetup.php',
+    '/MyAdmin/scripts/setup.php': 'phpadminsetup.php',
+    '/myadmin/scripts/setup.php': 'phpadminsetup.php',
+    '/phpMyAdmin/scripts/setup.php': 'phpadminsetup.php',
+    '/pma/scripts/setup.php': 'phpadminsetup.php',
+    '//phpmyadmin/scripts/setup.php': 'phpadminsetup.php',
+    '//pma/scripts/setup.php': 'phpadminsetup.php',
+    '/phpmyadmin/scripts/setup.php': 'phpadminsetup.php',
     '/phpMyAdmin': 'phpadmin.php',
     '/phpmyadmin': 'phpadmin.php',
     '/phpmyadmon': 'phpadmin.php',
@@ -72,8 +75,6 @@ cases = {
     '/db/websql/': 'phpadmin.php',
     '/myadmin/': 'phpadmin.php',
     '/MyAdmin/': 'phpadmin.php',
-    '/MyAdmin/scripts/setup.php': 'phpadmin.php',
-    '/myadmin/scripts/setup.php': 'phpadmin.php',
     '/mysql-admin/': 'phpadmin.php',
     '/mysql/': 'phpadmin.php',
     '/mysql/admin/': 'phpadmin.php',
@@ -103,8 +104,6 @@ cases = {
     '/phpmyadmin/': 'phpadmin.php',
     '/phpMyAdmin/': 'phpadmin.php',
     '/phpmyadmin/index.php': 'phpadmin.php',
-    '/phpMyAdmin/scripts/setup.php': 'phpadmin.php',
-    '/phpmyadmin/scripts/setup.php': 'phpadmin.php',
     '/phppma/': 'phpadmin.php',
     '/PMA2011/': 'phpadmin.php',
     '/pma2011/': 'phpadmin.php',
