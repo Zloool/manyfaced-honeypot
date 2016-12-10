@@ -36,7 +36,7 @@ def Insert(Bear):
         RequestPath=Bear.path,
         RequestCommand=Bear.command,
         RequestVersion=Bear.version,
-        RequestRaw=Bear.rawrequest,
+        RequestRaw=Bear.raw_request,
         ProbeName=Bear.hostname,
         RequestDetectionID=Bear.isDetected,
         BotIP=Bear.ip,
@@ -44,6 +44,6 @@ def Insert(Bear):
         BotUA=Bear.ua,
         BotContinent=Bear.continent,
         BotTracert=Bear.tracert,
-        BotDNSName=Bear.dnsname,
+        BotDNSName=Bear.dns_name,
     )
     db.insert({DBBear, })
