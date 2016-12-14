@@ -53,7 +53,8 @@ def main(args, update_event):
                 continue
             key = AUTHORISEDBEARS[request[0]]
             decipher = AESCipher(key)
-            data = pickle.loads(decipher.decrypt(request[1]))
+            decrypted_message = decipher.decrypt(request[1])
+            data = pickle.loads(decrypted_message)
             if args.verbose:
                 print unicode(data).encode('utf-8')
             Process(
@@ -72,6 +73,9 @@ def main(args, update_event):
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except ValueError, e:
+            print e
+            connection_socket.send("CODE 300 FUCK YOU")
+        except ImportError, e:  # In case of wrong pickle class
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except e:
