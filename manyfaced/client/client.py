@@ -135,6 +135,7 @@ def honey_webdav(bot_ip):
 def handle_request(message, request_time, bot_ip, verbose, report_lock):
     request = HTTPRequest(message)
     if request.error_code is None:
+        bot_ip = request.headers['X-Manyfaced-IP']
         if hasattr(request, 'path'):
             output_data, detected = get_honey_http(request, bot_ip, verbose)
         else:
