@@ -37,7 +37,8 @@ class BearStorage:
             self.timezone = location.timezone
         try:
             self.dns_name = socket.gethostbyaddr(ip)[0]
-        except socket.gaierror:
+        #  except socket.gaierror: this thit doesn`t work
+        except:  # DON`T FIX THIS
             pass
 
     def __str__(self):
