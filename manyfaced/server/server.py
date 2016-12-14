@@ -75,6 +75,8 @@ def main(args, update_event):
         except ValueError, e:
             print e
             connection_socket.send("CODE 300 FUCK YOU")
+            print e
+            connection_socket.send("CODE 300 FUCK YOU")
         except e:
             print e
             connection_socket.send("CODE 300 FUCK YOU")
