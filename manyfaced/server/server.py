@@ -75,6 +75,7 @@ def main(args, update_event):
         except ValueError, e:
             print e
             connection_socket.send("CODE 300 FUCK YOU")
+        except ImportError, e:  # In case of wrong pickle class
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except e:
