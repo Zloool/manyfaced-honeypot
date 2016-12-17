@@ -6,7 +6,7 @@ import sys
 from multiprocessing import Process, Lock
 from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as socket_error)
+                    error as socket_error, inet_aton)
 
 from common.bearstorage import BearStorage
 from common.faces import faces
@@ -132,17 +132,27 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def handle_request(message, request_time, bot_ip, verbose, report_lock):
+def handle_request(message, request_time, bot_ip, args, report_lock):
     request = HTTPRequest(message)
     if request.error_code is None:
-        bot_ip = request.headers['X-Manyfaced-IP']
+        if 'X-Manyfaced-IP' in request.headers:
+            if args.proxy:
+                try:
+                    bot_ip = request.headers['X-Manyfaced-IP']
+                    inet_aton(bot_ip)
+                except socket_error:
+                    print "Malformed X-Manyfaced-IP header:" + bot_ip
+            else:
+                print "Got X-Manyfaced-IP header but -p option wasn`t set."
+        elif args.proxy:
+            print "Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip:" + bot_ip
         if hasattr(request, 'path'):
-            output_data, detected = get_honey_http(request, bot_ip, verbose)
+            output_data, detected = get_honey_http(request, bot_ip, args.verbose)
         else:
             output_data = message
             detected = UNKNOWN_HTTP
     else:
-        if verbose:
+        if args.verbose:
             print "Got non-http request"
         detected = UNKNOWN_NON_HTTP
         output_data = message
@@ -155,12 +165,13 @@ def handle_request(message, request_time, bot_ip, verbose, report_lock):
     return output_data
 
 
-def create_server(port, report_lock, verbose, update_event):
+def create_server(args, report_lock, update_event):
+    port = args.client
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(('', port))
     server_socket.listen(1)
-    if verbose:
+    if args.verbose:
         print "Serving honey on port %s" % port
     while True:
         if update_event.is_set():
@@ -174,18 +185,18 @@ def create_server(port, report_lock, verbose, update_event):
         try:
             message = receive_timeout(connection_socket, BOT_TIMEOUT)
         except socket_error:
-            if verbose:
+            if args.verbose:
                 print "Failed to receive data from bot"
             continue
         bot_ip = bot_socket[0]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         output_data = handle_request(message, request_time, bot_ip,
-                                     verbose, report_lock)
+                                     args, report_lock)
         try:
             connection_socket.send(output_data)
             connection_socket.close()
         except socket_error:
-            if verbose:
+            if args.verbose:
                 print "Failed to send response to bot"
             continue
     server_socket.close()
@@ -195,4 +206,4 @@ def main(args, update_event):
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     report_lock = Lock()
-    create_server(args.client, report_lock, args.verbose, update_event)
+    create_server(args, report_lock, update_event)
