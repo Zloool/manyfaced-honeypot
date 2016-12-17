@@ -135,17 +135,18 @@ def honey_webdav(bot_ip):
 def handle_request(message, request_time, bot_ip, args, report_lock):
     request = HTTPRequest(message)
     if request.error_code is None:
-        if 'X-Manyfaced-IP' in request.headers:
-            if args.proxy:
-                try:
-                    bot_ip = request.headers['X-Manyfaced-IP']
-                    inet_aton(bot_ip)
-                except socket_error:
-                    print "Malformed X-Manyfaced-IP header:" + bot_ip
-            else:
-                print "Got X-Manyfaced-IP header but -p option wasn`t set."
-        elif args.proxy:
-            print "Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip:" + bot_ip
+        if hasattr(request, 'headers'):
+            if 'X-Manyfaced-IP' in request.headers:
+                if args.proxy:
+                    try:
+                        bot_ip = request.headers['X-Manyfaced-IP']
+                        inet_aton(bot_ip)
+                    except socket_error:
+                        print "Malformed X-Manyfaced-IP header:" + bot_ip
+                else:
+                    print "Got X-Manyfaced-IP header but -p option wasn`t set."
+            elif args.proxy:
+                print "Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip:" + bot_ip
         if hasattr(request, 'path'):
             output_data, detected = get_honey_http(request, bot_ip, args.verbose)
         else:
