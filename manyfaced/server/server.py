@@ -64,21 +64,33 @@ def main(args, update_event):
             ).start()
             connection_socket.send("200")
         except socket_error, e:
+            print type(e)
+            print e.args
             print e
             continue
         except TypeError, e:
+            print type(e)
+            print e.args
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except KeyError, e:
+            print type(e)
+            print e.args
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except ValueError, e:
+            print type(e)
+            print e.args
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         except ImportError, e:  # In case of wrong pickle class
+            print type(e)
+            print e.args
             print e
             connection_socket.send("CODE 300 FUCK YOU")
-        except e:
+        except Exception as e:
+            print type(e)
+            print e.args
             print e
             connection_socket.send("CODE 300 FUCK YOU")
         finally:
