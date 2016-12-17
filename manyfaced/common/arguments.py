@@ -59,6 +59,13 @@ def parse():
         action='store_true',
         help='increase output verbosity',
         )
+
+    parser.add_argument(
+        '-p',
+        '--proxy',
+        action='store_true',
+        help='set this argument if you want to put honeypot behind proxy',
+        )
     if len(sys.argv[1:]) == 0:
         parser.print_usage()
         parser.exit()
