@@ -1,11 +1,8 @@
-import pytest
-from manyfaced.client.client import honey_generic
-import manyfaced.db as db
-import manyfaced.server as server
-from manyfaced.common import faces
+from manyfaced.client import faces
+from manyfaced.client import client
 
 
 def test_gethoney():
     test_face = faces.faces['/']
-    response = honey_generic(test_face)
+    response = client.honey_generic(test_face)
     pass
