@@ -2,7 +2,6 @@ import datetime
 import os
 import pickle
 import signal
-import sys
 from multiprocessing import Process, Lock
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error, inet_aton)
@@ -14,6 +13,8 @@ from manyfaced.common.myenc import AESCipher
 from manyfaced.common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
 from manyfaced.common.utils import dump_file, receive_timeout
+
+
 
 
 def send_report(data, client, password, lock):
@@ -102,7 +103,8 @@ def get_honey_http(request, bot_ip, verbose):
 
 
 def honey_generic(face):
-    path = os.path.join(sys.path[0], 'manyfaced', 'common', 'responses', face)
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(root_dir, 'responses', face)
     with file(path) as f:
         body = f.read()
     output_data = compile_banner(msg_size=len(body))
@@ -122,7 +124,9 @@ def honey_robots():
 
 
 def honey_webdav(bot_ip):
-    with file(sys.path[0] + '/common/responses/webdav.xml') as f:
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(root_dir, 'responses', 'webdav.xml')
+    with file(path) as f:
         body = f.read()
     output_data = compile_banner(code='HTTP/1.1 207 Multi-Status',
                                  content_type='application/xml; '
