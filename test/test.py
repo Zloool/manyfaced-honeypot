@@ -1,23 +1,11 @@
-import os
-import runme
-import settings
-import shutil
+import pytest
+from manyfaced.client.client import honey_generic
+import manyfaced.db as db
+import manyfaced.server as server
+from manyfaced.common import faces
 
 
-def test_create_file():
-    test_msg = "test"
-    test_dir = "test"
-    assert runme.create_file(test_msg, test_dir) is None
-    assert os.path.exists("{0}{1}".format(settings.HONEYFOLDER, test_dir))
-    testfile = "{0}{1}/{2}".format(
-        settings.HONEYFOLDER,
-        test_dir,
-        os.listdir(
-            settings.HONEYFOLDER +
-            test_dir)[0],
-        )
-    assert os.path.exists(testfile)
-    with open(testfile, "r") as f:
-        assert f.read() == test_msg
-        f.close()
-    shutil.rmtree(settings.HONEYFOLDER+test_dir)
+def test_gethoney():
+    test_face = faces.faces['/']
+    response = honey_generic(test_face)
+    pass
