@@ -7,10 +7,10 @@ from multiprocessing import Process, Event
 if not os.path.isfile(sys.path[0] + "/common/settings.py"):
         copyfile(sys.path[0] + "/common/settings.py.example",
                  sys.path[0] + "/common/settings.py")
-from client import client
-from server import server
-from common.update import trigger, pull
-from common.arguments import parse
+from manyfaced.client import client
+from manyfaced.server import server
+from manyfaced.common.update import trigger, pull
+from manyfaced.common.arguments import parse
 
 
 def main():
