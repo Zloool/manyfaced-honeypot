@@ -63,6 +63,9 @@ def main(args, update_event):
                 target=data_saving
             ).start()
             connection_socket.send("200")
+        except UnicodeDecodeError as e:
+            print "Error decrypting data from client, check login data."
+            connection_socket.send("CODE 300 FUCK YOU")
         except socket_error, e:
             print type(e)
             print e.args
