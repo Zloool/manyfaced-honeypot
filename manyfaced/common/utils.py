@@ -2,7 +2,7 @@ import time
 import pickle
 from socket import error as socket_error
 
-from common.status import CLIENT_TIMEOUT
+from manyfaced.common.status import CLIENT_TIMEOUT
 
 
 def dump_file(data):
