@@ -46,51 +46,13 @@ def main(args, update_event):
             break
         try:
             message = receive_timeout(connection_socket)
-            request = message.split(":")
-            if len(request) is not 2:
-                connection_socket.send("CODE 300 FUCK YOU")
-                connection_socket.close()
-                continue
-            key = AUTHORISEDBEARS[request[0]]
-            decipher = AESCipher(key)
-            decrypted_message = decipher.decrypt(request[1])
-            data = pickle.loads(decrypted_message)
-            if args.verbose:
-                print unicode(data).encode('utf-8')
-            Process(
-                args=(data, args, db_lock),
-                name="data_saving",
-                target=data_saving
-            ).start()
-            connection_socket.send("200")
-        except UnicodeDecodeError as e:
-            print "Error decrypting data from client, check login data."
-            connection_socket.send("CODE 300 FUCK YOU")
+            response = handle_client(args, db_lock, message)
+            connection_socket.send(response)
         except socket_error, e:
             print type(e)
             print e.args
             print e
             continue
-        except TypeError, e:
-            print type(e)
-            print e.args
-            print e
-            connection_socket.send("CODE 300 FUCK YOU")
-        except KeyError, e:
-            print type(e)
-            print e.args
-            print e
-            connection_socket.send("CODE 300 FUCK YOU")
-        except ValueError, e:
-            print type(e)
-            print e.args
-            print e
-            connection_socket.send("CODE 300 FUCK YOU")
-        except ImportError, e:  # In case of wrong pickle class
-            print type(e)
-            print e.args
-            print e
-            connection_socket.send("CODE 300 FUCK YOU")
         except Exception as e:
             print type(e)
             print e.args
@@ -100,3 +62,46 @@ def main(args, update_event):
             connection_socket.close()
 
     server_socket.close()
+
+
+def handle_client(args, db_lock, message):
+    try:
+        request = message.split(":")
+        if len(request) is not 2:
+            return "CODE 304 WRONG MESSAGE FORMAT"
+        key = AUTHORISEDBEARS[request[0]]
+        decipher = AESCipher(key)
+        decrypted_message = decipher.decrypt(request[1])
+        data = pickle.loads(decrypted_message)
+        if args.verbose:
+            print unicode(data).encode('utf-8')
+        Process(
+                args=(data, args, db_lock),
+                name="data_saving",
+                target=data_saving
+        ).start()
+        response = "200"
+    except UnicodeDecodeError as e:
+        print "Error decrypting data from client, check login data."
+        response = "CODE 301 INCORRECT PASSWORD"
+    except TypeError, e:
+        print type(e)
+        print e.args
+        print e
+        response = "CODE 302 TYPEERROR"
+    except KeyError, e:
+        print type(e)
+        print e.args
+        print e
+        response = "CODE 303 INCORRECT LOGIN"
+    except ValueError, e:
+        print type(e)
+        print e.args
+        print e
+        response = "CODE 300 FUCK YOU"
+    except ImportError, e:  # In case of wrong pickle class
+        print type(e)
+        print e.args
+        print e
+        response = "CODE 300 FUCK YOU"
+    return response
