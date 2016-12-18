@@ -8,13 +8,13 @@ from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error, inet_aton)
 
-from common.bearstorage import BearStorage
-from common.faces import faces
-from common.httphandler import HTTPRequest
-from common.myenc import AESCipher
-from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
-from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
-from common.utils import dump_file, receive_timeout
+from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.faces import faces
+from manyfaced.common.httphandler import HTTPRequest
+from manyfaced.common.myenc import AESCipher
+from manyfaced.common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
+from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
+from manyfaced.common.utils import dump_file, receive_timeout
 
 
 def send_report(data, client, password, lock):
