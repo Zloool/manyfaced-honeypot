@@ -15,8 +15,6 @@ from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
 from manyfaced.common.utils import dump_file, receive_timeout
 
 
-
-
 def send_report(data, client, password, lock):
     with lock:
         cypher = AESCipher(password)
@@ -28,6 +26,7 @@ def send_report(data, client, password, lock):
             s.sendall(message)
             response = s.recv(1024)
             if response != '200':
+                print response
                 raise socket_error
             s.close()
         except socket_error:
