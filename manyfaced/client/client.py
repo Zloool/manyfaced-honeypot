@@ -103,7 +103,8 @@ def get_honey_http(request, bot_ip, verbose):
 
 
 def honey_generic(face):
-    with file(sys.path[0] + '/common/responses/' + face) as f:
+    path = os.path.join(sys.path[0], 'manyfaced', 'common', 'responses', face)
+    with file(path) as f:
         body = f.read()
     output_data = compile_banner(msg_size=len(body))
     output_data += body
