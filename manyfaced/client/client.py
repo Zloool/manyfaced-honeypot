@@ -4,12 +4,11 @@ import pickle
 import signal
 import sys
 from multiprocessing import Process, Lock
-from operator import itemgetter
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error, inet_aton)
 
+from manyfaced.client.faces import faces
 from manyfaced.common.bearstorage import BearStorage
-from manyfaced.common.faces import faces
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.myenc import AESCipher
 from manyfaced.common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
