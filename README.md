@@ -1,4 +1,5 @@
-# Many-faced honeypot
+# Many-faced honeypot [![Build Status](https://travis-ci.org/Zloool/manyfaced-honeypot.svg?branch=master)](https://travis-ci.org/Zloool/manyfaced-honeypot)
+
 Socket-based python web(and more) honeypot.
 Goal of the project is to explore world of internet crawlers.
 
