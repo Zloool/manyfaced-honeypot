@@ -3,7 +3,7 @@ from datetime import datetime
 from infi.clickhouse_orm import models, fields, engines
 from infi.clickhouse_orm.database import Database
 
-from manyfaced.common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
+from common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
                              CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
 
 
