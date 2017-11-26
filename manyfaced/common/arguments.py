@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-import settings
+from . import settings
 
 """
 usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-u] [-v]

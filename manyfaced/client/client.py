@@ -6,7 +6,7 @@ from multiprocessing import Process, Lock
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error, inet_aton)
 
-from faces import faces
+from .faces import faces
 from common.bearstorage import BearStorage
 from common.httphandler import HTTPRequest
 from common.myenc import AESCipher
@@ -26,7 +26,7 @@ def send_report(data, client, password, lock):
             s.sendall(message)
             response = s.recv(1024)
             if response != '200':
-                print response
+                print(response)
                 raise socket_error
             s.close()
         except socket_error:
@@ -92,10 +92,10 @@ def get_honey_http(request, bot_ip, verbose):
         else:  # If our request doesnt require special treatment, it goes here
             output_data = honey_generic(face)
         if verbose:
-            print bot_ip + " " + request.path + " gotcha!"
+            print(bot_ip + " " + request.path + " gotcha!")
     else:  # If we dont know what to do with that request
         if verbose:
-            print bot_ip + " " + request.path[:50] + " not detected..."
+            print(bot_ip + " " + request.path[:50] + " not detected...")
         output_data = honey_generic(faces['zero'])
         detected = UNKNOWN_HTTP
     return output_data, detected
@@ -145,11 +145,11 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
                         bot_ip = request.headers['X-Manyfaced-IP']
                         inet_aton(bot_ip)
                     except socket_error:
-                        print "Malformed X-Manyfaced-IP header:" + bot_ip
+                        print("Malformed X-Manyfaced-IP header:" + bot_ip)
                 else:
-                    print "Got X-Manyfaced-IP header but -p option wasn`t set."
+                    print("Got X-Manyfaced-IP header but -p option wasn`t set.")
             elif args.proxy:
-                print "Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip:" + bot_ip
+                print("Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip:" + bot_ip)
         if hasattr(request, 'path'):
             output_data, detected = get_honey_http(request, bot_ip, args.verbose)
         else:
@@ -157,10 +157,10 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
             detected = UNKNOWN_HTTP
     else:
         if args.verbose:
-            print "Got non-http request"
+            print("Got non-http request")
         detected = UNKNOWN_NON_HTTP
         output_data = message
-    bs = BearStorage(bot_ip, unicode(message, errors='replace'),
+    bs = BearStorage(bot_ip, str(message, errors='replace'),
                      request_time, request, detected, HIVELOGIN)
     Process(
         args=(bs, HIVELOGIN, HIVEPASS, report_lock),
@@ -176,7 +176,7 @@ def create_server(args, report_lock, update_event):
     server_socket.bind(('', port))
     server_socket.listen(1)
     if args.verbose:
-        print "Serving honey on port %s" % port
+        print("Serving honey on port %s" % port)
     while True:
         if update_event.is_set():
             break
@@ -190,7 +190,7 @@ def create_server(args, report_lock, update_event):
             message = receive_timeout(connection_socket, BOT_TIMEOUT)
         except socket_error:
             if args.verbose:
-                print "Failed to receive data from bot"
+                print("Failed to receive data from bot")
             continue
         bot_ip = bot_socket[0]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
@@ -201,7 +201,7 @@ def create_server(args, report_lock, update_event):
             connection_socket.close()
         except socket_error:
             if args.verbose:
-                print "Failed to send response to bot"
+                print("Failed to send response to bot")
             continue
     server_socket.close()
 

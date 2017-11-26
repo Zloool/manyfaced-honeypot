@@ -1,5 +1,5 @@
-from BaseHTTPServer import BaseHTTPRequestHandler
-from StringIO import StringIO
+from http.server import BaseHTTPRequestHandler
+from io import StringIO
 
 
 class HTTPRequest(BaseHTTPRequestHandler):

@@ -72,9 +72,9 @@ def connect_http(host, port):
                 request += '\r\n'
                 request += ''.join(random.choice(ptr) for _ in range(N))
                 s.send(request)
-                print "-",
+                print("-", end=' ')
             except socket.error:
-                print "!",
+                print("!", end=' ')
         except KeyboardInterrupt:
             os._exit(0)
 
@@ -89,9 +89,9 @@ def connect(host, port):
             ptr = string.ascii
             request = ''.join(random.choice(ptr) for _ in range(N))
             s.send(request)
-            print "-",
+            print("-", end=' ')
         except:
-            print "!",
+            print("!", end=' ')
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
