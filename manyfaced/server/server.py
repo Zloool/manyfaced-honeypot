@@ -1,15 +1,16 @@
-import pickle
 import os
+import pickle
 import signal
-from multiprocessing import Process, Lock
-from requests.exceptions import ConnectionError
-from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as socket_error)
+from multiprocessing import Lock, Process
+from socket import error as socket_error
+from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 
-from common.myenc import AESCipher
-from common.settings import AUTHORISEDBEARS
-from common.utils import dump_file, receive_timeout
-from db.dbconnect import Insert
+from cryptography.fernet import Fernet
+from requests.exceptions import ConnectionError
+
+from manyfaced.common.settings import AUTHORISEDBEARS
+from manyfaced.common.utils import dump_file, receive_timeout
+from manyfaced.db.dbconnect import Insert
 
 
 def data_saving(data, args, lock):
@@ -70,7 +71,7 @@ def handle_client(args, db_lock, message):
         if len(request) is not 2:
             return "CODE 304 WRONG MESSAGE FORMAT"
         key = AUTHORISEDBEARS[request[0]]
-        decipher = AESCipher(key)
+        decipher = Fernet(key)
         decrypted_message = decipher.decrypt(request[1])
         data = pickle.loads(decrypted_message)
         if args.verbose:

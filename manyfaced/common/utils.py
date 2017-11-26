@@ -49,4 +49,4 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
             pass
 
     # join all parts to make final string
-    return ''.join(total_data)
+    return ''.join(str(total_data))

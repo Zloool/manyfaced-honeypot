@@ -1,5 +1,6 @@
 python-geoip
 python-geoip-geolite2
-pycrypto
+cryptography
+requests
 pytest
 infi.clickhouse_orm
