@@ -1,6 +1,7 @@
 import os
 import pickle
 import signal
+from base64 import b64encode
 from multiprocessing import Lock, Process
 from socket import error as socket_error
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
@@ -71,7 +72,7 @@ def handle_client(args, db_lock, message):
         if len(request) is not 2:
             return "CODE 304 WRONG MESSAGE FORMAT"
         key = AUTHORISEDBEARS[request[0]]
-        decipher = Fernet(key)
+        decipher = Fernet(b64encode(key.encode()))
         decrypted_message = decipher.decrypt(request[1])
         data = pickle.loads(decrypted_message)
         if args.verbose:

@@ -2,6 +2,7 @@ import datetime
 import os
 import pickle
 import signal
+from base64 import b64encode
 from multiprocessing import Lock, Process
 from socket import error as socket_error
 from socket import (AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, inet_aton,
@@ -19,7 +20,7 @@ from manyfaced.common.utils import dump_file, receive_timeout
 
 def send_report(data, client, password, lock):
     with lock:
-        cypher = Fernet(password)
+        cypher = Fernet(b64encode(password.encode()))
         message = client + ":"
         message += cypher.encrypt(pickle.dumps(data))
         s = socket(AF_INET, SOCK_STREAM)
@@ -162,7 +163,7 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
             print("Got non-http request")
         detected = UNKNOWN_NON_HTTP
         output_data = message
-    bs = BearStorage(bot_ip, str(message, errors='replace'),
+    bs = BearStorage(bot_ip, message,
                      request_time, request, detected, HIVELOGIN)
     Process(
         args=(bs, HIVELOGIN, HIVEPASS, report_lock),
@@ -199,7 +200,7 @@ def create_server(args, report_lock, update_event):
         output_data = handle_request(message, request_time, bot_ip,
                                      args, report_lock)
         try:
-            connection_socket.send(output_data)
+            connection_socket.send(output_data.encode())
             connection_socket.close()
         except socket_error:
             if args.verbose:

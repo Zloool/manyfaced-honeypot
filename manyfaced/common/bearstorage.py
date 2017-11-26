@@ -30,11 +30,11 @@ class BearStorage:
                 self.ua = parsed_request.headers['user-agent']
         self.isDetected = is_detected
         self.hostname = hostname
-        location = geolite2.lookup(ip)
-        if location is not None:
-            self.country = location.country
-            self.continent = location.continent
-            self.timezone = location.timezone
+        #location = geolite2.lookup(ip)
+        #if location is not None:
+        #    self.country = location.country
+        #    self.continent = location.continent
+        #    self.timezone = location.timezone
         try:
             self.dns_name = socket.gethostbyaddr(ip)[0]
         except socket.herror:
