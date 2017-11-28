@@ -26,7 +26,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
         self.parse_request()
         self.data = request_text
 
-    def send_error(self, code, message):
+    def send_error(self, code, message, idk):
         self.error_code = code
         self.error_message = message
 

@@ -49,7 +49,7 @@ def main(args, update_event):
         try:
             message = receive_timeout(connection_socket)
             response = handle_client(args, db_lock, message)
-            connection_socket.send(response)
+            connection_socket.send(response.encode())
         except socket_error as e:
             print(type(e))
             print(e.args)
@@ -59,7 +59,7 @@ def main(args, update_event):
             print(type(e))
             print(e.args)
             print(e)
-            connection_socket.send("CODE 300 FUCK YOU")
+            connection_socket.send("CODE 300 FUCK YOU".encode())
         finally:
             connection_socket.close()
 
@@ -72,11 +72,11 @@ def handle_client(args, db_lock, message):
         if len(request) is not 2:
             return "CODE 304 WRONG MESSAGE FORMAT"
         key = AUTHORISEDBEARS[request[0]]
-        decipher = Fernet(b64encode(key.encode()))
-        decrypted_message = decipher.decrypt(request[1])
+        decipher = Fernet(key)
+        decrypted_message = decipher.decrypt(request[1].encode())
         data = pickle.loads(decrypted_message)
         if args.verbose:
-            print(str(data).encode('utf-8'))
+            print(data)
         Process(
                 args=(data, args, db_lock),
                 name="data_saving",

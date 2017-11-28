@@ -49,4 +49,7 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
             pass
 
     # join all parts to make final string
-    return ''.join(str(total_data))
+    res = ""
+    for frame in total_data:
+        res += frame.decode()
+    return res

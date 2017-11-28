@@ -20,14 +20,14 @@ from manyfaced.common.utils import dump_file, receive_timeout
 
 def send_report(data, client, password, lock):
     with lock:
-        cypher = Fernet(b64encode(password.encode()))
+        cypher = Fernet(password)
         message = client + ":"
-        message += cypher.encrypt(pickle.dumps(data))
+        message += cypher.encrypt(pickle.dumps(data)).decode()
         s = socket(AF_INET, SOCK_STREAM)
         try:
             s.connect((HIVEHOST, HIVEPORT))
-            s.sendall(message)
-            response = s.recv(1024)
+            s.sendall(message.encode())
+            response = s.recv(1024).decode()
             if response != '200':
                 print(response)
                 raise socket_error
