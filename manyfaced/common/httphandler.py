@@ -2,7 +2,8 @@ from http.server import BaseHTTPRequestHandler
 from io import StringIO
 from http import HTTPStatus
 import http
-
+import email.parser
+import email.message
 
 class HTTPRequest(BaseHTTPRequestHandler):
     """
@@ -86,7 +87,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
         # Examine the headers and look for a Connection directive.
         try:
-            self.headers = http.client.parse_headers(self.rfile,
+            self.headers = HTTPRequest.parse_headers(self.rfile,
                                                         _class=self.MessageClass)
         except http.client.LineTooLong as err:
             self.send_error(
@@ -116,3 +117,19 @@ class HTTPRequest(BaseHTTPRequestHandler):
             if not self.handle_expect_100():
                 return False
         return True
+
+    def parse_headers(fp, _class=http.client.HTTPMessage):
+        headers = []
+        _MAXLINE = 65536
+        _MAXHEADERS = 100
+        while True:
+            line = fp.readline(_MAXLINE + 1).encode()
+            if len(line) > _MAXLINE:
+                raise http.client.LineTooLong("header line")
+            headers.append(line)
+            if len(headers) > _MAXHEADERS:
+                raise http.client.HTTPException("got more than %d headers" % _MAXHEADERS)
+            if line in (b'\r\n', b'\n', b''):
+                break
+        hstring = b''.join(headers).decode('iso-8859-1')
+        return email.parser.Parser(_class=_class).parsestr(hstring)

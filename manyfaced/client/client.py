@@ -4,6 +4,7 @@ import pickle
 import signal
 from base64 import b64encode
 from multiprocessing import Lock, Process
+from threading import Thread, Lock as TLock
 from socket import error as socket_error
 from socket import (AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, inet_aton,
                     socket)
@@ -165,8 +166,14 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
         output_data = message
     bs = BearStorage(bot_ip, message,
                      request_time, request, detected, HIVELOGIN)
-    Process(
-        args=(bs, HIVELOGIN, HIVEPASS, report_lock),
+    if args.debug is not None:
+        run_style = Thread
+        update_event = TLock()
+    else:
+        run_style = Process
+        update_event = Lock()
+    run_style(
+        args=(bs, HIVELOGIN, HIVEPASS, update_event),
         name="send_report",
         target=send_report,).start()
     return output_data

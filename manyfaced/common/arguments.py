@@ -48,12 +48,9 @@ def parse():
 
     parser.add_argument(
         '-d',
-        const=False,
+        action='store_true',
         dest='debug',
         help='port to start a SERVER on',
-        metavar='PORT',
-        nargs='?',
-        type=int,
         )
 
     parser.add_argument(

@@ -3,6 +3,7 @@ import pickle
 import signal
 from base64 import b64encode
 from multiprocessing import Lock, Process
+from threading import Thread, Lock as TLock
 from socket import error as socket_error
 from socket import AF_INET, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 
@@ -30,7 +31,10 @@ def data_saving(data, args, lock):
 def main(args, update_event):
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    db_lock = Lock()
+    if args.debug is not None:
+        db_lock = TLock()
+    else:
+        db_lock = Lock()
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(('', args.server))
@@ -77,7 +81,11 @@ def handle_client(args, db_lock, message):
         data = pickle.loads(decrypted_message)
         if args.verbose:
             print(data)
-        Process(
+        if args.debug is not None:
+            run_style = Thread
+        else:
+            run_style = Process
+        run_style(
                 args=(data, args, db_lock),
                 name="data_saving",
                 target=data_saving
