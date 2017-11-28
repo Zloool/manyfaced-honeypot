@@ -37,7 +37,6 @@ def send_report(data, client, password, lock):
             dump_file(data)
         except KeyboardInterrupt:
             pass
-    os._exit(0)
 
 
 def compile_banner(msg_size=0,

@@ -25,7 +25,6 @@ def data_saving(data, args, lock):
                 print("Error writing data to clickhouse, writing to file")
         except KeyboardInterrupt:
             pass
-    os._exit(0)
 
 
 def main(args, update_event):
