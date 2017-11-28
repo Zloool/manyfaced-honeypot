@@ -7,7 +7,7 @@ from .status import CLIENT_TIMEOUT
 
 def dump_file(data):
     try:
-        with file('temp.db') as f:
+        with open('temp.db') as f:
             string_file = f.read()
         db = pickle.loads(string_file)
     except:
