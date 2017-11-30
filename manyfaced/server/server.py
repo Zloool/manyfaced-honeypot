@@ -70,14 +70,10 @@ def main(args, update_event):
 
 
 def handle_client(args, db_lock, message):
-    try:
-        request = message.split(":")
-        if len(request) is not 2:
+    try:  
+        data = decode_report(message)
+        if not data:
             return "CODE 304 WRONG MESSAGE FORMAT"
-        key = AUTHORISEDBEARS[request[0]]
-        decipher = Fernet(key)
-        decrypted_message = decipher.decrypt(request[1].encode())
-        data = pickle.loads(decrypted_message)
         if args.verbose:
             print(data)
         if args.debug is not None:
@@ -114,3 +110,13 @@ def handle_client(args, db_lock, message):
         print(e)
         response = "CODE 300 FUCK YOU"
     return response
+
+def decode_report(message):
+    request = message.split(":")
+    if len(request) is not 2:
+        return
+    key = AUTHORISEDBEARS[request[0]]
+    decipher = Fernet(key)
+    decrypted_message = decipher.decrypt(request[1].encode())
+    data = pickle.loads(decrypted_message)
+    return data

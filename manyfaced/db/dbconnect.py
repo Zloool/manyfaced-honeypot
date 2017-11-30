@@ -8,7 +8,6 @@ from manyfaced.common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
 
 
 class BearRequests(models.Model):
-
     EventDate = fields.DateField()
     RequestTime = fields.DateTimeField()
     RequestPath = fields.StringField()
@@ -17,6 +16,7 @@ class BearRequests(models.Model):
     RequestRaw = fields.StringField()
     ProbeName = fields.StringField()
     RequestDetectionID = fields.UInt32Field()
+    RequestPort = fields.UInt32Field()
     BotIP = fields.StringField()
     BotCountry = fields.StringField()
     BotUA = fields.StringField()
@@ -25,6 +25,8 @@ class BearRequests(models.Model):
     BotDNSName = fields.StringField()
     engine = engines.MergeTree('EventDate', ('RequestTime', 'BotIP'))
 
+#dbase = Database('honeypot')
+#dbase.create_table(BearRequests)
 
 def Insert(Bear):
     date = datetime.strptime(Bear.timestamp, "%Y-%m-%d %H:%M:%S.%f")
@@ -40,6 +42,7 @@ def Insert(Bear):
         ProbeName=Bear.hostname,
         RequestDetectionID=Bear.isDetected,
         BotIP=Bear.ip,
+        RequestPort=Bear.port,
         BotCountry=Bear.country,
         BotUA=Bear.ua,
         BotContinent=Bear.continent,

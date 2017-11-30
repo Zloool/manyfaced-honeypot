@@ -9,6 +9,7 @@ CREATE TABLE Honeypot.bearrequests
 	RequestRaw String,
 	ProbeName String,
 	RequestDetectionID UInt32,
+	BotPort UInt32,
 	BotIP String,
 	BotCountry String,
 	BotUA String,

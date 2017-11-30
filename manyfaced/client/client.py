@@ -19,11 +19,9 @@ from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
 from manyfaced.common.utils import dump_file, receive_timeout
 
 
-def send_report(data, client, password, lock):
+def send_report(data, lock):
     with lock:
-        cypher = Fernet(password)
-        message = client + ":"
-        message += cypher.encrypt(pickle.dumps(data)).decode()
+        message = compile_report(data)
         s = socket(AF_INET, SOCK_STREAM)
         try:
             s.connect((HIVEHOST, HIVEPORT))
@@ -37,6 +35,12 @@ def send_report(data, client, password, lock):
             dump_file(data)
         except KeyboardInterrupt:
             pass
+
+def compile_report(data):
+    cypher = Fernet(HIVEPASS)
+    message = HIVELOGIN + ":"
+    message += cypher.encrypt(pickle.dumps(data)).decode()
+    return message
 
 
 def compile_banner(msg_size=0,
@@ -138,7 +142,7 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def handle_request(message, request_time, bot_ip, args, report_lock):
+def handle_request(message, request_time, bot_ip, args, report_lock, port):
     request = HTTPRequest(message)
     if request.error_code is None:
         if hasattr(request, 'headers'):
@@ -164,7 +168,7 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
         detected = UNKNOWN_NON_HTTP
         output_data = message
     bs = BearStorage(bot_ip, message,
-                     request_time, request, detected, HIVELOGIN)
+                     request_time, request, detected, HIVELOGIN, port)
     if args.debug is not None:
         run_style = Thread
         update_event = TLock()
@@ -172,7 +176,7 @@ def handle_request(message, request_time, bot_ip, args, report_lock):
         run_style = Process
         update_event = Lock()
     run_style(
-        args=(bs, HIVELOGIN, HIVEPASS, update_event),
+        args=(bs, update_event),
         name="send_report",
         target=send_report,).start()
     return output_data
@@ -204,7 +208,7 @@ def create_server(args, report_lock, update_event):
         bot_ip = bot_socket[0]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         output_data = handle_request(message, request_time, bot_ip,
-                                     args, report_lock)
+                                     args, report_lock, port)
         try:
             connection_socket.send(output_data.encode())
             connection_socket.close()

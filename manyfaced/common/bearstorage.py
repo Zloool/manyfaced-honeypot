@@ -4,8 +4,9 @@ from geoip import geolite2
 
 class BearStorage:
     def __init__(self, ip, raw_request, timestamp, parsed_request, is_detected,
-                 hostname):
+                 hostname, port):
         self.ip = ip
+        self.port = port
         self.raw_request = raw_request
         self.timestamp = timestamp
         self.path = ""
@@ -41,10 +42,11 @@ class BearStorage:
             pass
 
     def __str__(self):
+        output = "hostname: " + self.hostname + "\r\n"
+        output += "IP: " + self.ip + "\r\n"
+        output += "port: " + self.port + "\r\n"
+        output += "timestamp: " + self.timestamp + "\r\n"
         if self.path is not "":
-            output = "hostname: " + self.hostname + "\r\n"
-            output += "IP: " + self.ip + "\r\n"
-            output += "timestamp: " + self.timestamp + "\r\n"
             output += "User-Agent: " + self.ua + "\r\n"
             output += "datected: " + str(self.isDetected) + "\r\n"
             output += "path: " + self.path + "\r\n"
@@ -56,9 +58,6 @@ class BearStorage:
             else:
                 output += "Detected: No" + "\r\n"
         else:
-            output = "hostname: " + self.hostname + "\r\n"
-            output += "IP: " + self.ip + "\r\n"
-            output += "timestamp: " + self.timestamp + "\r\n"
             output += "raw_request: " + self.raw_request
             output += "country: " + self.country + "\r\n"
         return output
