@@ -1,4 +1,5 @@
 import pickle
+import json
 import os
 import signal
 from multiprocessing import Process, Lock
@@ -66,15 +67,19 @@ def main(args, update_event):
 
 def handle_client(args, db_lock, message):
     try:
-        request = message.split(":")
+        request = message.split(":", 1)
         if len(request) != 2:
             return "CODE 304 WRONG MESSAGE FORMAT"
         key = AUTHORISEDBEARS[request[0]]
         decipher = AESCipher(key)
         decrypted_message = decipher.decrypt(request[1])
-        data = pickle.loads(decrypted_message)
+        try:
+            data = json.loads(decrypted_message.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"Invalid JSON format: {e}")
+            return "CODE 305 INVALID JSON"
         if args.verbose:
-            print(unicode(data).encode('utf-8'))
+            print(json.dumps(data, indent=2))
         Process(
                 args=(data, args, db_lock),
                 name="data_saving",
@@ -82,26 +87,26 @@ def handle_client(args, db_lock, message):
         ).start()
         response = "200"
     except UnicodeDecodeError as e:
-        print "Error decrypting data from client, check login data."
+        print("Error decrypting data from client, check login data.")
         response = "CODE 301 INCORRECT PASSWORD"
     except TypeError as e:
-        print type(e)
-        print e.args
-        print e
+        print(type(e))
+        print(e.args)
+        print(e)
         response = "CODE 302 INVALID DATA TYPE"
     except KeyError as e:
-        print type(e)
-        print e.args
-        print e
+        print(type(e))
+        print(e.args)
+        print(e)
         response = "CODE 303 INCORRECT LOGIN"
     except ValueError as e:
-        print type(e)
-        print e.args
-        print e
+        print(type(e))
+        print(e.args)
+        print(e)
         response = "CODE 300 INVALID DATA"
     except ImportError as e:  # In case of wrong pickle class
-        print type(e)
-        print e.args
-        print e
+        print(type(e))
+        print(e.args)
+        print(e)
         response = "CODE 300 FUCK YOU"
     return response
