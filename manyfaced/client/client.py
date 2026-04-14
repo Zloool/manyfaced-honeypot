@@ -40,13 +40,14 @@ def send_report(data, client, password, lock):
             response = s.recv(1024)
             if response.decode() != '200':
                 print(response)
-                raise socket_error
+                print(f"Failed to send report: {e}")
+                raise
             s.close()
         except socket_error:
             dump_file(data)
         except KeyboardInterrupt:
             pass
-    os._exit(0)
+    return
 
 
 def compile_banner(msg_size=0,
