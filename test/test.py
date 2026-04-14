@@ -10,8 +10,7 @@ if not settings_dst.exists():
     copyfile(settings_src, settings_dst)
 
 
-from manyfaced.client import faces
-from manyfaced.client import client
+from manyfaced.client import client, faces
 
 
 
@@ -19,5 +18,5 @@ from manyfaced.client import client
 
 def test_gethoney():
     test_face = faces.faces['/']
-    response = client.honey_generic(test_face)
+    client.honey_generic(test_face)
     pass
