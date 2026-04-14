@@ -10,13 +10,21 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
 from common.myenc import AESCipher
 from common.settings import AUTHORISEDBEARS
 from common.utils import dump_file, receive_timeout
-from db.dbconnect import Insert
+from db.dbconnect import Insert, BearRequests
 
 
 def data_saving(data, args, lock):
     with lock:
         try:
-            Insert(data)
+            bear = BearRequests(
+                ip=data['ip'],
+                raw_request=data['raw_request'],
+                timestamp=data['timestamp'],
+                parsed_request=json.dumps(data['parsed_request']),
+                is_detected=data['is_detected'],
+                HIVELOGIN=data['HIVELOGIN']
+            )
+            Insert(bear)
         except ConnectionError:
             dump_file(data)
             if args.verbose:
