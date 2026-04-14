@@ -1,20 +1,28 @@
 import os
+import os.path
 import subprocess
 import sys
 import time
 from shutil import copyfile
 from multiprocessing import Process, Event
 
-if not os.path.isfile(sys.path[0] + "/common/settings.py"):
-        copyfile(sys.path[0] + "/common/settings.py.example",
-                 sys.path[0] + "/common/settings.py")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+settings_path = os.path.join(base_dir, "common", "settings.py")
+settings_example_path = os.path.join(base_dir, "common", "settings.py.example")
+
+if not os.path.isfile(settings_path):
+    copyfile(settings_example_path, settings_path)
 from client import client
 from server import server
 from common.update import trigger, pull
 from common.arguments import parse
 
 
-def main():
+def main() -> None:
+    """
+    Main entry point for the application. Starts client, server, or updater processes
+    based on command-line arguments and handles graceful shutdown on KeyboardInterrupt.
+    """
     update_event = Event()
     if args.client is not None:
         client_proc = Process(
@@ -53,7 +61,7 @@ def main():
             if 'trigger_proc' in locals():
                 if trigger_proc.is_alive():
                     trigger_proc.terminate()
-                    server_proc.join()
+                    trigger_proc.join()
             break
     else:
         if args.updater:
