@@ -54,7 +54,7 @@ def Insert(Bear):
     db.insert({DBBear, })
 
 import pickle
-with file('temp.db') as f:
+with open('temp.db') as f:
     stringfile = f.read()
 db = pickle.loads(stringfile)
 for entry in db:
