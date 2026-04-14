@@ -25,13 +25,11 @@ def data_saving(data, args, lock):
                 HIVELOGIN=data['HIVELOGIN']
             )
             Insert(bear)
-        except ConnectionError:
+        except (ConnectionError, Exception) as e:
             dump_file(data)
             if args.verbose:
-                print("Error writing data to clickhouse, writing to file")
-        except KeyboardInterrupt:
-            pass
-    os._exit(0)
+                print(f"Error writing data to database: {e}, writing to file")
+    return
 
 
 def main(args, update_event):
@@ -62,11 +60,9 @@ def main(args, update_event):
             print(e.args)
             print(e)
             continue
-        except Exception as e:
-            print(type(e))
-            print(e.args)
-            print(e)
-            connection_socket.send("CODE 300 FUCK YOU")
+        except (ValueError, TypeError, KeyError, ImportError) as e:
+            print(f"Unexpected error: {e}")
+            connection_socket.send(f"CODE 300 ERROR: {e}")
         finally:
             connection_socket.close()
 
