@@ -18,7 +18,7 @@ from common.utils import dump_file, receive_timeout
 def send_report(data, client, password, lock):
     with lock:
         cypher = AESCipher(password)
-        message = client + ":"
+        message = (client + ":").encode()
         data_dict = {
             'ip': data.ip,
             'raw_request': data.raw_request,
@@ -36,9 +36,9 @@ def send_report(data, client, password, lock):
         s = socket(AF_INET, SOCK_STREAM)
         try:
             s.connect((HIVEHOST, HIVEPORT))
-            s.sendall(message.encode())
+            s.sendall(message)
             response = s.recv(1024)
-            if response != '200':
+            if response.decode() != '200':
                 print(response)
                 raise socket_error
             s.close()
