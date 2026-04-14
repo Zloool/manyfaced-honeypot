@@ -7,14 +7,14 @@ from status import CLIENT_TIMEOUT
 
 def dump_file(data):
     try:
-        with file('temp.db') as f:
+        with open('temp.db', 'rb') as f:
             string_file = f.read()
         db = pickle.loads(string_file)
     except:
         db = list()
     db.append(data)
-    with open('temp.db', "w") as f:
-        f.write(str(pickle.dumps(db)))
+    with open('temp.db', 'wb') as f:
+        f.write(pickle.dumps(db))
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):

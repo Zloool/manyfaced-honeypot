@@ -1,5 +1,5 @@
-from BaseHTTPServer import BaseHTTPRequestHandler
-from StringIO import StringIO
+from http.server import BaseHTTPRequestHandler
+from io import StringIO
 
 
 class HTTPRequest(BaseHTTPRequestHandler):
@@ -9,7 +9,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
     Code from:
     http://stackoverflow.com/questions/2115410/does-python-have-a-module-for-parsing-http-requests-and-responses
 
-    print request.command          # "GET"
+    print(request.command)          # "GET"
     print request.path             # "/who/ken/trust.html"
     print request.request_version  # "HTTP/1.1"
     print len(request.headers)     # 3

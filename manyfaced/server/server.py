@@ -19,7 +19,7 @@ def data_saving(data, args, lock):
         except ConnectionError:
             dump_file(data)
             if args.verbose:
-                print "Error writing data to clickhouse, writing to file"
+                print("Error writing data to clickhouse, writing to file")
         except KeyboardInterrupt:
             pass
     os._exit(0)
@@ -34,7 +34,7 @@ def main(args, update_event):
     server_socket.bind(('', args.server))
     server_socket.listen(1)
     if args.verbose:
-        print "Awaiting for bears on port %s" % args.server
+        print("Awaiting for bears on port %s" % args.server)
     while True:
         if update_event.is_set():
             break
@@ -48,15 +48,15 @@ def main(args, update_event):
             message = receive_timeout(connection_socket)
             response = handle_client(args, db_lock, message)
             connection_socket.send(response)
-        except socket_error, e:
-            print type(e)
-            print e.args
-            print e
+        except socket_error as e:
+            print(type(e))
+            print(e.args)
+            print(e)
             continue
         except Exception as e:
-            print type(e)
-            print e.args
-            print e
+            print(type(e))
+            print(e.args)
+            print(e)
             connection_socket.send("CODE 300 FUCK YOU")
         finally:
             connection_socket.close()
@@ -67,14 +67,14 @@ def main(args, update_event):
 def handle_client(args, db_lock, message):
     try:
         request = message.split(":")
-        if len(request) is not 2:
+        if len(request) != 2:
             return "CODE 304 WRONG MESSAGE FORMAT"
         key = AUTHORISEDBEARS[request[0]]
         decipher = AESCipher(key)
         decrypted_message = decipher.decrypt(request[1])
         data = pickle.loads(decrypted_message)
         if args.verbose:
-            print unicode(data).encode('utf-8')
+            print(unicode(data).encode('utf-8'))
         Process(
                 args=(data, args, db_lock),
                 name="data_saving",
@@ -84,22 +84,22 @@ def handle_client(args, db_lock, message):
     except UnicodeDecodeError as e:
         print "Error decrypting data from client, check login data."
         response = "CODE 301 INCORRECT PASSWORD"
-    except TypeError, e:
+    except TypeError as e:
         print type(e)
         print e.args
         print e
-        response = "CODE 302 TYPEERROR"
-    except KeyError, e:
+        response = "CODE 302 INVALID DATA TYPE"
+    except KeyError as e:
         print type(e)
         print e.args
         print e
         response = "CODE 303 INCORRECT LOGIN"
-    except ValueError, e:
+    except ValueError as e:
         print type(e)
         print e.args
         print e
-        response = "CODE 300 FUCK YOU"
-    except ImportError, e:  # In case of wrong pickle class
+        response = "CODE 300 INVALID DATA"
+    except ImportError as e:  # In case of wrong pickle class
         print type(e)
         print e.args
         print e

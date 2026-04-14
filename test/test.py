@@ -1,11 +1,13 @@
-import os
+from pathlib import Path
 import sys
 from shutil import copyfile
 
 
-if not os.path.isfile(os.path.join(os.path.split(sys.path[0])[0], "manyfaced-honeypot", "manyfaced", "common", "settings.py")):
-    copyfile(os.path.join(os.path.split(sys.path[0])[0], "manyfaced-honeypot", "manyfaced", "common", "settings.py.example"),
-             os.path.join(os.path.split(sys.path[0])[0], "manyfaced-honeypot", "manyfaced", "common", "settings.py"))
+settings_dst = Path(sys.path[0]).parent / "manyfaced-honeypot" / "manyfaced" / "common" / "settings.py"
+settings_src = settings_dst.with_suffix(".example")
+
+if not settings_dst.exists():
+    copyfile(settings_src, settings_dst)
 
 
 from manyfaced.client import faces
