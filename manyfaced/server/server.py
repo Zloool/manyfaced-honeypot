@@ -1,6 +1,4 @@
-import pickle
 import json
-import os
 import signal
 from multiprocessing import Process, Lock
 from requests.exceptions import ConnectionError
@@ -26,7 +24,7 @@ def data_saving(data, args, lock):
             )
             Insert(bear)
         except ConnectionError as e:
-            dump_file(data)
+            dump_file(json.dumps(data))
             if args.verbose:
                 print(f"Error writing data to database: {e}, writing to file")
     return
@@ -54,7 +52,7 @@ def main(args, update_event):
         try:
             message = receive_timeout(connection_socket)
             response = handle_client(args, db_lock, message)
-            connection_socket.send(response)
+            connection_socket.send(response.encode())
         except socket_error as e:
             print(type(e))
             print(e.args)
@@ -90,7 +88,7 @@ def handle_client(args, db_lock, message):
                 target=data_saving
         ).start()
         response = "200"
-    except UnicodeDecodeError as e:
+    except UnicodeDecodeError:
         print("Error decrypting data from client, check login data.")
         response = "CODE 301 INCORRECT PASSWORD"
     except TypeError as e:
