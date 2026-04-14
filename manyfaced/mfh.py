@@ -1,6 +1,5 @@
 import os
 import os.path
-import subprocess
 import sys
 import time
 from shutil import copyfile
@@ -10,12 +9,15 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 settings_path = os.path.join(base_dir, "common", "settings.py")
 settings_example_path = os.path.join(base_dir, "common", "settings.py.example")
 
-if not os.path.isfile(settings_path):
-    copyfile(settings_example_path, settings_path)
+import os
+from common.arguments import parse
+from common.update import pull, trigger
 from client import client
 from server import server
-from common.update import trigger, pull
-from common.arguments import parse
+import copyfile  # Assuming this is a typo for `copyfile` or a custom module
+
+if not os.path.isfile(settings_path):
+    copyfile(settings_example_path, settings_path)
 
 
 def main() -> None:
