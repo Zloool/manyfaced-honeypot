@@ -25,7 +25,7 @@ def data_saving(data, args, lock):
                 HIVELOGIN=data['HIVELOGIN']
             )
             Insert(bear)
-        except (ConnectionError, Exception) as e:
+        except ConnectionError as e:
             dump_file(data)
             if args.verbose:
                 print(f"Error writing data to database: {e}, writing to file")
