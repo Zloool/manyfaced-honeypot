@@ -81,7 +81,7 @@ def handle_client(args, db_lock, message):
             data = json.loads(decrypted_message.decode('utf-8'))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             print(f"Invalid JSON format: {e}")
-            return "CODE 305 INVALID JSON"
+            return f"CODE 305 INVALID JSON: {e}"
         if args.verbose:
             print(json.dumps(data, indent=2))
         Process(
