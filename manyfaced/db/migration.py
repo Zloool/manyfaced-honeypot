@@ -27,6 +27,7 @@ class BearRequests_development(models.Model):
     BotContinent = fields.StringField()
     BotTracert = fields.StringField()
     BotDNSName = fields.StringField()
+    HIVELOGIN = fields.StringField()
     engine = engines.MergeTree('EventDate', ('RequestTime', 'BotIP'))
 
 
