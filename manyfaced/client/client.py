@@ -175,8 +175,14 @@ def handle_request(message, request_time, bot_ip, args, report_lock, bot_socket)
             print("Got non-http request")
         detected = UNKNOWN_NON_HTTP
         output_data = message
+        parsed_request = {
+            'command': None,
+            'path': None,
+            'request_version': None,
+            'headers': {}
+        }
     bs = BearStorage(bot_ip, message.decode('utf-8', errors='replace'),
-                     request_time, request, detected, HIVELOGIN)
+                     request_time, parsed_request, detected, HIVELOGIN)
     Process(
         args=(bs, HIVELOGIN, HIVEPASS, report_lock),
         name="send_report",
