@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup
 
 setup(
         name='manyfaced',
@@ -9,5 +9,13 @@ setup(
         license='MIT License',
         author='Zhavoronkov Pavlo',
         author_email='zhavoronkov.p@gmail.com',
-        description='Socket-based python web(and more) honeypot. '
+        description='Socket-based python web(and more) honeypot. ',
+        python_requires='>=3.6',
+        classifiers=[
+            'Programming Language :: Python :: 3',
+            'Programming Language :: Python :: 3.6',
+            'Programming Language :: Python :: 3.7',
+            'Programming Language :: Python :: 3.8',
+            'Programming Language :: Python :: 3.9',
+        ],
 )

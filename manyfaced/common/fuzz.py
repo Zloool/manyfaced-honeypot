@@ -72,9 +72,9 @@ def connect_http(host, port):
                 request += '\r\n'
                 request += ''.join(random.choice(ptr) for _ in range(N))
                 s.send(request)
-                print "-",
+                print("-", end="")
             except socket.error:
-                print "!",
+                print("!")
         except KeyboardInterrupt:
             os._exit(0)
 
@@ -101,8 +101,10 @@ if __name__ == '__main__':
         mode = connect_http
     if args.mode == 'raw':
         mode = connect
-    if 'p' in sys.argv:
-        port = sys.argv['p']
+    if '-p' in sys.argv:
+        port_index = sys.argv.index('-p') + 1
+        if port_index < len(sys.argv):
+            port = int(sys.argv[port_index])
     for i in range(10):
         processes.append(multiprocessing.Process(
             target=mode,
