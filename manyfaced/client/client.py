@@ -1,6 +1,6 @@
 import datetime
 import os
-import pickle
+import json
 import signal
 from multiprocessing import Process, Lock
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
@@ -19,7 +19,20 @@ def send_report(data, client, password, lock):
     with lock:
         cypher = AESCipher(password)
         message = client + ":"
-        message += cypher.encrypt(pickle.dumps(data))
+        data_dict = {
+            'ip': data.ip,
+            'raw_request': data.raw_request,
+            'timestamp': data.timestamp,
+            'parsed_request': {
+                'command': data.parsed_request.command,
+                'path': data.parsed_request.path,
+                'request_version': data.parsed_request.request_version,
+                'headers': dict(data.parsed_request.headers)
+            },
+            'is_detected': data.is_detected,
+            'HIVELOGIN': data.HIVELOGIN
+        }
+        message += cypher.encrypt(json.dumps(data_dict).encode())
         s = socket(AF_INET, SOCK_STREAM)
         try:
             s.connect((HIVEHOST, HIVEPORT))
@@ -162,7 +175,7 @@ def handle_request(message, request_time, bot_ip, args, report_lock, bot_socket)
             print("Got non-http request")
         detected = UNKNOWN_NON_HTTP
         output_data = message
-    bs = BearStorage(bot_ip, unicode(message, errors='replace'),
+    bs = BearStorage(bot_ip, message.decode('utf-8', errors='replace'),
                      request_time, request, detected, HIVELOGIN)
     Process(
         args=(bs, HIVELOGIN, HIVEPASS, report_lock),
