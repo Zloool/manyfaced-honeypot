@@ -41,7 +41,7 @@ class BearStorage:
             pass
 
     def __str__(self):
-        if self.path is not "":
+        if self.path != "":
             output = "hostname: " + self.hostname + "\r\n"
             output += "IP: " + self.ip + "\r\n"
             output += "timestamp: " + self.timestamp + "\r\n"
