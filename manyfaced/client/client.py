@@ -91,7 +91,7 @@ from common.myenc import AESCipher
 from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
 from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
 from common.utils import dump_file, receive_timeout
-
+from manyfaced.common.handler import RequestHandler
 
 def send_report(data, client, password, lock):
     with lock:
@@ -174,7 +174,6 @@ def get_honey_http(request, bot_ip, verbose):
     """
     if request.path in faces:  # If we know what to do with request
         face = faces[request.path]
-        # useless detected = map(itemgetter(0), faces).index(request.path)
         detected = 1
         if face == "webdav.xml":  # Compile response for WEBDAV listing
             output_data = honey_webdav(bot_ip)
@@ -226,46 +225,31 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def handle_request(message, request_time, bot_ip, args, report_lock, bot_socket):
-    request = HTTPRequest(message)
-    if request.error_code is None:
-        if hasattr(request, 'headers'):
-            if 'X-Manyfaced-IP' in request.headers:
-                if args.proxy:
-                    try:
-                        bot_ip = request.headers['X-Manyfaced-IP']
-                        inet_aton(bot_ip)
-                    except socket_error:
-                        print("Malformed X-Manyfaced-IP header: " + bot_ip)
-                        bot_ip = bot_socket[0]  # Fallback to original IP
-                else:
-                    print("Got X-Manyfaced-IP header but -p option wasn't set.")
-            elif args.proxy:
-                print("Proxy option was set, but `X-Manyfaced-IP` header not found. Check your proxy. ip: " + bot_ip)
-                bot_ip = bot_socket[0]  # Fallback to original IP
-        if hasattr(request, 'path'):
-            output_data, detected = get_honey_http(request, bot_ip, args.verbose)
-        else:
-            output_data = message
-            detected = UNKNOWN_HTTP
-    else:
-        if args.verbose:
-            print("Got non-http request")
-        detected = UNKNOWN_NON_HTTP
-        output_data = message
-        parsed_request = {
-            'command': None,
-            'path': None,
-            'request_version': None,
-            'headers': {}
-        }
-    bs = BearStorage(bot_ip, message.decode('utf-8', errors='replace'),
-                     request_time, parsed_request, detected, HIVELOGIN)
-    Process(
-        args=(bs, HIVELOGIN, HIVEPASS, report_lock),
-        name="send_report",
-        target=send_report,).start()
-    return output_data
+class ClientHandler(RequestHandler):
+    def __init__(self, args, update_event):
+        super().__init__(args, update_event)
+
+    def parse_message(self, message):
+        request = message.split(":", 1)
+        if len(request) != 2:
+            raise ValueError("Invalid message format")
+        return request
+
+    def get_key(self, identifier):
+        # Assuming HIVELOGIN is the identifier for client
+        return HIVEPASS
+
+    def process_request(self, data):
+        bot_ip = data['ip']
+        request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
+        output_data, detected = get_honey_http(HTTPRequest(data['raw_request']), bot_ip, self.args.verbose)
+        
+        bs = BearStorage(bot_ip, data['raw_request'], request_time, data['parsed_request'], detected, HIVELOGIN)
+        Process(
+            args=(bs, HIVELOGIN, HIVEPASS, Lock()),
+            name="send_report",
+            target=send_report).start()
+        return output_data
 
 
 def create_server(args, report_lock, update_event):
@@ -291,10 +275,7 @@ def create_server(args, report_lock, update_event):
             if args.verbose:
                 print("Failed to receive data from bot")
             continue
-        bot_ip = bot_socket[0]
-        request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
-        output_data = handle_request(message, request_time, bot_ip,
-                                     args, report_lock)
+        output_data = ClientHandler(args, update_event).handle_request(message)
         try:
             connection_socket.send(output_data)
             connection_socket.close()
@@ -308,5 +289,4 @@ def create_server(args, report_lock, update_event):
 def main(args, update_event):
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    report_lock = Lock()
-    create_server(args, report_lock, update_event)
+    create_server(args, Lock(), update_event)
