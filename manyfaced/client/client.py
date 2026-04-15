@@ -71,6 +71,7 @@ faces = {
     '/xmlrpc.php': 'webdav.xml',
     'http://www.baidu.com/favicon.ico': 'webdav.xml',
     'http://www.qq.com/404/search_children.js': 'webdav.xml',
+    '/CHANGELOG.txt': 'webdav.xml',
     '/drupal/CHANGELOG.txt': 'webdav.xml',
     '/site/CHANGELOG.txt': 'webdav.xml',
     '/store/CHANGELOG.txt': 'webdav.xml',
@@ -83,7 +84,6 @@ faces = {
     '/www/start.html': 'webdav.xml',
     '/RemoteControl.html': 'webdav.xml'
 }
-import datetime
 from common.bearstorage import BearStorage
 from common.httphandler import HTTPRequest
 from common.myenc import AESCipher
