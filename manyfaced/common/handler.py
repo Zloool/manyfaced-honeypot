@@ -1,12 +1,17 @@
+from abc import ABC, abstractmethod
+from typing import Any, Dict
+
 from common.myenc import AESCipher
 import json
 
-class RequestHandler:
-    def __init__(self, args, update_event):
+
+class RequestHandler(ABC):
+    def __init__(self, args: Any, update_event: Any):
         self.args = args
         self.update_event = update_event
         
-    def handle_request(self, message):
+    @abstractmethod
+    def handle_request(self, message: str) -> Any:
         request = self.parse_message(message)
         decrypted = self.decrypt_message(request)
         data = self.parse_json(decrypted)
@@ -14,23 +19,26 @@ class RequestHandler:
         response = self.process_request(data)
         return response
 
-    def parse_message(self, message):
+    @abstractmethod
+    def parse_message(self, message: str) -> Any:
         raise NotImplementedError("Subclasses should implement this method.")
 
-    def decrypt_message(self, request):
+    def decrypt_message(self, request: Any) -> str:
         key = self.get_key(request[0])
         decipher = AESCipher(key)
         return decipher.decrypt(request[1])
 
-    def parse_json(self, decrypted_data):
+    def parse_json(self, decrypted_data: str) -> Dict[str, Any]:
         try:
             data = json.loads(decrypted_data.decode('utf-8'))
             return data
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ValueError(f"Invalid JSON format: {e}")
 
-    def process_request(self, data):
+    @abstractmethod
+    def process_request(self, data: Dict[str, Any]) -> Any:
         raise NotImplementedError("Subclasses should implement this method.")
 
-    def get_key(self, identifier):
+    @abstractmethod
+    def get_key(self, identifier: str) -> str:
         raise NotImplementedError("Subclasses should implement this method.")
