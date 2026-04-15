@@ -1,5 +1,5 @@
 # common/process_utils.py
-from multiprocessing import Process, Lock
+from multiprocessing import Lock
 
 def safe_process_task(lock, target_func, *args):
     """Wrapper for process-safe database/file operations"""
