@@ -18,7 +18,7 @@ def data_saving(data, args, lock):
                 ip=data['ip'],
                 raw_request=data['raw_request'],
                 timestamp=data['timestamp'],
-                parsed_request=json.dumps(data['parsed_request']),
+                parsed_request=data['parsed_request'],
                 is_detected=data['is_detected'],
                 HIVELOGIN=data['HIVELOGIN']
             )
