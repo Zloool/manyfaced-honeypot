@@ -6,6 +6,7 @@ from multiprocessing import Process, Lock
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error, inet_aton)
 
+# List of popular pages requested by incoming hostile bots, with appropriate face to show them
 faces = {
     '/3001': 'webdav.xml',
     '/../../../../../../etc/passwd': 'webdav.xml',
