@@ -2,7 +2,6 @@
 import socket
 import random
 import string
-import time
 import sys
 import multiprocessing
 import argparse
@@ -90,7 +89,7 @@ def connect(host, port):
             request = ''.join(random.choice(ptr) for _ in range(N))
             s.send(request)
             print("-", end="")
-        except:
+        except Exception:
             print("!", end="")
 
 if __name__ == '__main__':
