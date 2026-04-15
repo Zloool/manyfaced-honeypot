@@ -1,3 +1,4 @@
+from manyfaced.client import client, faces
 from pathlib import Path
 import sys
 from shutil import copyfile
@@ -8,9 +9,6 @@ settings_src = settings_dst.with_suffix(".example")
 
 if not settings_dst.exists():
     copyfile(settings_src, settings_dst)
-
-
-from manyfaced.client import client, faces
 
 
 

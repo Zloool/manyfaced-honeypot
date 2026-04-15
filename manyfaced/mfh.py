@@ -14,7 +14,6 @@ from common.update import pull, trigger
 from client import client
 from server import server
 import os
-import copyfile  # Assuming this is a typo for `copyfile` or a custom module
 
 if not os.path.isfile(settings_path):
     copyfile(settings_example_path, settings_path)
