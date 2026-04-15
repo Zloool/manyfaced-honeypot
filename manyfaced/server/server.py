@@ -9,22 +9,15 @@ from common.myenc import AESCipher
 from common.settings import AUTHORISEDBEARS
 from common.utils import dump_file, receive_timeout
 from db.dbconnect import Insert, BearRequests
-from manyfaced.common.handler import RequestHandler
+from manyfaced.handlers.base_handler import BaseHandler
 
-class ServerHandler(RequestHandler):
+class ServerHandler(BaseHandler):
     def __init__(self, args, update_event):
         super().__init__(args, update_event)
 
-    def parse_message(self, message):
-        request = message.split(":", 1)
-        if len(request) != 2:
-            raise ValueError("Invalid message format")
-        return request
-
     def get_key(self, identifier):
-        # Assuming identifier is the key for server
-        return AUTHORISEDBEARS.get(identifier)
-
+        return AUTHORISEDBEARS.get(identifier)  # Use authorized bears for key
+    
     def process_request(self, data):
         db_lock = Lock()
         Process(
@@ -32,7 +25,7 @@ class ServerHandler(RequestHandler):
             name="data_saving",
             target=self.save_data).start()
         
-        return True  # Success
+        return True
 
     def save_data(self, data):
         with db_lock:
@@ -73,7 +66,8 @@ def main(args, update_event):
             break
         try:
             message = receive_timeout(connection_socket)
-            response = ServerHandler(args, update_event).handle_request(message)
+            handler = ServerHandler(args, update_event)
+            response = handler.handle_request(message)
             connection_socket.send(response.encode())
         except socket_error as e:
             print(type(e))
