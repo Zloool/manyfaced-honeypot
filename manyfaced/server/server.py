@@ -69,46 +69,47 @@ def main(args, update_event):
 
 def handle_client(args, db_lock, message):
     try:
-        request = message.split(":", 1)
-        if len(request) != 2:
-            return "CODE 304 WRONG MESSAGE FORMAT"
-        key = AUTHORISEDBEARS[request[0]]
-        decipher = AESCipher(key)
-        decrypted_message = decipher.decrypt(request[1])
-        try:
-            data = json.loads(decrypted_message.decode('utf-8'))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            print(f"Invalid JSON format: {e}")
-            return f"CODE 305 INVALID JSON: {e}"
-        if args.verbose:
-            print(json.dumps(data, indent=2))
-        Process(
-                args=(data, args, db_lock),
-                name="data_saving",
-                target=data_saving
-        ).start()
-        response = "200"
-    except UnicodeDecodeError:
+        request = parse_message(message)
+        decrypted = decrypt_message(request, args.verbose)
+        data = parse_json(decrypted)
+        
+        response = process_request(data, args, db_lock)
+        return "200" if response else ""
+    except UnicodeDecodeError as e:
         print("Error decrypting data from client, check login data.")
-        response = "CODE 301 INCORRECT PASSWORD"
-    except TypeError as e:
-        print(type(e))
-        print(e.args)
-        print(e)
-        response = "CODE 302 INVALID DATA TYPE"
-    except KeyError as e:
-        print(type(e))
-        print(e.args)
-        print(e)
-        response = "CODE 303 INCORRECT LOGIN"
+        return "CODE 301 INCORRECT PASSWORD"
     except ValueError as e:
-        print(type(e))
-        print(e.args)
-        print(e)
-        response = "CODE 300 INVALID DATA"
-    except ImportError as e:  # In case of wrong pickle class
-        print(type(e))
-        print(e.args)
-        print(e)
-        response = "CODE 300 FUCK YOU"
-    return response
+        print(f"Invalid message format: {e}")
+        return f"CODE 304 WRONG MESSAGE FORMAT"
+
+
+def parse_message(message):
+    request = message.split(":", 1)
+    if len(request) != 2:
+        raise ValueError("Invalid message format")
+    return request
+
+
+def decrypt_message(request, verbose=False):
+    key = AUTHORISEDBEARS[request[0]]
+    decipher = AESCipher(key)
+    return decipher.decrypt(request[1])
+
+
+def parse_json(decrypted_data):
+    try:
+        data = json.loads(decrypted_data.decode('utf-8'))
+        return data
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ValueError(f"Invalid JSON format: {e}")
+
+
+def process_request(data, args, db_lock):
+    # Store the request in database in separate process
+    Process(
+        args=(data, args, db_lock),
+        name="data_saving",
+        target=data_saving
+    ).start()
+    
+    return True  # Success
