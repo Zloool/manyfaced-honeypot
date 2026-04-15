@@ -87,11 +87,7 @@ faces = {
 }
 from common.bearstorage import BearStorage
 from common.httphandler import HTTPRequest
-from common.myenc import AESCipher
-from common.settings import HIVEHOST, HIVEPORT, HIVELOGIN, HIVEPASS
-from common.status import BOT_TIMEOUT, UNKNOWN_HTTP, UNKNOWN_NON_HTTP
-from common.utils import dump_file, receive_timeout
-from manyfaced.common.handler import RequestHandler
+from manyfaced.handlers.http_handler import HTTPHandler
 
 def send_report(data, client, password, lock):
     with lock:
@@ -225,33 +221,6 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-class ClientHandler(RequestHandler):
-    def __init__(self, args, update_event):
-        super().__init__(args, update_event)
-
-    def parse_message(self, message):
-        request = message.split(":", 1)
-        if len(request) != 2:
-            raise ValueError("Invalid message format")
-        return request
-
-    def get_key(self, identifier):
-        # Assuming HIVELOGIN is the identifier for client
-        return HIVEPASS
-
-    def process_request(self, data):
-        bot_ip = data['ip']
-        request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
-        output_data, detected = get_honey_http(HTTPRequest(data['raw_request']), bot_ip, self.args.verbose)
-        
-        bs = BearStorage(bot_ip, data['raw_request'], request_time, data['parsed_request'], detected, HIVELOGIN)
-        Process(
-            args=(bs, HIVELOGIN, HIVEPASS, Lock()),
-            name="send_report",
-            target=send_report).start()
-        return output_data
-
-
 def create_server(args, report_lock, update_event):
     port = args.client
     server_socket = socket(AF_INET, SOCK_STREAM)
@@ -275,7 +244,8 @@ def create_server(args, report_lock, update_event):
             if args.verbose:
                 print("Failed to receive data from bot")
             continue
-        output_data = ClientHandler(args, update_event).handle_request(message)
+        handler = HTTPHandler(args, update_event)
+        output_data = handler.handle_request(message)
         try:
             connection_socket.send(output_data)
             connection_socket.close()
