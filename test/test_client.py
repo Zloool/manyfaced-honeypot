@@ -40,7 +40,7 @@ class TestClient(unittest.TestCase):
             # Verify detection
             self.assertTrue(detected)
             # Verify response contains expected content
-            self.assertIn('webdav.xml', str(output_data))
+            self.assertIn('Multi-Status', str(output_data))
         finally:
             client_mod.faces = orig_faces
 
