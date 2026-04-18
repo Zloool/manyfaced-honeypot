@@ -19,7 +19,6 @@ def test_gethoney():
     client.honey_generic(test_face)
     pass
 import unittest
-from test.test_client import TestClient
 
 if __name__ == '__main__':
     unittest.main()
