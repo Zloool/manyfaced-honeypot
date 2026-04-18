@@ -3,12 +3,15 @@ from datetime import datetime
 from infi.clickhouse_orm import models, fields, engines
 from infi.clickhouse_orm.database import Database
 
-from manyfaced.common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
-                                       CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
+from manyfaced.common.settings import (
+    CLICKHOUSEIP,
+    CLICKHOUSEPORT,
+    CLICKHOUSEUSER,
+    CLICKHOUSEPASSWORD,
+)
 
 
 class BearRequests(models.Model):
-
     EventDate = fields.DateField()
     RequestTime = fields.DateTimeField()
     RequestPath = fields.StringField()
@@ -24,13 +27,17 @@ class BearRequests(models.Model):
     BotTracert = fields.StringField()
     BotDNSName = fields.StringField()
     HIVELOGIN = fields.StringField()
-    engine = engines.MergeTree('EventDate', ('RequestTime', 'BotIP'))
+    engine = engines.MergeTree("EventDate", ("RequestTime", "BotIP"))
 
 
 def Insert(Bear):
     date = datetime.strptime(Bear.timestamp, "%Y-%m-%d %H:%M:%S.%f")
-    db = Database('Honeypot', db_url=CLICKHOUSEIP + ':' + CLICKHOUSEPORT,
-                  username=CLICKHOUSEUSER, password=CLICKHOUSEPASSWORD)
+    db = Database(
+        "Honeypot",
+        db_url=CLICKHOUSEIP + ":" + CLICKHOUSEPORT,
+        username=CLICKHOUSEUSER,
+        password=CLICKHOUSEPASSWORD,
+    )
     DBBear = BearRequests(
         EventDate=date.date(),
         RequestTime=date,
@@ -47,4 +54,8 @@ def Insert(Bear):
         BotTracert=Bear.tracert,
         BotDNSName=Bear.dns_name,
     )
-    db.insert({DBBear, })
+    db.insert(
+        {
+            DBBear,
+        }
+    )
