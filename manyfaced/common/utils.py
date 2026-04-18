@@ -7,13 +7,13 @@ from manyfaced.common.status import CLIENT_TIMEOUT
 
 def dump_file(data):
     try:
-        with open('temp.db', 'rb') as f:
+        with open("temp.db", "rb") as f:
             string_file = f.read()
         db = pickle.loads(string_file)
     except pickle.PicklingError:
         db = list()
     db.append(data)
-    with open('temp.db', 'wb') as f:
+    with open("temp.db", "wb") as f:
         f.write(pickle.dumps(db))
 
 
@@ -49,4 +49,4 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
             pass
 
     # join all parts to make final string
-    return ''.join(total_data)
+    return "".join(total_data)

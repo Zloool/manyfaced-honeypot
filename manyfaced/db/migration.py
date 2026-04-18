@@ -7,12 +7,10 @@ from infi.clickhouse_orm.database import Database
 
 if not os.path.isfile("settings.py"):
     copyfile("settings.py.example", "settings.py")
-from settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
-                      CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
+from settings import CLICKHOUSEIP, CLICKHOUSEPORT, CLICKHOUSEUSER, CLICKHOUSEPASSWORD
 
 
 class BearRequests_development(models.Model):
-
     EventDate = fields.DateField()
     RequestTime = fields.DateTimeField()
     RequestPath = fields.StringField()
@@ -28,13 +26,17 @@ class BearRequests_development(models.Model):
     BotTracert = fields.StringField()
     BotDNSName = fields.StringField()
     HIVELOGIN = fields.StringField()
-    engine = engines.MergeTree('EventDate', ('RequestTime', 'BotIP'))
+    engine = engines.MergeTree("EventDate", ("RequestTime", "BotIP"))
 
 
 def Insert(Bear):
     date = datetime.strptime(Bear.timestamp, "%Y-%m-%d %H:%M:%S.%f")
-    db = Database('Honeypot', db_url=CLICKHOUSEIP + ':' + CLICKHOUSEPORT,
-                  username=CLICKHOUSEUSER, password=CLICKHOUSEPASSWORD)
+    db = Database(
+        "Honeypot",
+        db_url=CLICKHOUSEIP + ":" + CLICKHOUSEPORT,
+        username=CLICKHOUSEUSER,
+        password=CLICKHOUSEPASSWORD,
+    )
     DBBear = BearRequests_development(
         EventDate=date.date(),
         RequestTime=date,
@@ -51,13 +53,21 @@ def Insert(Bear):
         BotTracert=Bear.tracert,
         BotDNSName=Bear.dnsname,
     )
-    db.insert({DBBear, })
+    db.insert(
+        {
+            DBBear,
+        }
+    )
 
-import pickle
-with open('temp.db') as f:
-    stringfile = f.read()
-db = pickle.loads(stringfile)
-for entry in db:
-    Insert(entry)
+
+if __name__ == "__main__":
+    import pickle
+
+    with open("temp.db") as f:
+        stringfile = f.read()
+    db = pickle.loads(stringfile)
+    for entry in db:
+        Insert(entry)
+
 # db = Database('Honeypot')
 # print db.select("SELECT * FROM $table", model_class=BearRequests)

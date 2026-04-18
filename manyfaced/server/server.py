@@ -1,19 +1,20 @@
 import json
 import signal
 from multiprocessing import Process, Lock
-from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as socket_error)
-from typing import Any
+from socket import (
+    socket,
+    AF_INET,
+    SOCK_STREAM,
+    SOL_SOCKET,
+    SO_REUSEADDR,
+    error as socket_error,
+)
 
 from manyfaced.common.settings import AUTHORISEDBEARS
-from manyfaced.common.bearstorage import BearStorage
-from manyfaced.common.status import UNKNOWN_HTTP
 from manyfaced.common.utils import dump_file, receive_timeout
-from manyfaced.common.httphandler import HTTPRequest
-from manyfaced.common.settings import (CLICKHOUSEIP, CLICKHOUSEPORT,
-                                       CLICKHOUSEUSER, CLICKHOUSEPASSWORD)
 from manyfaced.db.dbconnect import Insert, BearRequests
 from manyfaced.handlers.base_handler import BaseHandler
+
 
 class ServerHandler(BaseHandler):
     def __init__(self, args, update_event):
@@ -21,29 +22,30 @@ class ServerHandler(BaseHandler):
 
     def get_key(self, identifier):
         return AUTHORISEDBEARS.get(identifier)  # Use authorized bears for key
-    
+
     def process_request(self, data):
         db_lock = Lock()
         Process(
-            args=(data, self.args, db_lock),
-            name="data_saving",
-            target=self.save_data).start()
-        
+            args=(data, self.args, db_lock), name="data_saving", target=self.save_data
+        ).start()
+
         return True
 
-    def save_data(self, data):
+    def save_data(self, data, args, db_lock):
         with db_lock:
             try:
                 bear = BearRequests(
-                    ip=data['ip'],
-                    raw_request=data['raw_request'],
-                    timestamp=data['timestamp'],
-                    parsed_request=data['parsed_request'],
-                    is_detected=data['is_detected'],
-                    HIVELOGIN=data['HIVELOGIN']
+                    ip=data["ip"],
+                    raw_request=data["raw_request"],
+                    timestamp=data["timestamp"],
+                    parsed_request=data["parsed_request"],
+                    is_detected=data["is_detected"],
+                    HIVELOGIN=data["HIVELOGIN"],
                 )
                 Insert(bear)
-            except ConnectionError as e:
+                if args.verbose:
+                    print(f"Data saved for {data['ip']}")
+            except (ConnectionError, TypeError) as e:
                 dump_file(json.dumps(data))
                 if self.args.verbose:
                     print(f"Error writing data to database: {e}, writing to file")
@@ -51,11 +53,11 @@ class ServerHandler(BaseHandler):
 
 
 def main(args, update_event):
-    if getattr(signal, 'SIGCHLD', None) is not None:
+    if getattr(signal, "SIGCHLD", None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    server_socket.bind(('', args.server))
+    server_socket.bind(("", args.server))
     server_socket.listen(1)
     if args.verbose:
         print("Awaiting for bears on port %s" % args.server)
