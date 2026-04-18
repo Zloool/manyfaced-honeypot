@@ -1,1 +1,0 @@
-ALTER TABLE Honeypot.BearRequests ADD COLUMN HIVELOGIN String;
