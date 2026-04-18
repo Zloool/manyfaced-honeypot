@@ -85,8 +85,8 @@ faces = {
     '/www/start.html': 'webdav.xml',
     '/RemoteControl.html': 'webdav.xml'
 }
-from common.bearstorage import BearStorage
-from common.httphandler import HTTPRequest
+from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.handlers.http_handler import HTTPHandler
 
 def send_report(data, client, password, lock):
