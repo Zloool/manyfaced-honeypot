@@ -1,61 +1,36 @@
-from datetime import datetime
+"""Database connector for honeypot bear records.
 
-from infi.clickhouse_orm import models, fields, engines
-from infi.clickhouse_orm.database import Database
+Replaces the ClickHouse ORM with the new storage backend (SQLite/PostgreSQL).
+BearRequests is now a dataclass and Insert() delegates to the configured backend.
+"""
 
-from manyfaced.common.settings import (
-    CLICKHOUSEIP,
-    CLICKHOUSEPORT,
-    CLICKHOUSEUSER,
-    CLICKHOUSEPASSWORD,
-)
+from dataclasses import dataclass
+from typing import Any, Dict
 
-
-class BearRequests(models.Model):
-    EventDate = fields.DateField()
-    RequestTime = fields.DateTimeField()
-    RequestPath = fields.StringField()
-    RequestCommand = fields.StringField()
-    RequestVersion = fields.StringField()
-    RequestRaw = fields.StringField()
-    ProbeName = fields.StringField()
-    RequestDetectionID = fields.UInt32Field()
-    BotIP = fields.StringField()
-    BotCountry = fields.StringField()
-    BotUA = fields.StringField()
-    BotContinent = fields.StringField()
-    BotTracert = fields.StringField()
-    BotDNSName = fields.StringField()
-    HIVELOGIN = fields.StringField()
-    engine = engines.MergeTree("EventDate", ("RequestTime", "BotIP"))
+from .storage import get_storage
 
 
-def Insert(Bear):
-    date = datetime.strptime(Bear.timestamp, "%Y-%m-%d %H:%M:%S.%f")
-    db = Database(
-        "Honeypot",
-        db_url=CLICKHOUSEIP + ":" + CLICKHOUSEPORT,
-        username=CLICKHOUSEUSER,
-        password=CLICKHOUSEPASSWORD,
-    )
-    DBBear = BearRequests(
-        EventDate=date.date(),
-        RequestTime=date,
-        RequestPath=Bear.path,
-        RequestCommand=Bear.command,
-        RequestVersion=Bear.version,
-        RequestRaw=Bear.raw_request,
-        ProbeName=Bear.hostname,
-        RequestDetectionID=Bear.isDetected,
-        BotIP=Bear.ip,
-        BotCountry=Bear.country,
-        BotUA=Bear.ua,
-        BotContinent=Bear.continent,
-        BotTracert=Bear.tracert,
-        BotDNSName=Bear.dns_name,
-    )
-    db.insert(
-        {
-            DBBear,
-        }
-    )
+@dataclass
+class BearRequests:
+    """Data class for honeypot bear request data."""
+
+    ip: str
+    raw_request: str
+    timestamp: str
+    parsed_request: Dict[str, Any]
+    is_detected: int
+    HIVELOGIN: str
+
+
+def Insert(bear: BearRequests) -> None:
+    """Insert bear data into the configured storage backend."""
+    storage = get_storage()
+    record: Dict[str, Any] = {
+        "ip": bear.ip,
+        "raw_request": bear.raw_request,
+        "timestamp": bear.timestamp,
+        "parsed_request": bear.parsed_request,
+        "is_detected": bear.is_detected,
+        "HIVELOGIN": bear.HIVELOGIN,
+    }
+    storage.insert(record)
