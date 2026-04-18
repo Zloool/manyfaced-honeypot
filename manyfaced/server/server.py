@@ -62,26 +62,31 @@ def main(args, update_event):
     while True:
         if update_event.is_set():
             break
+        connection_socket: socket | None = None
         try:
             connection_socket, addr = server_socket.accept()
         except KeyboardInterrupt:
-            if 'connection_socket' in locals():
-                connection_socket.close()
             break
         try:
             message = receive_timeout(connection_socket)
             handler = ServerHandler(args, update_event)
             response = handler.handle_request(message)
+            if isinstance(response, bool):
+                response = "200 OK"
+            elif not isinstance(response, str):
+                response = str(response)
             connection_socket.send(response.encode())
         except socket_error as e:
-            print(type(e))
-            print(e.args)
-            print(e)
+            if args.verbose:
+                print(f"Socket error: {e}")
             continue
         except (ValueError, TypeError, KeyError, ImportError) as e:
-            print(f"Unexpected error: {e}")
-            connection_socket.send(f"CODE 300 ERROR: {e}")
+            if connection_socket:
+                connection_socket.send(f"CODE 300 ERROR: {e}".encode())
+            if args.verbose:
+                print(f"Unexpected error: {e}")
         finally:
-            connection_socket.close()
+            if connection_socket:
+                connection_socket.close()
 
     server_socket.close()

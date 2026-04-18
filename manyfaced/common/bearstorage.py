@@ -1,10 +1,13 @@
 import socket
-from geoip import geolite2
+from geoip import geolite2  # type: ignore[import-untyped]
 
 
 class BearStorage:
-    def __init__(self, ip, raw_request, timestamp, parsed_request, is_detected,
-                 hostname):
+    """Stores bear (bot) data gathered from a connection."""
+
+    def __init__(self, ip: str, raw_request: str, timestamp: str,
+                 parsed_request: object, is_detected: int,
+                 hostname: str) -> None:
         self.ip = ip
         self.raw_request = raw_request
         self.timestamp = timestamp
@@ -12,7 +15,7 @@ class BearStorage:
         self.command = ""
         self.version = ""
         self.ua = ""
-        self.headers = ""
+        self.headers = ""  # type: ignore[assignment]
         self.country = ""
         self.continent = ""
         self.timezone = ""
@@ -40,28 +43,28 @@ class BearStorage:
         except socket.herror:
             pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.path != "":
-            output = "hostname: " + self.hostname + "\r\n"
-            output += "IP: " + self.ip + "\r\n"
-            output += "timestamp: " + self.timestamp + "\r\n"
-            output += "User-Agent: " + self.ua + "\r\n"
-            output += "datected: " + str(self.isDetected) + "\r\n"
-            output += "path: " + self.path + "\r\n"
-            output += "command: " + self.command + "\r\n"
-            output += "version: " + self.version + "\r\n"
-            output += "country: " + self.country + "\r\n"
+            output = ("hostname: " + self.hostname + "\r\n"
+                      "IP: " + self.ip + "\r\n"
+                      "timestamp: " + self.timestamp + "\r\n"
+                      "User-Agent: " + self.ua + "\r\n"
+                      "datected: " + str(self.isDetected) + "\r\n"
+                      "path: " + self.path + "\r\n"
+                      "command: " + self.command + "\r\n"
+                      "version: " + self.version + "\r\n"
+                      "country: " + self.country + "\r\n")
             if self.isDetected != 4294967295 - 3:
                 output += "Detected: Yes" + "\r\n"
             else:
                 output += "Detected: No" + "\r\n"
         else:
-            output = "hostname: " + self.hostname + "\r\n"
-            output += "IP: " + self.ip + "\r\n"
-            output += "timestamp: " + self.timestamp + "\r\n"
-            output += "raw_request: " + self.raw_request
-            output += "country: " + self.country + "\r\n"
+            output = ("hostname: " + self.hostname + "\r\n"
+                      "IP: " + self.ip + "\r\n"
+                      "timestamp: " + self.timestamp + "\r\n"
+                      "raw_request: " + self.raw_request
+                      "country: " + self.country + "\r\n")
         return output
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.__str__()
