@@ -14,7 +14,7 @@ optional arguments:
   -u             enable self updating
   -v, --verbose  increase output verbosity
 
-And that`s how you`d detect a sneaky chinese bot.
+And that`s how you`d detect a sneaky bot.
 """
 
 
