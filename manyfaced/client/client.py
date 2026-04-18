@@ -1,10 +1,18 @@
 import datetime
-import os
 import json
+import os
 import signal
-from multiprocessing import Process, Lock
+from multiprocessing import Lock, Process
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
-                    error as socket_error, inet_aton)
+                    error as socket_error)
+
+from common.myenc import AESCipher
+from common.status import BOT_TIMEOUT, UNKNOWN_HTTP
+from common.settings import HIVEHOST, HIVEPORT
+from common.utils import dump_file, receive_timeout
+from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.httphandler import HTTPRequest
+from manyfaced.handlers.http_handler import HTTPHandler
 
 # List of popular pages requested by incoming hostile bots, with appropriate face to show them
 faces = {
@@ -74,27 +82,12 @@ faces = {
     '/xmlrpc.php': 'webdav.xml',
     'http://www.baidu.com/favicon.ico': 'webdav.xml',
     'http://www.qq.com/404/search_children.js': 'webdav.xml',
-    '/CHANGELOG.txt': 'webdav.xml',
-    '/drupal/CHANGELOG.txt': 'webdav.xml',
-    '/site/CHANGELOG.txt': 'webdav.xml',
-    '/store/CHANGELOG.txt': 'webdav.xml',
-    '/test/CHANGELOG.txt': 'webdav.xml',
-    '/shop/CHANGELOG.txt': 'webdav.xml',
-    '/forum/CHANGELOG.txt': 'webdav.xml',
-    '/blog/CHANGELOG.txt': 'webdav.xml',
-    '/OA_HTML/OA.jsp': 'webdav.xml',
-    '/Http/DataLayCfg.xml': 'webdav.xml',
-    '/www/start.html': 'webdav.xml',
-    '/RemoteControl.html': 'webdav.xml'
 }
-from manyfaced.common.bearstorage import BearStorage
-from manyfaced.common.httphandler import HTTPRequest
-from manyfaced.common.status import UNKNOWN_HTTP
-from manyfaced.handlers.http_handler import HTTPHandler
 
 def send_report(data, client, password, lock):
     with lock:
-        cypher = AESCipher(password)
+        cypher = AESCipher(password)  # type: ignore[name-defined]
+        # runtime import: from common.myenc import AESCipher
         message = (client + ":").encode()
         data_dict = {
             'ip': data.ip,
@@ -126,40 +119,53 @@ def send_report(data, client, password, lock):
     return
 
 
-def compile_banner(msg_size=0,
-                   code="HTTP/1.1 200 OK",
-                   server_version="Apache/1.3.42 (Unix)  (Red Hat/Linux)  "
-                        "OpenSSL/1.0.1e PHP/5.5.9 ",
-                   content_type='text/html; charset=UTF-8',
-                   connection="close",
-                   date=str(datetime.datetime.now()),
-                   nl_count=2):
+def compile_banner(
+    msg_size: int = 0,
+    code: str = "HTTP/1.1 200 OK",
+    server_version: str = (
+        "Apache/1.3.42 (Unix)  (Red Hat/Linux)  "
+        "OpenSSL/1.0.1e PHP/5.5.9 "
+    ),
+    content_type: str = "text/html; charset=UTF-8",
+    connection: str = "close",
+    date: str = str(datetime.datetime.now()),
+    nl_count: int = 2,
+) -> str:
     """
-    This function creates an HTTP banner and returns it as string. Works well
-    with default arguments in most faces, any of them can be overridden.
-    `msg_size` needs to be equal to len() of the content string (will work with
-    incorrect values in some browsers, but not in YaBrowser, so maybe in all
-    of the chrome based browsers).
-    `nl_count` is the number of blank lines in the end of server banner. Number
-    of the lines depends on Content-Type of the response. Should be:
-    2 - `text/html`; 1 - `application/xml`
+    Build an HTTP response banner and return it as a string.
+
+    Works with default arguments in most faces; any parameter can be overridden.
+    ``msg_size`` should equal the byte-length of the body (some browsers reject
+    mismatched values).
+
+    ``nl_count`` controls trailing CRLF blank lines:
+        2 for ``text/html``,
+        1 for ``application/xml``.
     """
-    banner = ""
+    banner: list[str] = []
+    c = "\r\n"
     if code != 0:
-        banner += code + '\r\n'
-    if server_version != '':
-        banner += 'Server: ' + server_version + '\r\n'
-    if content_type != '':
-        banner += 'Content-Type: ' + content_type + '\r\n'
-    if connection != '':
-        banner += 'Connection: ' + connection + '\r\n'
-    if date != '':
-        banner += 'Date: ' + date + '\r\n'
-    if msg_size != '':
-        banner += 'Content-Length: ' + str(msg_size)
-    for i in range(nl_count):
-        banner += '\r\n'
-    return banner
+        banner.append(f"{code}{c}")
+    if server_version != "":
+        banner.append(f"Server: {server_version}{c}")
+    if content_type != "":
+        banner.append(f"Content-Type: {content_type}{c}")
+    if connection != "":
+        banner.append(f"Connection: {connection}{c}")
+    if date != "":
+        banner.append(f"Date: {date}{c}")
+    if msg_size != "":
+        banner.append(f"Content-Length: {msg_size}")
+    for _ in range(nl_count):
+        banner.append(c)
+    return "".join(banner)
+
+
+def banner_to_bytes(banner: str, body: str | None = None) -> bytes:
+    """Encode a banner (optionally followed by body) into bytes for socket.send()."""
+    if body is not None:
+        return (banner + body).encode("iso-8859-1")
+    return banner.encode("iso-8859-1")
 
 
 def get_honey_http(request, bot_ip, verbose):
@@ -228,39 +234,40 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def create_server(args, report_lock, update_event):
+def create_server(args, report_lock: Lock, update_event: Event):
     port = args.client
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(('', port))
     server_socket.listen(1)
     if args.verbose:
-        print("Serving honey on port %s" % port)
-    while True:
-        if update_event.is_set():
-            break
-        try:
-            connection_socket, bot_socket = server_socket.accept()
-        except KeyboardInterrupt:
-            if 'connection_socket' in locals():
+        print("Serving honey on port %s", port)
+    try:
+        while True:
+            if update_event.is_set():
+                break
+            connection_socket: socket | None = None
+            try:
+                connection_socket, _bot_socket = server_socket.accept()
+            except KeyboardInterrupt:
+                break
+            try:
+                message = receive_timeout(connection_socket, BOT_TIMEOUT)
+            except socket_error:
+                if args.verbose:
+                    print("Failed to receive data from bot")
+                continue
+            handler = HTTPHandler(args, update_event)
+            output_data = handler.handle_request(message)
+            try:
+                connection_socket.sendall(output_data)
                 connection_socket.close()
-            break
-        try:
-            message = receive_timeout(connection_socket, BOT_TIMEOUT)
-        except socket_error:
-            if args.verbose:
-                print("Failed to receive data from bot")
-            continue
-        handler = HTTPHandler(args, update_event)
-        output_data = handler.handle_request(message)
-        try:
-            connection_socket.send(output_data)
-            connection_socket.close()
-        except socket_error:
-            if args.verbose:
-                print("Failed to send response to bot")
-            continue
-    server_socket.close()
+            except socket_error:
+                if args.verbose:
+                    print("Failed to send response to bot")
+                continue
+    finally:
+        server_socket.close()
 
 
 def main(args, update_event):

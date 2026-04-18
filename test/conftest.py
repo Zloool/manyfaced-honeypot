@@ -3,7 +3,7 @@ Configure import path and mock dependencies for testing.
 """
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Make manyfaced package importable from project root
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

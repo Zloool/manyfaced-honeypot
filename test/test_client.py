@@ -1,7 +1,7 @@
 import os
 import sys
 import unittest
-from manyfaced.client import get_honey_http, faces, compile_banner, honey_generic
+from manyfaced.client import get_honey_http, compile_banner, honey_generic
 
 # Ensure the project root is in sys.path for imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -10,7 +10,6 @@ if project_root not in sys.path:
 
 from manyfaced.client.faces import faces as faces_dict
 from manyfaced.common.httphandler import HTTPRequest
-from manyfaced.common.status import UNKNOWN_HTTP
 
 
 class TestClient(unittest.TestCase):
