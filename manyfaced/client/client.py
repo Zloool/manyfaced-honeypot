@@ -8,6 +8,8 @@ from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
 
 # List of popular pages requested by incoming hostile bots, with appropriate face to show them
 faces = {
+    'zero': 'zero',
+    '/': 'zero',
     '/3001': 'webdav.xml',
     '/../../../../../../etc/passwd': 'webdav.xml',
     '/?author=1': 'webdav.xml',
@@ -87,6 +89,7 @@ faces = {
 }
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.httphandler import HTTPRequest
+from manyfaced.common.status import UNKNOWN_HTTP
 from manyfaced.handlers.http_handler import HTTPHandler
 
 def send_report(data, client, password, lock):
@@ -192,7 +195,11 @@ def honey_generic(face):
     path = os.path.join(root_dir, 'responses', face)
     with open(path, 'r') as f:
         body = f.read()
-    output_data = compile_banner(msg_size=len(body))
+    # Detect XML faces and use appropriate Content-Type
+    content_type = 'text/html; charset=UTF-8'
+    if face.endswith('.xml'):
+        content_type = 'application/xml; charset=utf-8'
+    output_data = compile_banner(msg_size=len(body), content_type=content_type)
     output_data += body
     return output_data
 
