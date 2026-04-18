@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from common.myenc import AESCipher
+from .myenc import AESCipher
 import json
 
 
