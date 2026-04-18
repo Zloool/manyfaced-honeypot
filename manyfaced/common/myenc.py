@@ -1,7 +1,9 @@
 import base64
 import hashlib
-from Crypto import Random
-from Crypto.Cipher import AES
+import os
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
 
 class AESCipher(object):
@@ -9,25 +11,43 @@ class AESCipher(object):
     Code from
     http://stackoverflow.com/questions/12524994/encrypt-decrypt-using-pycrypto-aes-256
     """
+
+    BLOCK_SIZE = 16
+
     def __init__(self, key):
         self.bs = 32
         self.key = hashlib.sha256(key.encode()).digest()
 
     def encrypt(self, raw):
         raw = self._pad(raw)
-        iv = Random.new().read(AES.block_size)
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return base64.b64encode(iv + cipher.encrypt(raw))
+        iv = os.urandom(self.BLOCK_SIZE)
+        cipher = Cipher(
+            algorithms.AES(self.key),
+            modes.CBC(iv),
+            backend=default_backend(),
+        )
+        encryptor = cipher.encryptor()
+        ct = encryptor.update(raw) + encryptor.finalize()
+        return base64.b64encode(iv + ct)
 
     def decrypt(self, enc):
         enc = base64.b64decode(enc)
-        iv = enc[:AES.block_size]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return self._unpad(cipher.decrypt(enc[AES.block_size:])).decode('utf-8')
+        iv = enc[: self.BLOCK_SIZE]
+        cipher = Cipher(
+            algorithms.AES(self.key),
+            modes.CBC(iv),
+            backend=default_backend(),
+        )
+        decryptor = cipher.decryptor()
+        return self._unpad(decryptor.decrypt(enc[self.BLOCK_SIZE :]))
 
     def _pad(self, s):
-        return s + (self.bs - len(s) % self.bs) * chr(self.bs - len(s) % self.bs)
+        if isinstance(s, str):
+            s = s.encode("utf-8")
+        pad_len = self.bs - len(s) % self.bs
+        return s + bytes([pad_len] * pad_len)
 
     @staticmethod
     def _unpad(s):
-        return s[:-ord(s[len(s) - 1:])]
+        pad_len = s[-1]
+        return s[:-pad_len]

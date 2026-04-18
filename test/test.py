@@ -15,7 +15,7 @@ if not settings_dst.exists():
 
 
 def test_gethoney():
-    test_face = faces.faces['/']
+    test_face = faces['/']
     client.honey_generic(test_face)
     pass
 import unittest

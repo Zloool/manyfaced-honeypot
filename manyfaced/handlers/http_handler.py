@@ -1,8 +1,16 @@
-from common.myenc import AESCipher
-from common.settings import HIVELOGIN, HIVEPASS
-from common.status import BOT_TIMEOUT, UNKNOWN_HTTP
-from common.utils import dump_file, receive_timeout
+import datetime
+import signal
+from abc import ABC, abstractmethod
+from multiprocessing import Process, Lock
+from socket import error as socket_error
+
+from manyfaced.common.myenc import AESCipher
+from manyfaced.common.settings import HIVELOGIN, HIVEPASS
+from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP
+from manyfaced.common.utils import dump_file, receive_timeout
 from manyfaced.common.handler import RequestHandler
+from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.httphandler import HTTPRequest
 from .base_handler import BaseHandler
 
 class HTTPHandler(BaseHandler):
@@ -10,9 +18,11 @@ class HTTPHandler(BaseHandler):
         super().__init__(args, update_event)
 
     def get_key(self, identifier):
-        return HIVEPASS  # Assuming we're using Hive login for key
+        return HIVEPASS
     
     def process_request(self, data):
+        """Import here to avoid circular dependency."""
+        from manyfaced.client.client import get_honey_http, send_report, honey_webdav, honey_robots, honey_generic
         bot_ip = data['ip']
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
         
