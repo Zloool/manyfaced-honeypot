@@ -1,8 +1,4 @@
-import json
-import signal
 from abc import ABC, abstractmethod
-from multiprocessing import Process, Lock
-from socket import error as socket_error
 
 class BaseHandler(ABC):
     def __init__(self, args, update_event):
