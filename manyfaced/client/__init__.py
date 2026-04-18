@@ -1,2 +1,8 @@
-from .faces import faces  # noqa: F401
-from .client import compile_banner, get_honey_http, honey_generic  # noqa: F401
+"""manyfaced client package."""
+
+__all__ = [
+    "compile_banner",
+    "faces",
+    "get_honey_http",
+    "honey_generic",
+]

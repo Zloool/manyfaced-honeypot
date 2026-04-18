@@ -1,16 +1,16 @@
 """
-File, to store some multi-run parametres
+File, to store some multi-run parameters
 `HONEYFOLDER` - root folder, to put all gathered data into.
+Edit this file to set your honeypot configuration.
 """
 HONEYPORT = 80
 HONEYFOLDER = "bots"
 HIVEHOST = '127.0.0.1'
 HIVEPORT = 666
 HIVELOGIN = 'CHORDCOLLISION'
-HIVELOGIN = 'CHORDCOLLISION'
 HIVEPASS = 'test'
-AUTHORISEDBEARS = {'CHORDCOLLISION': 'test', }
+AUTHORISEDBEARS = {'CHORDCOLLISION': 'test'}
 CLICKHOUSEIP = 'http://localhost'
 CLICKHOUSEPORT = '8123'
 CLICKHOUSEUSER = 'default'
-CLICKHOUSEPASSWORD = ''
+CLICKHOUSEPASSWORD = '***'
