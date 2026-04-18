@@ -2,14 +2,14 @@ import datetime
 import json
 import os
 import signal
-from multiprocessing import Lock, Process
+from multiprocessing import Lock, Process, Event
 from socket import (socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR,
                     error as socket_error)
 
-from common.myenc import AESCipher
-from common.status import BOT_TIMEOUT, UNKNOWN_HTTP
-from common.settings import HIVEHOST, HIVEPORT
-from common.utils import dump_file, receive_timeout
+from manyfaced.common.myenc import AESCipher
+from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP
+from manyfaced.common.settings import HIVEHOST, HIVEPORT
+from manyfaced.common.utils import dump_file, receive_timeout
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.handlers.http_handler import HTTPHandler
