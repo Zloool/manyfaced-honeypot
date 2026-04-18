@@ -20,49 +20,49 @@ And that`s how you`d detect a sneaky bot.
 
 def parse():
     parser = argparse.ArgumentParser(
-        description='Serve some sweet honey to the ubiquitous bots!',
-        epilog='And that`s how you`d detect a sneaky chinese bot.',
-        prog='mfh.py',
-        )
+        description="Serve some sweet honey to the ubiquitous bots!",
+        epilog="And that`s how you`d detect a sneaky chinese bot.",
+        prog="mfh.py",
+    )
 
     parser.add_argument(
-        '-c',
+        "-c",
         const=settings.HONEYPORT,
-        dest='client',
-        help='port to start a CLIENT on',
-        metavar='PORT',
-        nargs='?',
+        dest="client",
+        help="port to start a CLIENT on",
+        metavar="PORT",
+        nargs="?",
         type=int,
-        )
+    )
 
     parser.add_argument(
-        '-s',
+        "-s",
         const=settings.HIVEPORT,
-        dest='server',
-        help='port to start a SERVER on',
-        metavar='PORT',
-        nargs='?',
+        dest="server",
+        help="port to start a SERVER on",
+        metavar="PORT",
+        nargs="?",
         type=int,
-        )
+    )
 
     parser.add_argument(
-        '-u',
-        action='store_true',
-        dest='updater',
-        help='enable self updating',
-        )
+        "-u",
+        action="store_true",
+        dest="updater",
+        help="enable self updating",
+    )
 
     parser.add_argument(
-        '-v',
-        '--verbose',
-        action='store_true',
-        help='increase output verbosity',
-        )
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="increase output verbosity",
+    )
 
     parser.add_argument(
-        '-p',
-        '--proxy',
-        action='store_true',
-        help='set this argument if you want to put honeypot behind proxy',
-        )
+        "-p",
+        "--proxy",
+        action="store_true",
+        help="set this argument if you want to put honeypot behind proxy",
+    )
     return parser.parse_args()
