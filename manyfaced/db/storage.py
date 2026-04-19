@@ -13,7 +13,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
 from threading import Lock
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
