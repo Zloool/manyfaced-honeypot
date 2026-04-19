@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Many-faced Honeypot Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'JetBrains Mono', monospace; background: #020617; min-height: 100vh; padding: 2rem; color: white; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #fb7185; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container { background: rgba(15, 23, 42, 0.5); border-radius: 1rem; border: 1px solid #1e293b; padding: 1.5rem; overflow-x: auto; }
+    svg { width: 100%; min-width: 1100px; display: block; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 2rem; }
+    .card { background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem; border: 1px solid #1e293b; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>Many-faced Honeypot Architecture</h1>
+      </div>
+      <p class="subtitle">Socket-based bot impersonation &amp; intelligence collection system</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1100 740" xmlns="http://www.w3.org/2000/svg">
+        <!-- Definitions -->
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="1100" height="740" fill="url(#grid)" />
+
+        <!-- ==========================================
+             ROW 1: EXTERNAL BOTS (Top)
+             ========================================== -->
+        <text x="150" y="40" fill="white" font-size="12" font-weight="600" text-anchor="middle">Internet Bots / Scanners</text>
+        <text x="150" y="54" fill="#94a3b8" font-size="9" text-anchor="middle">(Automated crawlers, exploit tools)</text>
+
+        <!-- Row of bots -->
+        <rect x="10" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="75" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Web Scanner</text>
+        <text x="75" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">WPScan, Nikto</text>
+
+        <rect x="155" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="220" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Brute Force</text>
+        <text x="220" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">Hydra, Medusa</text>
+
+        <rect x="300" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="365" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">CMS Scanner</text>
+        <text x="365" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">Acunetix, Nessus</text>
+
+        <rect x="445" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="510" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Cred Harvester</text>
+        <text x="510" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">Cobalt Strike</text>
+
+        <rect x="590" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="655" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Zero-day Bot</text>
+        <text x="655" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">Unknown vector</text>
+
+        <rect x="735" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="800" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Mass Scanner</text>
+        <text x="800" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">Shodan, Censys</text>
+
+        <rect x="880" y="70" width="130" height="50" rx="6" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="945" y="95" fill="white" font-size="11" font-weight="600" text-anchor="middle">Rust Scanner</text>
+        <text x="945" y="110" fill="#94a3b8" font-size="8" text-anchor="middle">masscan, ZGrab</text>
+
+        <!-- Arrows down to honeypot region -->
+        <line x1="75" y1="120" x2="100" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="220" y1="120" x2="230" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="365" y1="120" x2="360" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="510" y1="120" x2="510" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="655" y1="120" x2="660" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="800" y1="120" x2="820" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <line x1="945" y1="120" x2="970" y2="158" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+
+        <!-- ==========================================
+             ROW 2: HONEYPOT REGION Boundary
+             ========================================== -->
+        <rect x="20" y="150" width="1060" height="530" rx="12" fill="rgba(6, 78, 59, 0.06)" stroke="#34d399" stroke-width="1.5" stroke-dasharray="8,4"/>
+        <text x="35" y="170" fill="#34d399" font-size="10" font-weight="600">Honeypot Infrastructure — mfh.py</text>
+
+        <!-- ==========================================
+             ROW 3: mfh.py Process Manager
+             ========================================== -->
+        <rect x="400" y="185" width="300" height="45" rx="6"
+              fill="#0f172a" stroke="#34d399" stroke-width="1.5"/>
+        <text x="550" y="202" fill="white" font-size="12" font-weight="600" text-anchor="middle">mfh.py</text>
+        <text x="550" y="218" fill="#94a3b8" font-size="8" text-anchor="middle">Process Manager</text>
+
+        <!-- Vertical line from mfh.py down to client/server -->
+        <line x1="550" y1="230" x2="550" y2="290" stroke="#34d399" stroke-width="1.2"/>
+        <line x1="550" y1="290" x2="250" y2="290" stroke="#34d399" stroke-width="1.2"/>
+        <line x1="550" y1="290" x2="850" y2="290" stroke="#34d399" stroke-width="1.2"/>
+        <line x1="250" y1="290" x2="250" y2="320" stroke="#34d399" stroke-width="1.2" marker-end="url(#arrow-emerald)"/>
+        <line x1="850" y1="290" x2="850" y2="320" stroke="#34d399" stroke-width="1.2" marker-end="url(#arrow-emerald)"/>
+
+        <!-- ==========================================
+             ROW 4: CLIENT & SERVER (side by side)
+             ========================================== -->
+
+        <!-- CLIENT -->
+        <rect x="100" y="320" width="300" height="200" rx="8"
+              fill="rgba(8, 51, 68, 0.35)" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="250" y="348" fill="#22d3ee" font-size="11" font-weight="600" text-anchor="middle">CLIENT Process (-c PORT)</text>
+
+        <!-- Client internal components -->
+        <rect x="140" y="358" width="220" height="40" rx="4" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="250" y="375" fill="white" font-size="10" font-weight="600" text-anchor="middle">TCP Listener (port)</text>
+        <text x="250" y="389" fill="#94a3b8" font-size="7" text-anchor="middle">receive_timeout()</text>
+
+        <line x1="250" y1="398" x2="250" y2="420" stroke="#22d3ee" stroke-width="1"/>
+        <text x="260" y="414" fill="#22d3ee" font-size="7">parse HTTP</text>
+
+        <rect x="140" y="428" width="220" height="40" rx="4" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="250" y="445" fill="white" font-size="10" font-weight="600" text-anchor="middle">Faces Router</text>
+        <text x="250" y="459" fill="#94a3b8" font-size="7" text-anchor="middle">faces.py → responses/</text>
+
+        <line x1="250" y1="468" x2="250" y2="490" stroke="#22d3ee" stroke-width="1"/>
+
+        <rect x="140" y="498" width="105" height="17" rx="4" fill="rgba(8,51,68,0.5)" stroke="#fb7185" stroke-width="1"/>
+        <text x="192" y="511" fill="#94a3b8" font-size="7" text-anchor="middle">fake response</text>
+
+        <rect x="255" y="498" width="105" height="17" rx="4" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="307" y="511" fill="#94a3b8" font-size="7" text-anchor="middle" textContent="encrypted report">encrypt + send</text>
+
+        <!-- Arrows from client to external -->
+        <line x1="180" y1="320" x2="110" y2="290" stroke="#22d3ee" stroke-width="1.2" marker-end="url(#arrow-cyan)"/>
+        <text x="145" y="295" fill="#22d3ee" font-size="7">HTTP response</text>
+        <line x1="200" y1="320" x2="200" y2="298" stroke="#fb7185" stroke-width="1.2" marker-end="url(#arrow-rose)"/>
+        <text x="210" y="310" fill="#fb7185" font-size="7">TCP</text>
+
+        <!-- SERVER -->
+        <rect x="700" y="320" width="300" height="200" rx="8"
+              fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="850" y="348" fill="#a78bfa" font-size="11" font-weight="600" text-anchor="middle">SERVER Process (-s PORT)</text>
+
+        <!-- Server internal components -->
+        <rect x="740" y="358" width="220" height="40" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="850" y="375" fill="white" font-size="10" font-weight="600" text-anchor="middle">TCP Listener (port)</text>
+        <text x="850" y="389" fill="#94a3b8" font-size="7" text-anchor="middle">receive_timeout()</text>
+
+        <line x1="850" y1="398" x2="850" y2="420" stroke="#a78bfa" stroke-width="1"/>
+        <text x="860" y="414" fill="#a78bfa" font-size="7">parse_msg → AES decrypt → JSON</text>
+
+        <rect x="740" y="428" width="220" height="40" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="850" y="445" fill="white" font-size="10" font-weight="600" text-anchor="middle">Key Lookup</text>
+        <text x="850" y="459" fill="#94a3b8" font-size="7" text-anchor="middle">AUTHORISEDBEARS dict</text>
+
+        <line x1="850" y1="468" x2="850" y2="490" stroke="#a78bfa" stroke-width="1"/>
+
+        <rect x="740" y="498" width="105" height="17" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="792" y="511" fill="#94a3b8" font-size="7" text-anchor="middle">200 OK resp</text>
+
+        <rect x="847" y="498" width="105" height="17" rx="4" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="900" y="511" fill="#94a3b8" font-size="7" text-anchor="middle">Process(save_data)</text>
+
+        <!-- Arrows from external to server -->
+        <line x1="950" y1="290" x2="950" y2="320" stroke="#a78bfa" stroke-width="1.2" marker-end="url(#arrow-violet)"/>
+        <text x="960" y="305" fill="#a78bfa" font-size="7">encrypted</text>
+
+        <!-- ==========================================
+             ROW 5: DATA PIPELINE (below client/server)
+             ========================================== -->
+        <text x="250" y="560" fill="white" font-size="10" font-weight="600" text-anchor="middle">Data Pipeline</text>
+        <text x="250" y="574" fill="#94a3b8" font-size="8" text-anchor="middle">(Client → Server → Storage)</text>
+
+        <!-- Horizontal data flow -->
+        <line x1="300" y1="585" x2="430" y2="585" stroke="#22d3ee" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-cyan)"/>
+        <text x="365" y="580" fill="#22d3ee" font-size="7" text-anchor="middle">AES-256-CBC</text>
+
+        <line x1="430" y1="585" x2="560" y2="585" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-rose)"/>
+        <text x="495" y="580" fill="#fb7185" font-size="7" text-anchor="middle">decrypt</text>
+
+        <line x1="560" y1="585" x2="690" y2="585" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+        <text x="625" y="580" fill="#fbbf24" font-size="7" text-anchor="middle">save to DB</text>
+
+        <!-- ==========================================
+             ROW 6: STORAGE Layer
+             ========================================== -->
+        <text x="350" y="630" fill="white" font-size="12" font-weight="600" text-anchor="middle">Storage Layer</text>
+
+        <!-- SQLite -->
+        <rect x="150" y="645" width="200" height="70" rx="8"
+              fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="250" y="672" fill="white" font-size="11" font-weight="600" text-anchor="middle">SQLite Storage</text>
+        <text x="250" y="686" fill="#94a3b8" font-size="8" text-anchor="middle">honeypot_bears table</text>
+        <text x="250" y="700" fill="#94a3b8" font-size="8" text-anchor="middle">bots/honeypot.db</text>
+
+        <!-- Arrow from pipeline to SQLite -->
+        <line x1="300" y1="610" x2="250" y2="645" stroke="#a78bfa" stroke-width="1.2" marker-end="url(#arrow-violet)"/>
+
+        <!-- PostgreSQL (optional) -->
+        <rect x="550" y="645" width="200" height="70" rx="8"
+              fill="rgba(76, 29, 149, 0.3)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="5,5"/>
+        <text x="650" y="672" fill="white" font-size="11" font-weight="600" text-anchor="middle">PostgreSQL (optional)</text>
+        <text x="650" y="686" fill="#94a3b8" font-size="8" text-anchor="middle">honeypot_bears table</text>
+        <text x="650" y="700" fill="#94a3b8" font-size="8" text-anchor="middle">env: HONEY_PG_HOST</text>
+
+        <!-- Arrow to PostgreSQL -->
+        <line x1="400" y1="610" x2="650" y2="645" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#arrowhead)"/>
+
+        <!-- ==========================================
+             Annotation boxes
+             ========================================== -->
+        <!-- Encryption annotation -->
+        <rect x="70" y="560" width="140" height="55" rx="4" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1"/>
+        <text x="140" y="578" fill="#fb7185" font-size="8" font-weight="600" text-anchor="middle">Encryption (AES-256-CBC)</text>
+        <text x="140" y="590" fill="#94a3b8" font-size="7" text-anchor="middle">Key: SHA-256(HIVEPASS)</text>
+        <text x="140" y="602" fill="#94a3b8" font-size="7" text-anchor="middle">IV: os.urandom(16)</text>
+
+        <!-- Storage fields annotation -->
+        <rect x="730" y="570" width="200" height="120" rx="4" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="830" y="588" fill="#a78bfa" font-size="8" font-weight="600" text-anchor="middle">BearRecord fields</text>
+        <text x="745" y="602" fill="#94a3b8" font-size="7" text-anchor="middle">bot_ip, hostname, timestamp</text>
+        <text x="745" y="614" fill="#94a3b8" font-size="7" text-anchor="middle">request_path, command version</text>
+        <text x="745" y="626" fill="#94a3b8" font-size="7" text-anchor="middle">request_raw, bot_user_agent</text>
+        <text x="745" y="638" fill="#94a3b8" font-size="7" text-anchor="middle">bot_country, bot_continent</text>
+        <text x="745" y="650" fill="#94a3b8" font-size="7" text-anchor="middle">bot_dns_name, detected_id</text>
+        <text x="745" y="662" fill="#94a3b8" font-size="7" text-anchor="middle">hive_id, login</text>
+
+        <!-- Response files annotation -->
+        <rect x="780" y="155" width="200" height="55" rx="4" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="1"/>
+        <text x="880" y="172" fill="#fb923c" font-size="8" font-weight="600" text-anchor="middle">Responses Directory</text>
+        <text x="795" y="186" fill="#94a3b8" font-size="7" text-anchor="middle">wplogin.html, wpconfig.php</text>
+        <text x="795" y="198" fill="#94a3b8" font-size="7" text-anchor="middle">webdav.xml, phpadmin.php</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>Impersonation Faces</h3>
+        </div>
+        <ul>
+          <li>• 70+ WordPress paths mapped</li>
+          <li>• 50+ phpMyAdmin variants</li>
+          <li>• WebDAV, Bitrix, CPanel</li>
+          <li>• Generic exploit paths</li>
+          <li>• CMS discovery patterns</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot cyan"></div>
+          <h3>Bot Intelligence</h3>
+        </div>
+        <ul>
+          <li>• Source IP + geolocation</li>
+          <li>• Request headers &amp; User-Agent</li>
+          <li>• Request path &amp; method</li>
+          <li>• DNS reverse lookup</li>
+          <li>• Honeypot credentials used</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>Security &amp; Storage</h3>
+        </div>
+        <ul>
+          <li>• AES-256-CBC encryption</li>
+          <li>• Shared secret (HIVEPASS)</li>
+          <li>• SQLite (default, auto-created)</li>
+          <li>• PostgreSQL (via env vars)</li>
+          <li>• ClickHouse (deprecated)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="footer">
+      manyfaced-honeypot • Socket-based bot exploration &amp; intelligence collection
+    </p>
+  </div>
+</body>
+</html>
