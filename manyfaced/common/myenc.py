@@ -39,7 +39,8 @@ class AESCipher(object):
             backend=default_backend(),
         )
         decryptor = cipher.decryptor()
-        return self._unpad(decryptor.decrypt(enc[self.BLOCK_SIZE :]))
+        pt = decryptor.update(enc[self.BLOCK_SIZE :]) + decryptor.finalize()
+        return self._unpad(pt)
 
     def _pad(self, s):
         if isinstance(s, str):
