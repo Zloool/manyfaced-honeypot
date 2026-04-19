@@ -128,7 +128,9 @@ class SQLiteStorage(StorageBackend):
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
         except Exception:
-            logger.exception("Failed to initialise SQLite database at %s", self._db_path)
+            logger.exception(
+                "Failed to initialise SQLite database at %s", self._db_path
+            )
             self._conn = None
 
     # -- public API ----------------------------------------------------------
@@ -147,8 +149,15 @@ class SQLiteStorage(StorageBackend):
             hostname = record.get("hostname") or ""
             timestamp = record.get("timestamp") or ""
             request_path = parsed.get("path") or record.get("request_path") or ""
-            request_command = parsed.get("command") or record.get("request_command") or ""
-            request_version = parsed.get("request_version") or parsed.get("version") or record.get("request_version") or ""
+            request_command = (
+                parsed.get("command") or record.get("request_command") or ""
+            )
+            request_version = (
+                parsed.get("request_version")
+                or parsed.get("version")
+                or record.get("request_version")
+                or ""
+            )
             request_raw = record.get("raw_request") or ""
             bot_user_agent = parsed.get("user_agent") or record.get("ua") or ""
             bot_country = record.get("country") or ""
@@ -306,8 +315,15 @@ class PostgreSQLStorage(StorageBackend):
             hostname = record.get("hostname") or ""
             timestamp = record.get("timestamp") or ""
             request_path = parsed.get("path") or record.get("request_path") or ""
-            request_command = parsed.get("command") or record.get("request_command") or ""
-            request_version = parsed.get("request_version") or parsed.get("version") or record.get("request_version") or ""
+            request_command = (
+                parsed.get("command") or record.get("request_command") or ""
+            )
+            request_version = (
+                parsed.get("request_version")
+                or parsed.get("version")
+                or record.get("request_version")
+                or ""
+            )
             request_raw = record.get("raw_request") or ""
             bot_user_agent = parsed.get("user_agent") or record.get("ua") or ""
             bot_country = record.get("country") or ""
@@ -374,6 +390,7 @@ class PostgreSQLStorage(StorageBackend):
 # ---------------------------------------------------------------------------
 # Factory function
 # ---------------------------------------------------------------------------
+
 
 def get_storage() -> StorageBackend:
     """Factory to get the storage backend based on HONEY_DB_BACKEND env var.
