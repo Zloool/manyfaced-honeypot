@@ -1,0 +1,35 @@
+services:
+  honeypot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: manyfaced-honeypot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # Server honeypot (receives bot connections)
+      - "8081:8081"  # Client honeypot (spoofs bot behaviour)
+    volumes:
+      - db-data:/var/lib/manyfaced/bots
+      - log-data:/var/log/manyfaced
+    environment:
+      - HONEY_DB_PATH=/var/lib/manyfaced/bots/honeypot.sqlite
+      - HONEY_LOG_FILE=/var/log/manyfaced/honeypot.log
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 8080)); s.close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - honeypot-net
+
+volumes:
+  db-data:
+    driver: local
+  log-data:
+    driver: local
+
+networks:
+  honeypot-net:
+    driver: bridge
