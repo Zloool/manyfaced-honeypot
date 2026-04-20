@@ -150,12 +150,9 @@ class TestDumpFile:
 class TestReceiveTimeout:
     """Tests for receive_timeout(the_socket, timeout): non-blocking socket recv with timeout logic.
 
-    The function works as follows:
-    - Sets socket to non-blocking
-    - Loops: tries to recv data; if data received, resets begin time
-    - Breaks when: (total_data AND elapsed > timeout) OR (elapsed > timeout*2)
-    - time.sleep(0.1) is called between recv attempts when no data
-    - Returns "".join(total_data)
+    Note: receive_timeout uses "".join(total_data) which expects string data.
+    Socket recv() normally returns bytes, but for testing we mock it to return strings
+    (simulating a text-mode socket).
     """
 
     @pytest.fixture
@@ -167,15 +164,15 @@ class TestReceiveTimeout:
         """receive_timeout assembles data from multiple recv calls until timeout."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=1.0:
-        # Calls 1-4: recv data (begin resets each time)
-        # Calls 5-14: recv empty (total_data non-empty, elapsed < timeout)
-        # Call 15: recv empty, elapsed=1.1 > 1.0 → break
+        # After receiving data, begin resets. Empty responses keep looping
+        # until elapsed > timeout (1.0s).
+        # 4 data chunks + 11 empty = 15 recv calls total
         data_chunks = [
-            b"HTTP/1.1 200 OK\r\n",
-            b"Content-Type: text/html\r\n",
-            b"\r\n",
-            b"<!DOCTYPE html>",
-        ] + [b""] * 11  # 11 empty responses to trigger timeout
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Type: text/html\r\n",
+            "\r\n",
+            "<!DOCTYPE html>",
+        ] + [""] * 11
 
         recv_count = [0]
 
@@ -191,16 +188,16 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>"
+        assert result == "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>"
         assert mock_socket.setblocking.called
-        assert mock_socket.recv.call_count == 15  # 4 data + 11 empty = break at 15
+        assert mock_socket.recv.call_count == 15  # 4 data + 11 empty
 
     def test_returns_empty_on_immediate_empty(self, monkeypatch, _mock_sleep):
         """receive_timeout returns empty string after timeout*2 when no data."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=1.0:
         # timeout*2 = 2.0, so after 20 calls elapsed=2.1 > 2.0 → break
-        mock_socket.recv = MagicMock(return_value=b"")
+        mock_socket.recv = MagicMock(return_value="")
 
         # time advances by 0.1 each call
         monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
@@ -213,10 +210,8 @@ class TestReceiveTimeout:
         """receive_timeout breaks out of loop after timeout once data has been received."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=0.5:
-        # Call 1: recv data, begin=1000.1
-        # Calls 2-6: recv empty (elapsed < 0.5)
-        # Call 7: recv empty, elapsed=0.6 > 0.5 → break
-        data_chunks = [b"data1", b"data2", b"data3", b"data4", b"data5"] + [b""] * 3
+        # 5 data chunks + 3 empty = 8 recv calls total
+        data_chunks = ["data1", "data2", "data3", "data4", "data5"] + [""] * 3
 
         recv_count = [0]
 
@@ -232,14 +227,14 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == b"data1data2data3data4data5"
+        assert result == "data1data2data3data4data5"
 
     def test_timeout_without_data(self, monkeypatch, _mock_sleep):
         """receive_timeout returns empty after timeout*2 even with no data."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=0.5:
         # timeout*2 = 1.0, so after 10 calls elapsed=1.1 > 1.0 → break
-        mock_socket.recv = MagicMock(return_value=b"")
+        mock_socket.recv = MagicMock(return_value="")
 
         # time advances by 0.1 each call
         monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
@@ -252,13 +247,13 @@ class TestReceiveTimeout:
         """receive_timeout resets begin time when new data arrives, extending the window."""
         mock_socket = MagicMock()
         # With 0.5s increments and timeout=1.0:
-        # Call 1: t=1000.5, recv=b"a", begin=1000.5
-        # Call 2: t=1001.0, elapsed=0.5, recv=b"b", begin=1001.0
-        # Call 3: t=1001.5, elapsed=0.5, recv=b"c", begin=1001.5
-        # Call 4: t=1002.0, elapsed=0.5, recv=b"", total_data non-empty, 0.5 NOT > 1.0
+        # Call 1: t=1000.5, recv="a", begin=1000.5
+        # Call 2: t=1001.0, elapsed=0.5, recv="b", begin=1001.0
+        # Call 3: t=1001.5, elapsed=0.5, recv="c", begin=1001.5
+        # Call 4: t=1002.0, elapsed=0.5, recv="", total_data non-empty, 0.5 NOT > 1.0
         # Call 5: t=1002.5, elapsed=1.0, 1.0 NOT > 1.0
         # Call 6: t=1003.0, elapsed=1.5, 1.5 > 1.0 → break
-        data_chunks = [b"a", b"b", b"c", b"", b"", b""]
+        data_chunks = ["a", "b", "c", "", "", ""]
 
         recv_count = [0]
 
@@ -274,7 +269,7 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == b"abc"
+        assert result == "abc"
 
     def test_socket_error_handled(self, monkeypatch, _mock_sleep):
         """receive_timeout handles socket.error (would block) gracefully."""
@@ -283,7 +278,7 @@ class TestReceiveTimeout:
 
         # With 0.1s increments and timeout=0.5:
         # Calls 1-3: raise socket_error
-        # Call 4: recv=b"got data", begin reset
+        # Call 4: recv="got data", begin reset
         # Calls 5-9: recv empty (elapsed < 0.5)
         # Call 10: recv empty, elapsed=0.6 > 0.5 → break
         recv_count = [0]
@@ -292,7 +287,7 @@ class TestReceiveTimeout:
             recv_count[0] += 1
             if recv_count[0] <= 3:
                 raise socket_error("would block")
-            return b"got data"
+            return "got data"
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
         mock_socket.setblocking = MagicMock()
@@ -302,16 +297,16 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == b"got data"
+        assert result == "got data"
 
     def test_single_chunk(self, monkeypatch, _mock_sleep):
         """receive_timeout handles a single recv call with data then empty."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=1.0:
-        # Call 1: recv=b"hello", begin=1000.1
+        # Call 1: recv="hello", begin=1000.1
         # Calls 2-11: recv empty (elapsed < 1.0)
         # Call 12: recv empty, elapsed=1.1 > 1.0 → break
-        data_chunks = [b"hello"] + [b""] * 11
+        data_chunks = ["hello"] + [""] * 11
 
         recv_count = [0]
 
@@ -327,14 +322,14 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == b"hello"
+        assert result == "hello"
 
     def test_timeout_exactly_at_timeout2(self, monkeypatch, _mock_sleep):
         """receive_timeout breaks when elapsed time reaches timeout*2 with no data."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=1.0:
         # timeout*2 = 2.0, so after 20 calls elapsed=2.1 > 2.0 → break
-        mock_socket.recv = MagicMock(return_value=b"")
+        mock_socket.recv = MagicMock(return_value="")
 
         # time advances by 0.1 each call
         monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
@@ -347,11 +342,11 @@ class TestReceiveTimeout:
         """receive_timeout collects data, then times out after receiving data."""
         mock_socket = MagicMock()
         # With 0.1s increments and timeout=0.5:
-        # Call 1: recv=b"hello", begin=1000.1
-        # Call 2: recv=b" world", begin=1000.2
+        # Call 1: recv="hello", begin=1000.1
+        # Call 2: recv=" world", begin=1000.2
         # Calls 3-7: recv empty (elapsed < 0.5 from begin=1000.2)
         # Call 8: recv empty, elapsed=0.6 > 0.5 → break
-        data_chunks = [b"hello", b" world"] + [b""] * 6
+        data_chunks = ["hello", " world"] + [""] * 6
 
         recv_count = [0]
 
@@ -367,7 +362,7 @@ class TestReceiveTimeout:
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == b"hello world"
+        assert result == "hello world"
 
 
 # ===================================================================
