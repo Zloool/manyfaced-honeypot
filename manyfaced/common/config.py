@@ -77,10 +77,10 @@ def _find_config_file() -> Path | None:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
         candidates.append(Path(xdg) / "manyfaced" / "config.toml")
-    candidates.extend([
-        Path.home() / ".config" / "manyfaced" / "config.toml",
-        Path(__file__).resolve().parent.parent / "settings.toml",  # in-package fallback
-    ])
+        candidates.extend([
+            Path.home() / ".config" / "manyfaced" / "config.toml",
+            Path(__file__).resolve().parent.parent / "settings.toml.example",  # in-package fallback
+        ])
     for c in candidates:
         if c.is_file():
             return c
@@ -208,26 +208,26 @@ class Config:
             "",
             "[honeypot]",
             f"honeyport = {self.HONEYPORT}",
-            f'honeyfolder = \\"{self.HONEYFOLDER}\\"',
+            f'  honeyfolder = "{self.HONEYFOLDER}"',
             "",
             "[hive]",
-            f'hivehost = \\"{self.HIVEHOST}\\"',
-            f"hiveport = {self.HIVEPORT}",
-            f'hivelogin = \\"{self.HIVELOGIN}\\"',
-            f'hivepass = \\"{self.HIVEPASS}\\"',
+            f'  hivehost = "{self.HIVEHOST}"',
+            f"  hiveport = {self.HIVEPORT}",
+            f'  hivelogin = "{self.HIVELOGIN}"',
+            f'  hivepass = "{self.HIVEPASS}"',
             "",
             "[database]",
-            f'backend = \\"{self.DB_BACKEND}\\"',
-            f'path = \\"{self.DB_PATH}\\"',
-            f'pg_host = \\"{self.DB_PG_HOST}\\"',
-            f"pg_port = {self.DB_PG_PORT}",
-            f'pg_db = \\"{self.DB_PG_DB}\\"',
-            f'pg_user = \\"{self.DB_PG_USER}\\"',
-            f'pg_password = \\"{self.DB_PG_PASSWORD}\\"',
+            f'  backend = "{self.DB_BACKEND}"',
+            f'  path = "{self.DB_PATH}"',
+            f'  pg_host = "{self.DB_PG_HOST}"',
+            f"  pg_port = {self.DB_PG_PORT}",
+            f'  pg_db = "{self.DB_PG_DB}"',
+            f'  pg_user = "{self.DB_PG_USER}"',
+            f'  pg_password = "{self.DB_PG_PASSWORD}"',
             "",
             "[security]",
-            "# semicolon-separated bearid:key pairs; e.g. \\"bear1:key1;bear2:key2\\"",
-            'authorised_bears = \\"\\\"',
+            '  # semicolon-separated bearid:key pairs; e.g. "bear1:key1;bear2:key2"',
+            '  authorised_bears = ""',
             "",
         ]
         path.write_text("\n".join(lines))
