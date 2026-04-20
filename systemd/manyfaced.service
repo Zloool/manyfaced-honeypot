@@ -1,0 +1,31 @@
+[Unit]
+Description=Manyfaced Honeypot - Multi-faced honeypot for detecting bot activity
+Documentation=https://github.com/Zloool/manyfaced-honeypot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/manyfaced --server 8080 --client 8081
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/manyfaced /var/log/manyfaced
+
+# Environment
+Environment=HONEY_DB_PATH=/var/lib/manyfaced/bots/honeypot.sqlite
+Environment=HONEY_LOG_FILE=/var/log/manyfaced/honeypot.log
+Environment=PYTHONUNBUFFERED=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=manyfaced
+
+[Install]
+WantedBy=multi-user.target
