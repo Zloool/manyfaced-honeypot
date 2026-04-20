@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from shutil import copyfile
 
-from manyfaced.client import client, faces
+from manyfaced.client import client
+from manyfaced.client.client import faces
 
 settings_dst = (
     Path(sys.path[0]).parent
