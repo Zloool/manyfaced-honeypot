@@ -3,7 +3,6 @@
 __all__ = [
     "arguments",
     "bearstorage",
-    "faces",
     "httphandler",
     "myenc",
     "settings",
