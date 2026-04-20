@@ -225,7 +225,7 @@ The client impersonates 70+ different web service endpoints. When a bot requests
 | Bitrix admin | `bitrix.html` |
 | Generic/unknown | `zero` (77 bytes) |
 
-The complete list of detected paths is in `manyfaced/client/faces.py` (WordPress-specific paths) and `manyfaced/client/client.py` (scanning/exploitation paths).
+The complete list of detected paths is in `manyfaced/client/client.py` (the `faces` dict at the top of the file).
 
 ## Project Structure
 
@@ -251,7 +251,6 @@ manyfaced-honeypot/
 │   │   └── server.py               # ServerHandler + TCP listener
 │   ├── client/
 │   │   ├── client.py               # Face routing, responses, create_server()
-│   │   ├── faces.py                # WordPress-specific path→response mapping
 │   │   └── responses/              # Fake web service content (10 files)
 │   ├── handlers/
 │   │   ├── base_handler.py         # BaseHandler ABC (parse, decrypt, route)

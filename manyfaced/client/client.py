@@ -16,7 +16,6 @@ from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.myenc import AESCipher
 from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP
 from manyfaced.common.settings import HIVEHOST, HIVEPORT
-from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.handlers.http_handler import HTTPHandler
 from manyfaced.common.utils import dump_file, receive_timeout
 
