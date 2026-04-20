@@ -36,6 +36,14 @@ def run() -> None:
     from manyfaced.server import server
 
     args = parse()
+
+    # --generate-config: create config file and exit
+    if args.generate_config:
+        cfg = Config.load()
+        path = cfg.generate_config_file()
+        print(f"[manyfaced] Generated config at {path}", file=sys.stderr)
+        return
+
     update_event = Event()
 
     procs: dict[str, Process | None] = {"client_proc": None, "server_proc": None, "terminate_proc": None}
