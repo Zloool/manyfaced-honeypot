@@ -1,6 +1,6 @@
 import argparse
 
-import settings
+from manyfaced.common.settings import HONEYPORT, HIVEPORT
 
 """
 usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-u] [-v]
@@ -27,7 +27,7 @@ def parse():
 
     parser.add_argument(
         "-c",
-        const=settings.HONEYPORT,
+        const=HONEYPORT,
         dest="client",
         help="port to start a CLIENT on",
         metavar="PORT",
@@ -37,7 +37,7 @@ def parse():
 
     parser.add_argument(
         "-s",
-        const=settings.HIVEPORT,
+        const=HIVEPORT,
         dest="server",
         help="port to start a SERVER on",
         metavar="PORT",
