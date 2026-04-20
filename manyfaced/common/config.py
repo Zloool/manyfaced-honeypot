@@ -66,7 +66,7 @@ _DEFAULT_DB_PG_HOST = "localhost"
 _DEFAULT_DB_PG_PORT = 5432
 _DEFAULT_DB_PG_DB = "honeypot"
 _DEFAULT_DB_PG_USER = "postgres"
-_DEFAULT_DB_PG_PASSWORD = "postgres"
+_DEFAULT_DB_PG_PASSWORD = "***"
 _DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
