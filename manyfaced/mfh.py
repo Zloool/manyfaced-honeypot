@@ -8,9 +8,14 @@ import sys
 import time
 from multiprocessing import Event, Process
 
+from manyfaced.common.logging_setup import setup_logging
+
 
 def run() -> None:
     """CLI entry point – called by the ``manyfaced`` console_scripts command."""
+    # Initialise system-wide logging early
+    setup_logging(level="DEBUG")
+
     from manyfaced.common.config import settings, Config
 
     # Auto-generate XDG config file if none exists
