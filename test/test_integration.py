@@ -133,7 +133,6 @@ class TestFullPathSocketToDatabase:
     def _run_pipeline(self, bear_data):
         """Encrypt, route through handle_request with mocked process, verify result."""
         from manyfaced.server.server import ServerHandler
-        from multiprocessing import Lock
 
         message = make_encrypted_message(BEAR_IDENTIFIER, bear_data, TEST_KEY)
         update_event = MagicMock()
@@ -274,7 +273,6 @@ class TestFullPathSocketToDatabase:
     def test_multiple_records_in_database(self):
         """Multiple messages should create multiple separate DB rows."""
         from manyfaced.server.server import ServerHandler
-        from multiprocessing import Lock
 
         args_obj = MagicMock(server=(0, 6671), verbose=False)
 

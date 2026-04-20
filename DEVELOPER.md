@@ -18,7 +18,7 @@ python3 mfh.py -c 80 -v
 python3 mfh.py -s 666 -v
 ```
 
-The settings file auto-generates from `settings.py.example` on first run.
+The config file auto-generates from `manyfaced/common/settings.toml.example` on first run via `manyfaced --generate-config`.
 
 ## Codebase Deep Dive
 
@@ -67,7 +67,7 @@ process_request(): # Abstract — handle decrypted data
 
 CLIENT-side handler. When a bot connects:
 1. `get_key()` returns `HIVEPASS` (shared key for all bots)
-2. `process_request()` calls `get_honey_http()` to serve a fake face from `faces/`
+2. `process_request()` calls `get_honey_http()` to serve a fake face from `client.py`'s `faces` dict
 3. Spawns `send_report()` process to send encrypted report back to server
 4. Returns the fake HTTP response to the bot
 
@@ -143,10 +143,10 @@ Faces are URL-path → response-file mappings. Two place to add faces depending 
 
 ### Step 1: Add path mapping
 
-For WordPress-specific paths, edit `manyfaced/client/faces.py`. For scanning/exploit paths, edit `manyfaced/client/client.py` (the `faces` dict at the top).
+For WordPress-specific paths, edit `manyfaced/client/client.py` (the `faces` dict at the top).
 
 ```python
-# In faces.py or client.py:
+# In client.py:
 faces = {
     ...
     "/new/fake/path": "response_name",  # Add this line
