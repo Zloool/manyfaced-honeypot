@@ -8,6 +8,7 @@ Usage:
 import os
 import pickle
 import sys
+import time
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -60,7 +61,6 @@ class _TempDB:
             self._mock.stop()
 
     def _patched_open(self, path, mode, *args, **kwargs):
-        # The path argument from dump_file is always "temp.db"
         return self._real_open(self.path, mode, *args, **kwargs)
 
 
@@ -69,6 +69,17 @@ def _write_toml(tmp_path, content):
     toml_path = tmp_path / "config.toml"
     toml_path.write_text(content)
     return toml_path
+
+
+def _make_time_counter(start=1000.0, increment=0.01):
+    """Create a time.time() side_effect that increments by `increment` each call."""
+    counter = [0]
+
+    def side_effect():
+        counter[0] += 1
+        return start + counter[0] * increment
+
+    return side_effect
 
 
 # ===================================================================
@@ -89,7 +100,6 @@ class TestDumpFile:
     def test_appends_to_existing_list(self, tmp_path):
         """dump_file appends data to existing list in temp.db."""
         db_path = tmp_path / "temp.db"
-        # Pre-populate the file
         db_path.write_bytes(pickle.dumps([{"first": 1}]))
 
         with _TempDB(db_path):
@@ -156,27 +166,45 @@ class TestReceiveTimeout:
             b"<!DOCTYPE html>",
             b"",
         ]
-        call_count = [0]
+        recv_count = [0]
 
         def side_effect(*args):
-            idx = call_count[0]
-            call_count[0] += 1
+            idx = recv_count[0]
+            recv_count[0] += 1
             return data_chunks[idx]
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-        monkeypatch.setattr("time.time", lambda: 1000.0)
+        # time.time() always returns 1000.0; loop will break when recv returns b""
+        # because total_data is non-empty and time.time()-begin = 0 which is NOT > timeout,
+        # but recv returns b"" and we sleep(0.1), then next iteration:
+        # total_data is non-empty, time.time()-begin = 0, NOT > timeout
+        # recv returns b"" again... infinite loop!
+        # We need time to advance for the break condition.
+        # Let's use a counter that advances.
+        time_counter = [0]
+        def time_side_effect():
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.01
+        monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>"
         assert mock_socket.setblocking.called
-        assert mock_socket.recv.call_count == 5  # 4 data + 1 empty
+        # Should have called recv 5 times: 4 data + 1 empty
+        assert mock_socket.recv.call_count == 5
 
     def test_returns_empty_on_immediate_empty(self, monkeypatch, _mock_sleep):
-        """receive_timeout returns empty string when socket immediately returns empty."""
+        """receive_timeout returns empty string after timeout*2 when no data."""
         mock_socket = MagicMock()
         mock_socket.recv = MagicMock(return_value=b"")
-        monkeypatch.setattr("time.time", lambda: 1000.0)
+
+        # time.time() advances by 0.01 each call
+        time_counter = [0]
+        def time_side_effect():
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.01
+        monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
@@ -195,18 +223,15 @@ class TestReceiveTimeout:
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
-        # time.time advances by 0.01 each call
-        call_count = [0]
-
+        # time advances by 0.01 each call
+        time_counter = [0]
         def time_side_effect():
-            call_count[0] += 1
-            return 1000.0 + call_count[0] * 0.01
-
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.01
         monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        # Should have received some data then timed out
         assert result == b"data1data2data3data4data5"
 
     def test_timeout_without_data(self, monkeypatch, _mock_sleep):
@@ -223,6 +248,7 @@ class TestReceiveTimeout:
 
         mock_socket.recv = MagicMock(side_effect=recv_side_effect)
 
+        # time advances by 0.01 each call
         call_count[0] = 0
 
         def time_side_effect():
@@ -248,15 +274,11 @@ class TestReceiveTimeout:
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
-        # time advances: 0.5, 1.0, 1.5, 2.0
-        # With timeout=1.0: begin starts at 0, data at 0.5 resets begin to 0.5, data at 1.0 resets to 1.0,
-        # empty at 1.5, then 2.0 - 1.0 = 1.0 > timeout → break
-        call_count = [0]
-
+        # time advances by 0.5 each call
+        time_counter = [0]
         def time_side_effect():
-            call_count[0] += 1
-            return 1000.0 + call_count[0] * 0.5
-
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.5
         monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
@@ -279,12 +301,11 @@ class TestReceiveTimeout:
         mock_socket.recv = MagicMock(side_effect=side_effect)
         mock_socket.setblocking = MagicMock()
 
-        call_count = [0]
-
+        # time advances by 0.01 each call
+        time_counter = [0]
         def time_side_effect():
-            call_count[0] += 1
-            return 1000.0 + call_count[0] * 0.01
-
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.01
         monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
@@ -294,12 +315,77 @@ class TestReceiveTimeout:
     def test_single_chunk(self, monkeypatch, _mock_sleep):
         """receive_timeout handles a single recv call with data then empty."""
         mock_socket = MagicMock()
-        mock_socket.recv = MagicMock(side_effect=[b"hello", b""])
-        monkeypatch.setattr("time.time", lambda: 1000.0)
+        data_chunks = [b"hello", b""]
+        recv_count = [0]
+
+        def side_effect(*args):
+            idx = recv_count[0]
+            recv_count[0] += 1
+            return data_chunks[idx]
+
+        mock_socket.recv = MagicMock(side_effect=side_effect)
+
+        # time advances by 0.01 each call
+        time_counter = [0]
+        def time_side_effect():
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.01
+        monkeypatch.setattr("time.time", time_side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == b"hello"
+
+    def test_timeout_exactly_at_timeout2(self, monkeypatch, _mock_sleep):
+        """receive_timeout breaks when elapsed time reaches timeout*2 with no data."""
+        mock_socket = MagicMock()
+        call_count = [0]
+
+        def recv_side_effect(*args):
+            call_count[0] += 1
+            return b""  # always empty
+
+        mock_socket.recv = MagicMock(side_effect=recv_side_effect)
+
+        # time advances by 0.01 each call
+        call_count[0] = 0
+        def time_side_effect():
+            call_count[0] += 1
+            return 1000.0 + call_count[0] * 0.01
+        monkeypatch.setattr("time.time", time_side_effect)
+
+        result = receive_timeout(mock_socket, timeout=1.0)
+
+        assert result == ""
+        # timeout*2 = 2.0, with 0.01 increments that's 200 calls
+        # But recv returns b"" each time, so we sleep(0.1) each time
+        # The loop should break after time.time() - begin > 2.0
+        # That's when call_count reaches 201 (201 * 0.01 = 2.01 > 2.0)
+        # But recv is called before the break check... let's just verify it returns empty
+
+    def test_data_then_timeout(self, monkeypatch, _mock_sleep):
+        """receive_timeout collects data, then times out after receiving data."""
+        mock_socket = MagicMock()
+        data_chunks = [b"hello", b" world", b"", b""]
+        recv_count = [0]
+
+        def side_effect(*args):
+            idx = recv_count[0]
+            recv_count[0] += 1
+            return data_chunks[idx]
+
+        mock_socket.recv = MagicMock(side_effect=side_effect)
+
+        # time advances by 0.1 each call
+        time_counter = [0]
+        def time_side_effect():
+            time_counter[0] += 1
+            return 1000.0 + time_counter[0] * 0.1
+        monkeypatch.setattr("time.time", time_side_effect)
+
+        result = receive_timeout(mock_socket, timeout=0.5)
+
+        assert result == b"hello world"
 
 
 # ===================================================================
@@ -423,7 +509,6 @@ hiveport = 9999
         assert cfg.HONEYPORT == 8080
         assert cfg.HONEYFOLDER == "env_folder"
         assert cfg.HIVEPORT == 3000
-        # TOML values not overridden should still apply
         assert cfg.HIVEHOST == "10.0.0.1"
 
 
@@ -459,17 +544,13 @@ authorised_bears = ""
 
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            # Only override HONEYPORT and HIVEPORT via env
             m.setenv("HONEY_HONEYPORT", "9090")
             m.setenv("HONEY_HIVEPORT", "7070")
 
             cfg = Config.load()
 
-        # Env wins
         assert cfg.HONEYPORT == 9090
         assert cfg.HIVEPORT == 7070
-
-        # TOML wins over defaults (no env for these)
         assert cfg.HONEYFOLDER == "toml_folder"
         assert cfg.HIVEHOST == "10.0.0.1"
         assert cfg.HIVELOGIN == "toml_login"
@@ -486,7 +567,6 @@ authorised_bears = ""
         """When no TOML and no env, all defaults apply."""
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            # Clear all HONEY_ env vars
             for key in list(os.environ.keys()):
                 if key.startswith("HONEY_"):
                     m.delenv(key, raising=False)
@@ -513,7 +593,6 @@ class TestConfigGenerateConfigFile:
 
     def test_creates_file_at_default_path(self, tmp_path, monkeypatch):
         """generate_config_file writes to ~/.config/manyfaced/config.toml by default."""
-        # Use tmp_path as home
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
@@ -601,7 +680,6 @@ honeyport = 8888
         cfg = Config.load(config_path=config_path)
 
         assert cfg.HONEYPORT == 8888
-        # Other values should be defaults since TOML only has honeyport
         assert cfg.HONEYFOLDER == "bots"
 
     def test_load_with_string_path(self, tmp_path, monkeypatch):
@@ -660,7 +738,6 @@ authorised_bears = "toml_bear:toml_key"
 
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            # Clear env var so TOML wins
             m.delenv("HONEY_AUTHORISEDBEARS", raising=False)
 
             cfg = Config.load()
