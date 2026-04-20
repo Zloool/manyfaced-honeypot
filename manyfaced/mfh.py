@@ -16,7 +16,7 @@ def run() -> None:
     # Initialise system-wide logging early
     setup_logging(level="DEBUG")
 
-    from manyfaced.common.config import settings, Config
+    from manyfaced.common.config import Config
 
     # Auto-generate XDG config file if none exists
     xdg_config = os.path.join(

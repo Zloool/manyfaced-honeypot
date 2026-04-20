@@ -142,7 +142,7 @@ class TestFullPathSocketToDatabase:
 
         # Replace process_request entirely so save_data runs synchronously
         def capture_and_save(data):
-            handler.save_data(data, args_obj, Lock())
+            handler.save_data(data, args_obj)
             return True
 
         # Capture the data dict
@@ -150,7 +150,7 @@ class TestFullPathSocketToDatabase:
 
         def capturing_process_request(data):
             captured_data[0] = data
-            handler.save_data(data, args_obj, Lock())
+            handler.save_data(data, args_obj)
             return True
 
         with patch.object(handler, "process_request", capturing_process_request):
@@ -291,8 +291,7 @@ class TestFullPathSocketToDatabase:
             handler = ServerHandler(
                 MagicMock(server=(0, 6671), verbose=False), MagicMock()
             )
-            lock = Lock()
-            handler.save_data(bear_data, args_obj, lock)
+            handler.save_data(bear_data, args_obj)
 
         # Verify all 3 records exist
         import sqlite3
