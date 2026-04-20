@@ -4,13 +4,33 @@ A socket-based Python honeypot designed to explore and study internet crawlers, 
 
 ## Quick Start
 
+### Installation (recommended)
+
+```bash
+# 1. Install the package (installs all runtime deps: cryptography, geoip)
+pip install -e .
+
+# 2. (Optional) Install dev deps for testing
+pip install -e ".[dev]"
+
+# 3. Generate a config file (or skip — defaults work for local testing)
+manyfaced --generate-config
+
+# 4. Edit config file at ~/.config/manyfaced/config.toml
+#    (or use environment variables with HONEY_ prefix)
+```
+
+### Quick Run (legacy)
+
+For development you can also run without installing:
+
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Configure (optional — defaults work for local testing)
-cp manyfaced/common/settings.py.example manyfaced/common/settings.py
-# Edit settings.py with your keys and credentials
+# 2. Generate config example
+cp manyfaced/common/settings.toml.example manyfaced/common/config.toml
+# Edit config.toml with your keys and credentials
 
 # 3. Run the client only (impersonates web services)
 python3 mfh.py -c 80
@@ -85,14 +105,64 @@ Client internal:
 
 ## Configuration
 
-Copy `manyfaced/common/settings.py.example` to `manyfaced/common/settings.py` and edit.
+The honeypot uses a modern, three-layer TOML configuration system:
+
+1. **Code defaults** (hardcoded in `manyfaced/common/config.py`)
+2. **TOML config file** — `~/.config/manyfaced/config.toml` (XDG base dir)
+3. **Environment variables** (prefix `HONEY_`, always highest precedence)
+
+### Generating a config file
+
+```bash
+# Install the package first
+pip install -e .
+
+# Generate config file (creates ~/.config/manyfaced/config.toml)
+manyfaced --generate-config
+
+# Edit it
+nano ~/.config/manyfaced/config.toml
+```
+
+### TOML Config file format
+
+```toml
+[honeypot]
+honeyport = 80
+honeyfolder = "bots"
+
+[hive]
+hivehost = "127.0.0.1"
+hiveport = 8080
+hivelogin = "honeybee"
+hivepass = "beehive123"
+
+[database]
+backend = "sqlite"
+path = "bots/honeypot.db"
+pg_host = "localhost"
+pg_port = 5432
+pg_db = "honeypot"
+pg_user = "postgres"
+pg_password = "postgres"
+
+[security]
+# semicolon-separated bearid:key pairs
+authorised_bears = ""
+```
 
 ### Environment Variables
 
-All settings can be overridden via environment variables:
+All settings can be overridden via environment variables. The `HONEY_` prefix maps to the TOML keys:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `HONEY_HONEYPORT` | `80` | Port for the CLIENT (fake web services) |
+| `HONEY_HONEYFOLDER` | `bots` | Folder for client responses |
+| `HONEY_HIVEHOST` | `127.0.0.1` | Server host to report to |
+| `HONEY_HIVEPORT` | `8080` | Server port to receive reports |
+| `HONEY_HIVELOGIN` | `honeybee` | Bot identification login |
+| `HONEY_HIVEPASS` | `beehive123` | Shared AES encryption key |
 | `DB_BACKEND` | `sqlite` | Database backend: `sqlite` or `postgresql` |
 | `DB_PATH` | `bots/honeypot.db` | SQLite database file path |
 | `DB_PG_HOST` | `localhost` | PostgreSQL host |
@@ -100,14 +170,15 @@ All settings can be overridden via environment variables:
 | `DB_PG_DB` | `honeypot` | PostgreSQL database name |
 | `DB_PG_USER` | `postgres` | PostgreSQL username |
 | `DB_PG_PASSWORD` | `postgres` | PostgreSQL password |
-| `HONEY_HIVELOGIN` | `honeybee` | Bot identification login |
-| `HONEY_HIVEPASS` | `beehive123` | Shared AES encryption key |
-| `HONEY_HIVEHOST` | `127.0.0.1` | Server host to report to |
-| `HONEY_HIVEPORT` | `8080` | Server port to report to |
 
-### HIVEPASS / HONEY_HIVEPASS (Encryption Key)
+### Backward compatibility
 
-This is the shared secret used for AES-256-CBC encryption between client and server. Both must share the same value. The key is SHA-256 hashed to derive the 32-byte AES key.
+For backward compatibility, `manyfaced/common/settings.py` still works as a thin wrapper:
+
+```python
+from manyfaced.common.settings import HONEYPORT, HIVELOGIN
+# Works exactly as before, delegates to Config behind the scenes
+```
 
 ## Database
 
@@ -160,40 +231,42 @@ The complete list of detected paths is in `manyfaced/client/faces.py` (WordPress
 
 ```
 manyfaced-honeypot/
-├── mfh.py                      # Main entry point & process manager
+├── pyproject.toml                  # PEP 621 package metadata & build config
+├── mfh.py                          # Main entry point & process manager
 ├── manyfaced/
+│   ├── __init__.py                 # Package init
 │   ├── common/
-│   │   ├── settings.py         # Runtime config (env + defaults)
-│   │   ├── settings.py.example # Template config
-│   │   ├── handler.py          # DEPRECATED (use handlers/base_handler.py)
-│   │   ├── httphandler.py      # HTTPRequest wrapper class
-│   │   ├── myenc.py            # AESCipher (AES-256-CBC encrypt/decrypt)
-│   │   ├── bearstorage.py      # BearStorage data container
-│   │   ├── status.py           # Constants (timeouts, detection IDs)
-│   │   ├── arguments.py        # CLI argument parser
-│   │   ├── update.py           # Auto-update logic
-│   │   └── utils.py            # Socket helpers, dump_file
+│   │   ├── config.py               # Modern Config (TOML + env + defaults)
+│   │   ├── settings.py             # Backward-compat shim (delegates to Config)
+│   │   ├── settings.toml.example   # Template config (in-package copy)
+│   │   ├── arguments.py            # CLI argument parser
+│   │   ├── handler.py              # DEPRECATED (use handlers/base_handler.py)
+│   │   ├── httphandler.py          # HTTPRequest wrapper class
+│   │   ├── myenc.py                # AESCipher (AES-256-CBC encrypt/decrypt)
+│   │   ├── bearstorage.py          # BearStorage data container
+│   │   ├── status.py               # Constants (timeouts, detection IDs)
+│   │   ├── update.py               # Auto-update logic
+│   │   └── utils.py                # Socket helpers, dump_file
 │   ├── server/
-│   │   └── server.py           # ServerHandler + TCP listener
+│   │   └── server.py               # ServerHandler + TCP listener
 │   ├── client/
-│   │   ├── client.py           # Face routing, responses, create_server()
-│   │   ├── faces.py            # WordPress-specific path→response mapping
-│   │   └── responses/          # Fake web service content (10 files)
+│   │   ├── client.py               # Face routing, responses, create_server()
+│   │   ├── faces.py                # WordPress-specific path→response mapping
+│   │   └── responses/              # Fake web service content (10 files)
 │   ├── handlers/
-│   │   ├── base_handler.py     # BaseHandler ABC (parse, decrypt, route)
-│   │   └── http_handler.py     # HTTPHandler (CLIENT-side request processing)
-│   ├── db/
-│   │   ├── dbconnect.py        # BearRequests dataclass + Insert()
-│   │   ├── storage.py          # SQLiteStorage, PostgreSQLStorage, get_storage()
-│   │   ├── dbscript.sql        # Legacy ClickHouse schema
-│   │   └── README.md           # Database backend docs
-│   └── setup.py               # Package install
+│   │   ├── base_handler.py         # BaseHandler ABC (parse, decrypt, route)
+│   │   └── http_handler.py         # HTTPHandler (CLIENT-side request processing)
+│   └── db/
+│       ├── dbconnect.py            # BearRequests dataclass + Insert()
+│       ├── storage.py              # SQLiteStorage, PostgreSQLStorage, get_storage()
+│       ├── dbscript.sql            # Legacy ClickHouse schema
+│       └── README.md               # Database backend docs
 ├── test/
-│   ├── conftest.py            # Test utilities
-│   ├── test_integration.py    # Full pipeline integration tests
-│   └── test_client.py         # Client unit tests
-├── requirements.txt           # python-geoip, pycrypto, pytest
-├── pytest.ini
+│   ├── conftest.py                 # Test utilities
+│   ├── test_integration.py         # Full pipeline integration tests
+│   └── test_client.py              # Client unit tests
+├── requirements.txt                # Legacy manual deps
+├── pytest.ini                      # pytest config
 └── .gitignore
 ```
 
@@ -231,11 +304,18 @@ Messages between client and server use AES-256-CBC with:
 ## Dependencies
 
 | Package | Purpose |
-|---------|---------|
-| python-geoip | IP geolocation |
+|------|-------|
+| cryptography>=41.0 | AES-256-CBC encryption for client-server comms |
+| python-geoip | IP geolocation for bot attribution |
 | python-geoip-geolite2 | GeoLite2 database for geolocation |
-| pycrypto (or cryptography) | AES encryption |
-| pytest | Testing framework |
+| pytest (dev) | Testing framework |
+
+Install all deps in one command:
+
+```bash
+pip install -e .          # runtime only
+pip install -e ".[dev]"   # runtime + dev
+```
 
 ## Known Issues & TODOs
 
