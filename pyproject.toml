@@ -33,7 +33,11 @@ where = ["."]
 include = ["manyfaced*"]
 
 [tool.setuptools.package-data]
-manyfaced = ["client/responses/*"]
+manyfaced = [
+    "client/responses/*",
+    "common/settings.toml.example",
+    "*.py",
+]
 
 [tool.ruff]
 target-version = "py311"
