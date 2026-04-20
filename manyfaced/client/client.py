@@ -2,7 +2,7 @@ import datetime
 import json
 import os
 import signal
-from multiprocessing import Lock, Event
+from multiprocessing import Event
 from socket import (
     socket,
     AF_INET,
@@ -12,11 +12,14 @@ from socket import (
     error as socket_error,
 )
 
+from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.myenc import AESCipher
 from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP
 from manyfaced.common.settings import HIVEHOST, HIVEPORT
+from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.utils import dump_file, receive_timeout
-from manyfaced.handlers.http_handler import HTTPHandler
+
+logger = get_logger(__name__)
 
 # List of popular pages requested by incoming hostile bots, with appropriate face to show them
 faces = {
@@ -89,38 +92,39 @@ faces = {
 }
 
 
-def send_report(data, client, password, lock):
-    with lock:
-        cypher = AESCipher(password)  # type: ignore[name-defined]
-        # runtime import: from common.myenc import AESCipher
-        message = (client + ":").encode()
-        data_dict = {
-            "ip": data.ip,
-            "raw_request": data.raw_request,
-            "timestamp": data.timestamp,
-            "parsed_request": {
-                "command": data.parsed_request.command,
-                "path": data.parsed_request.path,
-                "request_version": data.parsed_request.request_version,
-                "headers": dict(data.parsed_request.headers),
-            },
-            "is_detected": data.is_detected,
-            "HIVELOGIN": data.HIVELOGIN,
-        }
-        message += cypher.encrypt(json.dumps(data_dict).encode())
-        s = socket(AF_INET, SOCK_STREAM)
-        try:
-            s.connect((HIVEHOST, HIVEPORT))
-            s.sendall(message)
-            response = s.recv(1024)
-            if response.decode() != "200":
-                print(response)
-                print("Failed to send report: Non-200 response")
-            s.close()
-        except socket_error:
-            dump_file(data)
-        except KeyboardInterrupt:
-            pass
+def send_report(data, client, password):
+    cypher = AESCipher(password)  # type: ignore[name-defined]
+    # runtime import: from common.myenc import AESCipher
+    message = (client + ":").encode()
+    data_dict = {
+        "ip": data.ip,
+        "raw_request": data.raw_request,
+        "timestamp": data.timestamp,
+        "parsed_request": {
+            "command": data.parsed_request.command,
+            "path": data.parsed_request.path,
+            "request_version": data.parsed_request.request_version,
+            "headers": dict(data.parsed_request.headers),
+        },
+        "is_detected": data.is_detected,
+        "HIVELOGIN": data.HIVELOGIN,
+    }
+    message += cypher.encrypt(json.dumps(data_dict).encode())
+    s = socket(AF_INET, SOCK_STREAM)
+    try:
+        s.connect((HIVEHOST, HIVEPORT))
+        s.sendall(message)
+        response = s.recv(1024)
+        if response.decode() != "200":
+            logger.warning("Failed to send report: Non-200 response from server")
+            print(response)
+        s.close()
+        logger.info("Report sent for %s", client)
+    except socket_error:
+        logger.error("Socket error sending report for %s – dumping to file", client)
+        dump_file(data)
+    except KeyboardInterrupt:
+        pass
     return
 
 
@@ -242,12 +246,13 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def create_server(args, report_lock: Lock, update_event: Event):
+def create_server(args, update_event: Event):
     port = args.client
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(("", port))
     server_socket.listen(1)
+    logger.info("Client honeypot listening on port %d", port)
     if args.verbose:
         print("Serving honey on port %s", port)
     try:
@@ -281,4 +286,4 @@ def create_server(args, report_lock: Lock, update_event: Event):
 def main(args, update_event):
     if getattr(signal, "SIGCHLD", None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    create_server(args, Lock(), update_event)
+    create_server(args, update_event)

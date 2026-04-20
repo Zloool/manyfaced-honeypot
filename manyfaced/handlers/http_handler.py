@@ -1,10 +1,13 @@
 import datetime
-from multiprocessing import Process, Lock
+from multiprocessing import Process
 
+from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.settings import HIVELOGIN, HIVEPASS
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.httphandler import HTTPRequest
 from .base_handler import BaseHandler
+
+logger = get_logger(__name__)
 
 
 class HTTPHandler(BaseHandler):
@@ -21,6 +24,8 @@ class HTTPHandler(BaseHandler):
         bot_ip = data["ip"]
         request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
 
+        logger.info("Incoming request from %s at %s", bot_ip, request_time)
+
         output_data, detected = get_honey_http(
             HTTPRequest(data["raw_request"]), bot_ip, self.args.verbose
         )
@@ -34,9 +39,11 @@ class HTTPHandler(BaseHandler):
             HIVELOGIN,
         )
         Process(
-            args=(bs, HIVELOGIN, HIVEPASS, Lock()),
+            args=(bs, HIVELOGIN, HIVEPASS),
             name="send_report",
             target=send_report,
         ).start()
+
+        logger.debug("Spawned send_report process for %s", bot_ip)
 
         return output_data

@@ -1,6 +1,6 @@
 import json
 import signal
-from multiprocessing import Process, Lock
+from multiprocessing import Process
 from socket import (
     socket,
     AF_INET,
@@ -10,10 +10,13 @@ from socket import (
     error as socket_error,
 )
 
+from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.settings import AUTHORISEDBEARS
 from manyfaced.common.utils import dump_file, receive_timeout
 from manyfaced.db.dbconnect import Insert, BearRequests
 from manyfaced.handlers.base_handler import BaseHandler
+
+logger = get_logger(__name__)
 
 
 class ServerHandler(BaseHandler):
@@ -24,35 +27,35 @@ class ServerHandler(BaseHandler):
         return AUTHORISEDBEARS.get(identifier)  # Use authorized bears for key
 
     def process_request(self, data):
-        db_lock = Lock()
         Process(
-            args=(data, self.args, db_lock), name="data_saving", target=self.save_data
+            args=(data, self.args), name="data_saving", target=self.save_data
         ).start()
-
+        logger.debug("Spawned data_saving process for %s", data.get("ip", "unknown"))
         return True
 
-    def save_data(self, data, args, db_lock):
-        with db_lock:
-            try:
-                bear = BearRequests(
-                    ip=data["ip"],
-                    raw_request=data["raw_request"],
-                    timestamp=data["timestamp"],
-                    parsed_request=data["parsed_request"],
-                    is_detected=data["is_detected"],
-                    HIVELOGIN=data["HIVELOGIN"],
-                )
-                Insert(bear)
-                if args.verbose:
-                    print(f"Data saved for {data['ip']}")
-            except (ConnectionError, TypeError) as e:
-                dump_file(json.dumps(data))
-                if self.args.verbose:
-                    print(f"Error writing data to database: {e}, writing to file")
-        return
+    def save_data(self, data, args):
+        try:
+            bear = BearRequests(
+                ip=data["ip"],
+                raw_request=data["raw_request"],
+                timestamp=data["timestamp"],
+                parsed_request=data["parsed_request"],
+                is_detected=data["is_detected"],
+                HIVELOGIN=data["HIVELOGIN"],
+            )
+            Insert(bear)
+            logger.info("Data saved for %s", data["ip"])
+            if args.verbose:
+                print(f"Data saved for {data['ip']}")
+        except (ConnectionError, TypeError) as e:
+            dump_file(json.dumps(data))
+            logger.error("Error writing data to database: %s – dumped to file", e)
+            if self.args.verbose:
+                print(f"Error writing data to database: {e}, writing to file")
 
 
 def main(args, update_event):
+    logger.info("Server honeypot listening on port %d", args.server)
     if getattr(signal, "SIGCHLD", None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     server_socket = socket(AF_INET, SOCK_STREAM)
@@ -79,10 +82,12 @@ def main(args, update_event):
                 response = str(response)
             connection_socket.send(response.encode())
         except socket_error as e:
+            logger.warning("Socket error: %s", e)
             if args.verbose:
                 print(f"Socket error: {e}")
             continue
         except (ValueError, TypeError, KeyError, ImportError) as e:
+            logger.error("Unexpected error: %s", e)
             if connection_socket:
                 connection_socket.send(f"CODE 300 ERROR: {e}".encode())
             if args.verbose:
