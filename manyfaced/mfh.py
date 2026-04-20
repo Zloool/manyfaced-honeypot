@@ -1,31 +1,50 @@
+"""manyfaced – Multi-faced honeypot entry point."""
+
+from __future__ import annotations
+
 import os
-import os.path
 import signal
 import sys
 import time
 from multiprocessing import Event, Process
-from shutil import copyfile
-
-from common.arguments import parse
-from common.update import pull, trigger
-from manyfaced.client import client
-from manyfaced.server import server
-
-base_dir = os.path.dirname(os.path.abspath(__file__))
-settings_path = os.path.join(base_dir, "common", "settings.py")
-settings_example_path = os.path.join(base_dir, "common", "settings.py.example")
-
-PROC_KEYS = ("client_proc", "server_proc", "terminate_proc")
 
 
-def _terminate(proc):
-    if proc is not None and proc.is_alive():
-        proc.terminate()
-        proc.join()
+def run() -> None:
+    """CLI entry point – called by the ``manyfaced`` console_scripts command."""
+    from manyfaced.common.config import settings, Config
 
+    # Auto-generate XDG config file if none exists
+    xdg_config = os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
+        "manyfaced",
+        "config.toml",
+    )
+    if not os.path.isfile(xdg_config):
+        example = os.path.join(os.path.dirname(os.path.abspath(__file__)), "common", "config.toml.example")
+        if os.path.isfile(example):
+            import shutil
+            os.makedirs(os.path.dirname(xdg_config), exist_ok=True)
+            shutil.copy2(example, xdg_config)
+            print(f"[manyfaced] Generated config at {xdg_config} – edit it to customize.", file=sys.stderr)
+        else:
+            new_cfg = Config.load()
+            new_cfg.generate_config_file(xdg_config)
+            print(f"[manyfaced] Generated config at {xdg_config} – edit it to customize.", file=sys.stderr)
 
-def _start_processes(args, update_event):
-    procs = {key: None for key in PROC_KEYS}
+    from manyfaced.common.arguments import parse
+    from manyfaced.client import client
+    from manyfaced.server import server
+
+    args = parse()
+    update_event = Event()
+
+    procs: dict[str, Process | None] = {"client_proc": None, "server_proc": None, "terminate_proc": None}
+
+    def _terminate(proc: Process | None) -> None:
+        if proc is not None and proc.is_alive():
+            proc.terminate()
+            proc.join()
+
     if args.client is not None:
         procs["client_proc"] = Process(
             args=(args, update_event),
@@ -33,6 +52,7 @@ def _start_processes(args, update_event):
             target=client.main,
         )
         procs["client_proc"].start()
+
     if args.server is not None:
         procs["server_proc"] = Process(
             args=(args, update_event),
@@ -40,55 +60,29 @@ def _start_processes(args, update_event):
             target=server.main,
         )
         procs["server_proc"].start()
+
     if args.updater:
-        procs["terminate_proc"] = Process(
-            args=(update_event,),
-            name="trigger",
-            target=trigger,
-        )
+        from manyfaced.common.update import pull, trigger
+
+        procs["terminate_proc"] = Process(args=(update_event,), name="trigger", target=trigger)
         procs["terminate_proc"].start()
         procs["terminate_proc"].join()
-    return procs
+        pull("origin", "master")
+        sys.stdout.flush()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
-
-def main(args) -> None:
-    """
-    Main entry point for the application. Starts client, server, or updater processes
-    based on command-line arguments and handles graceful shutdown on KeyboardInterrupt.
-    """
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    update_event = Event()
-    procs = _start_processes(args, update_event)
 
     try:
         while not update_event.is_set():
             time.sleep(1)
     except KeyboardInterrupt:
-        for key in PROC_KEYS:
-            _terminate(procs[key])
+        pass
     finally:
         update_event.set()
-        for key in PROC_KEYS:
-            _terminate(procs[key])
-
-
-def _update_and_restart():
-    pull("origin", "master")
-    sys.stdout.flush()
-    os.execl(sys.executable, sys.executable, *sys.argv)
+        for p in procs.values():
+            _terminate(p)
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, os.path.dirname(base_dir))
-    args = parse()
-
-    if settings_example_path and not os.path.isfile(settings_path):
-        copyfile(settings_example_path, settings_path)
-
-    if args.updater:
-        _update_and_restart()
-
-    try:
-        main(args)
-    except KeyboardInterrupt:
-        sys.exit(0)
+    run()
