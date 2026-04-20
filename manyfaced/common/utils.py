@@ -10,7 +10,7 @@ def dump_file(data):
         with open("temp.db", "rb") as f:
             string_file = f.read()
         db = pickle.loads(string_file)
-    except pickle.PicklingError:
+    except (pickle.PicklingError, FileNotFoundError):
         db = list()
     db.append(data)
     with open("temp.db", "wb") as f:
