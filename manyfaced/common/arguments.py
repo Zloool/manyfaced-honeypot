@@ -65,4 +65,13 @@ def parse():
         action="store_true",
         help="set this argument if you want to put honeypot behind proxy",
     )
+
+    parser.add_argument(
+        "--generate-config",
+        action="store_true",
+        dest="generate_config",
+        default=False,
+        help="generate a config.toml file at ~/.config/manyfaced/config.toml and exit",
+    )
+
     return parser.parse_args()
