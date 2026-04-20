@@ -7,7 +7,8 @@ name = "manyfaced"
 version = "0.5.0"
 description = "Multi-faced honeypot - detects and logs bot activity by emulating multiple web application faces"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Zhavoronkov Pavlo", email = "zhavoronkov.p@gmail.com"},
 ]
