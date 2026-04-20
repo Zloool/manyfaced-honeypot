@@ -39,6 +39,39 @@ from manyfaced.common.arguments import parse
 
 
 # ===================================================================
+# Helper utilities
+# ===================================================================
+
+class _TempDB:
+    """Context manager that patches dump_file to use a temp file."""
+
+    def __init__(self, path):
+        self.path = path
+        self._mock = None
+
+    def __enter__(self):
+        self._real_open = open
+        self._mock = patch("manyfaced.common.utils.open", self._patched_open)
+        self._mock.start()
+        return self.path
+
+    def __exit__(self, *exc):
+        if self._mock:
+            self._mock.stop()
+
+    def _patched_open(self, path, mode, *args, **kwargs):
+        # The path argument from dump_file is always "temp.db"
+        return self._real_open(self.path, mode, *args, **kwargs)
+
+
+def _write_toml(tmp_path, content):
+    """Write a TOML file and return its Path."""
+    toml_path = tmp_path / "config.toml"
+    toml_path.write_text(content)
+    return toml_path
+
+
+# ===================================================================
 # utils.py  –  dump_file / receive_timeout
 # ===================================================================
 
@@ -48,15 +81,9 @@ class TestDumpFile:
     def test_creates_file_and_writes_data(self, tmp_path):
         """dump_file creates temp.db, writes pickled list with data."""
         db_path = tmp_path / "temp.db"
-        with patch("manyfaced.common.utils.open", MagicMock(return_value=open(db_path, "wb"))):
-            # We need to patch the actual open used inside dump_file.
-            # Simpler: monkey-patch the module's working directory approach.
-            pass
-
-        # Simpler approach: override the filename by patching open at the module level
-        with patch("manyfaced.common.utils.open", patch_open_context(db_path)):
+        with _TempDB(db_path):
             dump_file({"key": "value"})
-            loaded = pickle.loads(db_path.read_bytes())
+        loaded = pickle.loads(db_path.read_bytes())
         assert loaded == [{"key": "value"}]
 
     def test_appends_to_existing_list(self, tmp_path):
@@ -65,7 +92,7 @@ class TestDumpFile:
         # Pre-populate the file
         db_path.write_bytes(pickle.dumps([{"first": 1}]))
 
-        with patch("manyfaced.common.utils.open", patch_open_context(db_path)):
+        with _TempDB(db_path):
             dump_file({"second": 2})
 
         loaded = pickle.loads(db_path.read_bytes())
@@ -76,7 +103,7 @@ class TestDumpFile:
         db_path = tmp_path / "temp.db"
         assert not db_path.exists()
 
-        with patch("manyfaced.common.utils.open", patch_open_context(db_path)):
+        with _TempDB(db_path):
             dump_file("new_data")
 
         loaded = pickle.loads(db_path.read_bytes())
@@ -86,7 +113,7 @@ class TestDumpFile:
         """Multiple dump_file calls accumulate data."""
         db_path = tmp_path / "temp.db"
 
-        with patch("manyfaced.common.utils.open", patch_open_context(db_path)):
+        with _TempDB(db_path):
             dump_file("item1")
             dump_file("item2")
             dump_file("item3")
@@ -94,16 +121,43 @@ class TestDumpFile:
         loaded = pickle.loads(db_path.read_bytes())
         assert loaded == ["item1", "item2", "item3"]
 
+    def test_dump_file_with_dict_data(self, tmp_path):
+        """dump_file handles dict data correctly."""
+        db_path = tmp_path / "temp.db"
+        with _TempDB(db_path):
+            dump_file({"url": "http://example.com", "method": "GET"})
+        loaded = pickle.loads(db_path.read_bytes())
+        assert loaded == [{"url": "http://example.com", "method": "GET"}]
+
+    def test_dump_file_with_bytes_data(self, tmp_path):
+        """dump_file handles bytes data correctly."""
+        db_path = tmp_path / "temp.db"
+        with _TempDB(db_path):
+            dump_file(b"raw bytes data")
+        loaded = pickle.loads(db_path.read_bytes())
+        assert loaded == [b"raw bytes data"]
+
 
 class TestReceiveTimeout:
     """Tests for receive_timeout(the_socket, timeout): non-blocking socket recv with timeout logic."""
 
-    def test_assembles_multiple_receives(self, monkeypatch):
+    @pytest.fixture
+    def _mock_sleep(self, monkeypatch):
+        """Monkey-patch time.sleep to be a no-op."""
+        monkeypatch.setattr("time.sleep", lambda *a: None)
+
+    def test_assembles_multiple_receives(self, monkeypatch, _mock_sleep):
         """receive_timeout assembles data from multiple recv calls until empty."""
         mock_socket = MagicMock()
-        data_chunks = [b"HTTP/1.1 200 OK\r\n", b"Content-Type: text/html\r\n", b"\r\n", b"<!DOCTYPE html>", b""]
-
+        data_chunks = [
+            b"HTTP/1.1 200 OK\r\n",
+            b"Content-Type: text/html\r\n",
+            b"\r\n",
+            b"<!DOCTYPE html>",
+            b"",
+        ]
         call_count = [0]
+
         def side_effect(*args):
             idx = call_count[0]
             call_count[0] += 1
@@ -111,7 +165,6 @@ class TestReceiveTimeout:
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
         monkeypatch.setattr("time.time", lambda: 1000.0)
-        monkeypatch.setattr("time.sleep", lambda *a: None)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
@@ -119,25 +172,32 @@ class TestReceiveTimeout:
         assert mock_socket.setblocking.called
         assert mock_socket.recv.call_count == 5  # 4 data + 1 empty
 
-    def test_returns_empty_on_immediate_empty(self, monkeypatch):
+    def test_returns_empty_on_immediate_empty(self, monkeypatch, _mock_sleep):
         """receive_timeout returns empty string when socket immediately returns empty."""
         mock_socket = MagicMock()
         mock_socket.recv = MagicMock(return_value=b"")
         monkeypatch.setattr("time.time", lambda: 1000.0)
-        monkeypatch.setattr("time.sleep", lambda *a: None)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == ""
 
-    def test_timeout_breaks_after_data_received(self, monkeypatch):
+    def test_timeout_breaks_after_data_received(self, monkeypatch, _mock_sleep):
         """receive_timeout breaks out of loop after timeout once data has been received."""
         mock_socket = MagicMock()
-        mock_socket.recv = MagicMock(side_effect=[b"data1", b"data2", b"data3", b"data4", b"data5"])
-        monkeypatch.setattr("time.sleep", lambda *a: None)
+        data_chunks = [b"data1", b"data2", b"data3", b"data4", b"data5", b""]
+        recv_count = [0]
 
-        # time.time advances by 0.01 each call to simulate real time passing
+        def side_effect(*args):
+            idx = recv_count[0]
+            recv_count[0] += 1
+            return data_chunks[idx]
+
+        mock_socket.recv = MagicMock(side_effect=side_effect)
+
+        # time.time advances by 0.01 each call
         call_count = [0]
+
         def time_side_effect():
             call_count[0] += 1
             return 1000.0 + call_count[0] * 0.01
@@ -149,22 +209,22 @@ class TestReceiveTimeout:
         # Should have received some data then timed out
         assert result == b"data1data2data3data4data5"
 
-    def test_timeout_without_data(self, monkeypatch):
+    def test_timeout_without_data(self, monkeypatch, _mock_sleep):
         """receive_timeout returns empty after timeout*2 even with no data."""
         mock_socket = MagicMock()
-        mock_socket.recv = MagicMock(side_effect=[])
 
         call_count = [0]
+
         def recv_side_effect(*args):
             call_count[0] += 1
-            if call_count[0] <= 20:
-                raise Exception("would block")  # socket.error equivalent
+            if call_count[0] <= 30:
+                raise OSError("would block")
             return b""
 
         mock_socket.recv = MagicMock(side_effect=recv_side_effect)
-        monkeypatch.setattr("time.sleep", lambda *a: None)
 
         call_count[0] = 0
+
         def time_side_effect():
             call_count[0] += 1
             return 1000.0 + call_count[0] * 0.01
@@ -175,7 +235,7 @@ class TestReceiveTimeout:
 
         assert result == ""
 
-    def test_refreshes_begin_on_data(self, monkeypatch):
+    def test_refreshes_begin_on_data(self, monkeypatch, _mock_sleep):
         """receive_timeout resets begin time when new data arrives, extending the window."""
         mock_socket = MagicMock()
         data_chunks = [b"a", b"b", b"c", b""]
@@ -187,12 +247,12 @@ class TestReceiveTimeout:
             return data_chunks[idx]
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-        monkeypatch.setattr("time.sleep", lambda *a: None)
 
-        # time advances: 0, 0.5, 1.0, 1.5, 2.0
+        # time advances: 0.5, 1.0, 1.5, 2.0
         # With timeout=1.0: begin starts at 0, data at 0.5 resets begin to 0.5, data at 1.0 resets to 1.0,
         # empty at 1.5, then 2.0 - 1.0 = 1.0 > timeout → break
         call_count = [0]
+
         def time_side_effect():
             call_count[0] += 1
             return 1000.0 + call_count[0] * 0.5
@@ -203,12 +263,13 @@ class TestReceiveTimeout:
 
         assert result == b"abc"
 
-    def test_socket_error_handled(self, monkeypatch):
+    def test_socket_error_handled(self, monkeypatch, _mock_sleep):
         """receive_timeout handles socket.error (would block) gracefully."""
         from socket import error as socket_error
         mock_socket = MagicMock()
 
         recv_count = [0]
+
         def side_effect(*args):
             recv_count[0] += 1
             if recv_count[0] <= 3:
@@ -216,11 +277,10 @@ class TestReceiveTimeout:
             return b"got data"
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-        mock_socket.recv = MagicMock(side_effect=side_effect)
         mock_socket.setblocking = MagicMock()
-        monkeypatch.setattr("time.sleep", lambda *a: None)
 
         call_count = [0]
+
         def time_side_effect():
             call_count[0] += 1
             return 1000.0 + call_count[0] * 0.01
@@ -231,18 +291,20 @@ class TestReceiveTimeout:
 
         assert result == b"got data"
 
+    def test_single_chunk(self, monkeypatch, _mock_sleep):
+        """receive_timeout handles a single recv call with data then empty."""
+        mock_socket = MagicMock()
+        mock_socket.recv = MagicMock(side_effect=[b"hello", b""])
+        monkeypatch.setattr("time.time", lambda: 1000.0)
+
+        result = receive_timeout(mock_socket, timeout=1.0)
+
+        assert result == b"hello"
+
 
 # ===================================================================
 # config.py  –  Config.load / generate_config_file / _find_config_file / _load_toml / _resolve
 # ===================================================================
-
-# Helper: create a TOML file with given sections
-def _write_toml(tmp_path, content):
-    """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
-    toml_path.write_text(content)
-    return toml_path
-
 
 class TestConfigDefaults:
     """Config with no TOML file, no env vars → returns defaults."""
@@ -342,7 +404,7 @@ class TestConfigEnvVars:
         toml_content = """
 [honeypot]
 honeyport = 443
-honeyfolder = "malware"
+honeyfolder = "toml_folder"
 
 [hive]
 hivehost = "10.0.0.1"
@@ -542,6 +604,18 @@ honeyport = 8888
         # Other values should be defaults since TOML only has honeyport
         assert cfg.HONEYFOLDER == "bots"
 
+    def test_load_with_string_path(self, tmp_path, monkeypatch):
+        """Config.load accepts a string config_path."""
+        toml_content = """
+[honeypot]
+honeyport = 7777
+"""
+        config_path = str(_write_toml(tmp_path, toml_content))
+
+        cfg = Config.load(config_path=config_path)
+
+        assert cfg.HONEYPORT == 7777
+
 
 class TestConfigAuthorisedBears:
     """Parse semicolon-separated authorised_bears from env var."""
@@ -592,6 +666,22 @@ authorised_bears = "toml_bear:toml_key"
             cfg = Config.load()
 
         assert cfg.AUTHORISEDBEARS == {"toml_bear": "toml_key"}
+
+    def test_authorised_bears_env_overrides_toml(self, tmp_path, monkeypatch):
+        """AUTHORISEDBEARS env var overrides TOML."""
+        toml_content = """
+[security]
+authorised_bears = "toml_bear:toml_key"
+"""
+        config_path = _write_toml(tmp_path, toml_content)
+
+        with monkeypatch.context() as m:
+            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
+            m.setenv("HONEY_AUTHORISEDBEARS", "env_bear:env_key")
+
+            cfg = Config.load()
+
+        assert cfg.AUTHORISEDBEARS == {"env_bear": "env_key"}
 
 
 # ===================================================================
@@ -706,23 +796,92 @@ class TestParseClientNoPort:
 
 
 # ===================================================================
-# Additional helper: patch open for dump_file testing
+# Additional edge-case tests
 # ===================================================================
 
-class patch_open_context:
-    """Context manager that patches builtins.open to use a specific file path."""
+class TestResolve:
+    """Tests for the _resolve helper function."""
 
-    def __init__(self, path):
-        self.path = path
-        self._real_open = open
+    def test_resolve_int_default(self):
+        result = _resolve("honeyport", 80, "honeypot", None, "HONEY_")
+        assert result == 80
 
-    def __enter__(self):
-        self._mock = patch("manyfaced.common.utils.open", new=self._patched)
-        self._mock.start()
-        return self._mock
+    def test_resolve_int_from_toml(self):
+        toml = {"honeypot.honeyport": 443}
+        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        assert result == 443
 
-    def __exit__(self, *exc):
-        self._mock.stop()
+    def test_resolve_int_from_env(self, monkeypatch):
+        monkeypatch.setenv("HONEY_HONEYPORT", "9090")
+        result = _resolve("honeyport", 80, "honeypot", None, "HONEY_")
+        assert result == 9090
 
-    def _patched(self, *args, **kwargs):
-        return self._real_open(self.path, *args[1:], **kwargs)
+    def test_resolve_str_default(self):
+        result = _resolve("honeyfolder", "bots", "honeypot", None, "HONEY_")
+        assert result == "bots"
+
+    def test_resolve_str_from_toml(self):
+        toml = {"honeypot.honeyfolder": "malware"}
+        result = _resolve("honeyfolder", "bots", "honeypot", toml, "HONEY_")
+        assert result == "malware"
+
+    def test_resolve_str_from_env(self, monkeypatch):
+        monkeypatch.setenv("HONEY_HONEYFOLDER", "env_folder")
+        result = _resolve("honeyfolder", "bots", "honeypot", None, "HONEY_")
+        assert result == "env_folder"
+
+    def test_resolve_dict_default(self):
+        result = _resolve("authorised_bears", {}, "security", None, "HONEY_")
+        assert result == {}
+
+    def test_resolve_dict_from_toml(self):
+        toml = {"security.authorised_bears": "bear1:key1"}
+        result = _resolve("authorised_bears", {}, "security", toml, "HONEY_")
+        assert result == "bear1:key1"
+
+    def test_resolve_tuple_from_env(self, monkeypatch):
+        monkeypatch.setenv("HONEY_BACKENDS", "sqlite;postgresql")
+        result = _resolve("backends", ("sqlite", "postgresql"), "database", None, "HONEY_")
+        assert result == ["sqlite", "postgresql"]
+
+    def test_env_overrides_toml(self, monkeypatch):
+        toml = {"honeypot.honeyport": 443}
+        monkeypatch.setenv("HONEY_HONEYPORT", "9090")
+        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        assert result == 9090
+
+    def test_toml_overrides_default(self):
+        toml = {"honeypot.honeyport": 443}
+        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        assert result == 443
+
+
+class TestEnvPrefix:
+    """Tests for _env_prefix."""
+
+    def test_default_prefix(self):
+        assert _env_prefix() == "HONEY_"
+
+
+class TestLoadToml:
+    """Tests for _load_toml."""
+
+    def test_load_toml_flat_dict(self, tmp_path):
+        toml_content = """
+[honeypot]
+honeyport = 443
+honeyfolder = "test"
+
+[hive]
+hiveport = 9999
+"""
+        toml_path = _write_toml(tmp_path, toml_content)
+        result = _load_toml(toml_path)
+        assert result["honeypot.honeyport"] == 443
+        assert result["honeypot.honeyfolder"] == "test"
+        assert result["hive.hiveport"] == 9999
+
+    def test_load_toml_missing_file_raises(self, tmp_path):
+        toml_path = tmp_path / "nonexistent.toml"
+        with pytest.raises(FileNotFoundError):
+            _load_toml(toml_path)
