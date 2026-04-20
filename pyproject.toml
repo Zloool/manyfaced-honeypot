@@ -14,14 +14,12 @@ authors = [
 urls = {Homepage = "https://github.com/Zloool/manyfaced-honeypot"}
 requires-python = ">=3.11"
 dependencies = [
-    "pycryptodome>=3.0",
-]
-
-[project.optional-dependencies]
-geoip = [
+    "cryptography>=41.0",
     "python-geoip>=1.2",
     "python-geoip-geolite2>=2015.300",
 ]
+
+[project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "ruff>=0.1",
