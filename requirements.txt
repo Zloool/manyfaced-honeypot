@@ -1,4 +1,10 @@
-python-geoip
-python-geoip-geolite2
-pycrypto
-pytest
+# Core runtime dependencies
+cryptography>=41.0
+
+# Optional: uncomment if you need geoip support
+# python-geoip>=1.2
+# python-geoip-geolite2>=2015.300
+
+# Development / testing
+pytest>=7.0
+ruff>=0.1
