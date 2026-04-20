@@ -16,8 +16,6 @@ urls = {Homepage = "https://github.com/Zloool/manyfaced-honeypot"}
 requires-python = ">=3.11"
 dependencies = [
     "cryptography>=41.0",
-    "python-geoip>=1.2",
-    "python-geoip-geolite2>=2015.300",
 ]
 
 [project.optional-dependencies]
