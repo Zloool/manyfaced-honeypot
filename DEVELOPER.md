@@ -26,7 +26,7 @@ The config file auto-generates from `manyfaced/common/settings.toml.example` on 
 
 ```
 mfh.py (main)
-  ├── settings.py.example → settings.py (auto-copy if missing)
+  ├── settings.py.example -> settings.py (auto-copy if missing)
   ├── args = parse()          # CLI parsing
   ├── Process(client)        # client.main() in child
   ├── Process(server)        # server.main() in child
@@ -48,9 +48,9 @@ manyfaced/
 
 ### Key Classes
 
-#### BaseHandler (ABC) — `handlers/base_handler.py`
+#### BaseHandler (server-side ABC) — `handlers/base_handler.py`
 
-Core request handling pipeline:
+Core request handling pipeline for encrypted messages from the client:
 
 ```python
 handle_request(message)
@@ -63,28 +63,60 @@ get_key():        # Abstract — return decryption key for identifier
 process_request(): # Abstract — handle decrypted data
 ```
 
+#### HTTPHandlerBase (client-side ABC) — `handlers/base_handler.py`
+
+Abstract base for service-specific HTTP handlers. Subclasses implement:
+- `matches_path()`: Check if this handler should handle the request
+- `generate_response()`: Generate a realistic HTTP response
+- `handle_login()`: (Optional) Process login attempts and capture credentials
+
 #### HTTPHandler — `handlers/http_handler.py`
 
-CLIENT-side handler. When a bot connects:
-1. `get_key()` returns `HIVEPASS` (shared key for all bots)
-2. `process_request()` calls `get_honey_http()` to serve a fake face from `client.py`'s `faces` dict
-3. Spawns `send_report()` process to send encrypted report back to server
-4. Returns the fake HTTP response to the bot
+CLIENT-side entry point. When a bot connects:
+1. Parses raw HTTP request
+2. Routes to the appropriate service handler via HandlerRegistry
+3. Service handler generates realistic honeypot response
+4. Spawns `send_report()` process to send encrypted report back to server
+5. Returns the fake HTTP response to the bot
+
+#### HandlerRegistry — `handlers/registry.py`
+
+Manages and routes HTTP requests to specialized handlers.
+Maintains a registry of handlers and routes based on path patterns.
+Handlers are checked in registration order; first match wins.
+
+#### Service Handlers — `handlers/*.py`
+
+Each service handler manages a specific service:
+- **WordPressHandler**: WordPress CMS (login, admin, xmlrpc, content)
+- **PhpMyAdminHandler**: phpMyAdmin (login, database pages)
+- **JenkinsHandler**: Jenkins CI/CD (login, jobs, script console)
+- **TomcatHandler**: Apache Tomcat (manager, host-manager, server-status)
+- **DrupalHandler**: Drupal CMS (login, admin, nodes)
+- **CPanelHandler**: cPanel/WHM (login, webmail)
+- **GenericHandler**: Default "monster page" for unknown paths
+
+Each handler:
+- Defines `PATH_PATTERNS` for matching URLs
+- Generates realistic HTML responses mimicking the real service
+- Captures login credentials from POST requests
+- Returns fake error/redirect responses to encourage further probing
 
 #### ServerHandler — `server/server.py`
 
 SERVER-side handler. When a report arrives:
-1. `get_key()` looks up `AUTHORISEDBEARS` dict by identifier
-2. `process_request()` spawns `save_data()` process to insert into DB
-3. Returns "200 OK" as response
+1. Extends `BaseHandler` for encrypted message processing
+2. `get_key()` looks up `AUTHORISEDBEARS` dict by identifier
+3. `process_request()` spawns `save_data()` process to insert into DB
+4. Returns "200 OK" as response
 
-#### BearStorage — `common/bearstorage.py`
+#### BotProfile — `handlers/base_handler.py`
 
-Data container for bot information:
-- IP, raw request, timestamp
-- Path, command, version, User-Agent
-- Country/continent/timezone (via `geoip2.lookup()`)
-- DNS name (via `socket.gethostbyaddr()`)
+Tracks per-bot state for a handler's service:
+- Request history
+- Detected behaviors (SQL injection, LFI/RFI, RCE, credential stuffing, etc.)
+- Escalation level (idle → scanning → probing → exploiting → compromised)
+- Captured credentials
 
 #### AESCipher — `common/myenc.py`
 
@@ -137,61 +169,76 @@ Dataclass: `ip`, `raw_request`, `timestamp`, `parsed_request`, `is_detected`, `H
 | hive_id          | int    | per-config                |
 | login            | text   | `HIVELOGIN`               |
 
-## How to Add New Faces
+## How to Add a New Service Handler
 
-Faces are URL-path → response-file mappings. Two place to add faces depending on the service type.
-
-### Step 1: Add path mapping
-
-For WordPress-specific paths, edit `manyfaced/client/client.py` (the `faces` dict at the top).
-
-```python
-# In client.py:
-faces = {
-    ...
-    "/new/fake/path": "response_name",  # Add this line
-}
-```
-
-### Step 2: Create response file
-
-Create `manyfaced/client/responses/response_name` (no extension, or `.html`, `.xml`, etc.).
-
-Examples:
-- `wplogin.html` → fake WordPress login page (HTML)
-- `wpconfig.php` → fake WordPress config (PHP)
-- `webdav.xml` → fake WebDAV response (XML)
-- `zero` → bare-bones default page
-
-### Step 3: Add special routing (if needed)
-
-If the face needs special treatment (like `webdav.xml` for 207 Multi-Status or `robots` for robots.txt), add routing logic in `get_honey_http()` in `client.py`:
+1. Create a new class in `manyfaced/handlers/` that extends `HTTPHandlerBase`
+2. Define `domain` and `PATH_PATTERNS`
+3. Implement `matches_path()` and `generate_response()`
+4. Add login handling with `handle_login()` if the service has auth
+5. Register the handler in `handlers/http_handler.py`'s `_get_registry()`
+6. Export it from `handlers/__init__.py`
 
 ```python
-if face == "webdav.xml":
-    output_data = honey_webdav(bot_ip)
-elif face == "robots":
-    output_data = honey_robots()
-else:
-    output_data = honey_generic(face)
-```
+from manyfaced.handlers.base_handler import HTTPHandlerBase
+import datetime
 
-## How to Add a New Handler
+class MyServiceHandler(HTTPHandlerBase):
+    domain = "my_service"
+    PATH_PATTERNS = ["/my-service", "/my-service/"]
+    DETECTED_ID = 1
 
-1. Create a new class in `manyfaced/handlers/` that extends `BaseHandler`
-2. Implement `get_key()` and `process_request()`
-3. Use the handler where appropriate in client/server code
+    def matches_path(self, path: str) -> bool:
+        path_lower = path.lower().split("?")[0]
+        return any(path_lower.startswith(p) for p in self.PATH_PATTERNS)
 
-```python
-from manyfaced.handlers.base_handler import BaseHandler
+    def generate_response(self, path, raw_request, bot_ip, headers=None):
+        profile = self.get_or_create_profile(bot_ip)
+        request_data = {
+            "path": path,
+            "method": self._extract_method(raw_request),
+            "headers": dict(headers) if headers else {},
+            "raw": raw_request,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        }
+        profile.record_request(request_data)
 
-class MyHandler(BaseHandler):
-    def get_key(self, identifier):
-        return HIVEPASS
+        method = self._extract_method(raw_request)
+        if method == "POST" and "login" in path.lower():
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
+            if credentials:
+                response = self._login_failed_response()
+                return response, detected
 
-    def process_request(self, data):
-        # Handle decrypted bot data
-        return output_response
+        body = self._main_page()
+        response = self._build_http_response(body, path)
+        self._response_count += 1
+        return response, self.DETECTED_ID
+
+    def _main_page(self):
+        return "<html><body><h1>My Service</h1></body></html>"
+
+    def _login_failed_response(self):
+        body = "<html><body><h1>Login Failed</h1></body></html>"
+        return self._build_http_response(body, "/my-service/login")
+
+    def _extract_method(self, raw_request):
+        parts = raw_request.split()
+        return parts[0].upper() if parts else "GET"
+
+    def _build_http_response(self, body, path, status="200 OK"):
+        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        response = (
+            f"HTTP/1.1 {status}\r\n"
+            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
+            f"Date: {now}\r\n"
+            f"Content-Type: text/html; charset=UTF-8\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+            f"{body}"
+        )
+        return response.encode("iso-8859-1")
 ```
 
 ## How to Change Database Schema
@@ -212,7 +259,7 @@ cd /home/zlol/manyfaced-honeypot
 ### Test file structure
 ```
 test/
-├── test_integration.py   # Full pipeline: socket → decrypt → DB → query
+├── test_integration.py   # Full pipeline: socket -> decrypt -> DB -> query
 ├── test_client.py        # Client-specific unit tests
 └── conftest.py           # Shared test utilities
 ```
