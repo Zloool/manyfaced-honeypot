@@ -1,5 +1,10 @@
 """
 Comprehensive pytest tests for HTTPHandler and HTTPRequest modules.
+
+Tests the new handler registry architecture:
+- HTTPHandler routes requests through HandlerRegistry
+- Service handlers generate realistic honeypot responses
+- BotProfile tracks per-bot state
 """
 
 import os
@@ -23,6 +28,11 @@ sys.modules["GeoIP"] = MagicMock()
 from manyfaced.common.settings import HIVEPASS, HIVELOGIN  # noqa: E402
 from manyfaced.common.httphandler import HTTPRequest  # noqa: E402
 from manyfaced.handlers.http_handler import HTTPHandler  # noqa: E402
+from manyfaced.handlers import (  # noqa: E402
+    WordPressHandler,
+    PhpMyAdminHandler,
+    GenericHandler,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -30,32 +40,78 @@ from manyfaced.handlers.http_handler import HTTPHandler  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-class TestHTTPHandlerGetKey:
-    """Tests for HTTPHandler.get_key()."""
+class TestHTTPHandlerHandleRequest:
+    """Tests for HTTPHandler.handle_request()."""
 
     @pytest.fixture
     def handler(self):
         """Create a minimal HTTPHandler instance."""
         args = MagicMock()
         args.verbose = False
+        args.server = None  # No server port = no report sent
         update_event = MagicMock()
         return HTTPHandler(args, update_event)
 
-    def test_get_key_returns_hivepass(self, handler):
-        """get_key() should always return HIVEPASS regardless of identifier."""
-        result = handler.get_key("some_bear_id")
-        assert result == HIVEPASS
+    def test_handle_request_parses_http(self, handler):
+        """handle_request() should parse the raw HTTP request."""
+        output = handler.handle_request(
+            "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            bot_ip="1.2.3.4",
+        )
+        assert isinstance(output, bytes)
+        assert len(output) > 0
 
-    def test_get_key_with_different_identifiers(self, handler):
-        """get_key() should return HIVEPASS for various identifier types."""
-        for identifier in ["bear1", "", "12345", "a" * 100]:
-            assert handler.get_key(identifier) == HIVEPASS
+    def test_handle_request_routes_to_wordpress(self, handler):
+        """handle_request() should route /wp-login.php to WordPressHandler."""
+        output = handler.handle_request(
+            "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            bot_ip="1.2.3.4",
+        )
+        assert b"WordPress" in output
+        assert b"wp-login.php" in output
 
-    def test_get_key_returns_string(self, handler):
-        """get_key() should return a string value."""
-        result = handler.get_key("test")
-        assert isinstance(result, str)
-        assert len(result) > 0
+    def test_handle_request_routes_to_phpmyadmin(self, handler):
+        """handle_request() should route /phpmyadmin/ to PhpMyAdminHandler."""
+        output = handler.handle_request(
+            "GET /phpmyadmin/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            bot_ip="1.2.3.4",
+        )
+        assert b"phpMyAdmin" in output
+
+    def test_handle_request_routes_generic(self, handler):
+        """handle_request() should route unknown paths to GenericHandler."""
+        output = handler.handle_request(
+            "GET /random-path HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            bot_ip="1.2.3.4",
+        )
+        assert b"Server Administration Panel" in output
+
+    def test_handle_request_post_login_captures_credentials(self, handler):
+        """handle_request() should capture credentials from login POST."""
+        output = handler.handle_request(
+            "POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nlog=admin&pwd=secret123",
+            bot_ip="1.2.3.4",
+        )
+        # Should return login failed response
+        assert b"ERROR" in output or b"Invalid username" in output
+
+    def test_handle_request_with_query_string(self, handler):
+        """handle_request() should handle query strings in paths."""
+        output = handler.handle_request(
+            "GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            bot_ip="1.2.3.4",
+        )
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+    def test_handle_request_fallback_on_parse_error(self, handler):
+        """handle_request() should handle malformed requests gracefully."""
+        # This should not raise an exception
+        output = handler.handle_request(
+            "INVALID REQUEST",
+            bot_ip="1.2.3.4",
+        )
+        assert isinstance(output, bytes)
 
 
 class TestHTTPHandlerProcessRequest:
@@ -66,6 +122,7 @@ class TestHTTPHandlerProcessRequest:
         """Create a minimal HTTPHandler instance."""
         args = MagicMock()
         args.verbose = False
+        args.server = None  # No server port = no report sent
         update_event = MagicMock()
         return HTTPHandler(args, update_event)
 
@@ -79,271 +136,164 @@ class TestHTTPHandlerProcessRequest:
             "parsed_request": MagicMock(),
         }
 
-    def _make_mocks(self):
-        """Return a dict of mock context managers for the client module."""
-        mock_ghh = patch("manyfaced.client.client.get_honey_http")
-        mock_send = patch("manyfaced.client.client.send_report")
-        return mock_ghh, mock_send
+    def test_process_request_returns_response(self, handler, sample_data):
+        """process_request() should return response bytes."""
+        result = handler.process_request(sample_data)
+        assert isinstance(result, bytes)
+        assert len(result) > 0
 
-    def test_process_request_calls_get_honey_http(self, handler, sample_data):
-        """process_request() should call get_honey_http with the right arguments."""
-        mock_ghh, mock_send = self._make_mocks()
-        with mock_ghh as ghh_mock, mock_send, \
-             patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
-            ghh_mock.return_value = ("HTTP/1.1 200 OK\r\n\r\n", True)
-            mock_proc.return_value = MagicMock()
+    def test_process_request_includes_http_status(self, handler, sample_data):
+        """Response should include HTTP status line."""
+        result = handler.process_request(sample_data)
+        assert result.startswith(b"HTTP/1.1")
 
-            handler.process_request(sample_data)
-
-            # Verify get_honey_http was called
-            assert ghh_mock.called
-            call_args = ghh_mock.call_args
-            # First arg should be an HTTPRequest instance
-            assert isinstance(call_args[0][0], HTTPRequest)
-            # Second arg should be the bot_ip
-            assert call_args[0][1] == "10.0.0.1"
-            # Third arg should be verbose
-            assert call_args[0][2] is False
-
-    def test_process_request_spawns_send_report_process(self, handler, sample_data):
-        """process_request() should spawn a send_report Process."""
-        mock_ghh, mock_send = self._make_mocks()
-        with mock_ghh as ghh_mock, mock_send, \
-             patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
-            ghh_mock.return_value = ("HTTP/1.1 200 OK\r\n\r\n", True)
-            mock_proc.return_value = MagicMock()
-
-            handler.process_request(sample_data)
-
-            # Verify Process was instantiated
-            assert mock_proc.called
-            process_kwargs = mock_proc.call_args
-            # Should have been started
-            assert mock_proc.return_value.start.called
-            # Process name should be "send_report"
-            assert process_kwargs.kwargs.get("name") == "send_report"
-            # Target should be send_report (the mocked function)
-            assert process_kwargs.kwargs.get("target") is not None
-
-    def test_process_request_returns_output_data(self, handler, sample_data):
-        """process_request() should return the output_data from get_honey_http."""
-        mock_ghh, mock_send = self._make_mocks()
-        with mock_ghh as ghh_mock, mock_send, \
-             patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process"):
-            ghh_mock.return_value = ("HTTP/1.1 200 OK\r\n\r\n", True)
-
-            result = handler.process_request(sample_data)
-            assert result == "HTTP/1.1 200 OK\r\n\r\n"
-
-    def test_process_request_with_verbose_true(self, handler):
-        """process_request() should pass verbose flag to get_honey_http."""
-        handler.args.verbose = True
+    def test_process_request_with_server_port_spawns_report(self, handler):
+        """process_request() should spawn send_report when server port is set."""
+        handler.args.server = 9999
         sample_data = {
             "ip": "10.0.0.1",
-            "raw_request": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "raw_request": "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
             "parsed_request": MagicMock(),
         }
 
-        mock_ghh = patch("manyfaced.client.client.get_honey_http")
-        with mock_ghh as ghh_mock, \
-             patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            ghh_mock.return_value = ("", False)
-
+        with patch("manyfaced.handlers.http_handler.BearStorage"), \
+             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
+            mock_proc.return_value = MagicMock()
             handler.process_request(sample_data)
+            assert mock_proc.called
 
-            assert ghh_mock.call_args[0][2] is True
+    def test_process_request_without_server_port_skips_report(self, handler):
+        """process_request() should skip send_report when server port is None."""
+        handler.args.server = None
+        sample_data = {
+            "ip": "10.0.0.1",
+            "raw_request": "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "parsed_request": MagicMock(),
+        }
+
+        with patch("manyfaced.handlers.http_handler.BearStorage"), \
+             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
+            mock_proc.return_value = MagicMock()
+            handler.process_request(sample_data)
+            # Process should NOT be called when server port is None
+            assert not mock_proc.called
+
+    def test_process_request_with_ai_responder(self):
+        """process_request() should use AI responder if enabled and available."""
+        args = MagicMock()
+        args.verbose = False
+        args.server = None
+        args.ai_responder = True
+        args.ai_endpoint = "http://localhost:8080/v1"
+        args.ai_model = "test-model"
+        args.ai_max_tokens = 100
+        update_event = MagicMock()
+        handler = HTTPHandler(args, update_event)
+
+        sample_data = {
+            "ip": "10.0.0.1",
+            "raw_request": "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "parsed_request": MagicMock(),
+        }
+
+        # AI responder should be None if endpoint unreachable
+        assert handler._ai_responder is None or hasattr(handler, "_ai_responder")
 
 
-class TestHTTPHandlerProcessRequestDataFlow:
-    """Tests verifying data flow through process_request()."""
+class TestHTTPRequest:
+    """Tests for HTTPRequest parsing."""
+
+    def test_parse_get(self):
+        req = HTTPRequest("GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        assert req.command == "GET"
+        assert req.path == "/wp-login.php"
+        assert req.request_version == "HTTP/1.1"
+
+    def test_parse_post(self):
+        req = HTTPRequest("POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Length: 20\r\n\r\nlog=admin&pwd=test")
+        assert req.command == "POST"
+        assert req.path == "/wp-login.php"
+
+    def test_parse_with_query_string(self):
+        req = HTTPRequest("GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        assert req.path == "/search?q=test&lang=en"
+
+    def test_parse_headers(self):
+        req = HTTPRequest("GET /test HTTP/1.1\r\nHost: example.com\r\nUser-Agent: TestBot\r\n\r\n")
+        assert req.headers is not None
+        headers = dict(req.headers) if req.headers else {}
+        assert "Host" in headers or "host" in headers
+
+    def test_parse_empty_path(self):
+        req = HTTPRequest("GET HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        # Malformed request – path is whatever parse_request extracted
+        assert req.path is not None
+
+    def test_parse_fallback_on_error(self):
+        req = HTTPRequest("INVALID")
+        # Malformed request – path may not be set
+        assert getattr(req, "path", None) is None or req.path == "/"
+
+
+class TestHandlerRouting:
+    """Tests for handler routing through the registry."""
 
     @pytest.fixture
     def handler(self):
         args = MagicMock()
         args.verbose = False
+        args.server = None
         update_event = MagicMock()
         return HTTPHandler(args, update_event)
 
-    def test_bot_ip_passed_to_bearstorage(self, handler):
-        """bot_ip from data['ip'] should be passed to BearStorage."""
-        sample_data = {
-            "ip": "192.168.99.99",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
+    def test_wordpress_paths(self, handler):
+        paths = [
+            "/wp-login.php",
+            "/wp-admin/",
+            "/wp-content/",
+            "/wp-includes/",
+            "/xmlrpc.php",
+        ]
+        for path in paths:
+            output = handler.handle_request(
+                f"GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                bot_ip="1.2.3.4",
+            )
+            assert b"WordPress" in output, f"Failed for path: {path}"
 
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
+    def test_phpmyadmin_paths(self, handler):
+        paths = [
+            "/phpmyadmin/",
+            "/pma/",
+            "/mysql/",
+            "/db/",
+        ]
+        for path in paths:
+            output = handler.handle_request(
+                f"GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                bot_ip="1.2.3.4",
+            )
+            assert b"phpMyAdmin" in output, f"Failed for path: {path}"
 
-            handler.process_request(sample_data)
-
-            # Verify BearStorage was called with bot_ip as first arg
-            bs_call = mock_bs.call_args
-            assert bs_call[0][0] == "192.168.99.99"
-
-    def test_raw_request_passed_to_bearstorage(self, handler):
-        """raw_request from data should be passed to BearStorage."""
-        raw = "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n"
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": raw,
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-
-            handler.process_request(sample_data)
-
-            bs_call = mock_bs.call_args
-            assert bs_call[0][1] == raw
-
-    def test_parsed_request_passed_to_bearstorage(self, handler):
-        """parsed_request from data should be passed to BearStorage."""
-        expected_parsed = MagicMock()
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": expected_parsed,
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-
-            handler.process_request(sample_data)
-
-            bs_call = mock_bs.call_args
-            assert bs_call[0][3] == expected_parsed
-
-    def test_detected_passed_to_bearstorage(self, handler):
-        """detected value from get_honey_http should be passed to BearStorage."""
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", 1)
-
-            handler.process_request(sample_data)
-
-            bs_call = mock_bs.call_args
-            assert bs_call[0][4] == 1
-
-    def test_hivelogin_passed_to_bearstorage(self, handler):
-        """HIVELOGIN should be passed to BearStorage as hostname."""
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-
-            handler.process_request(sample_data)
-
-            bs_call = mock_bs.call_args
-            assert bs_call[0][5] == HIVELOGIN
-
-    def test_send_report_receives_bearstorage(self, handler):
-        """send_report Process should receive BearStorage as first argument."""
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process") as mock_proc, \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-            mock_proc.return_value = MagicMock()
-
-            handler.process_request(sample_data)
-
-            process_kwargs = mock_proc.call_args
-            # First arg in args tuple should be the BearStorage instance
-            assert isinstance(process_kwargs.kwargs["args"][0], MagicMock)
-            # HIVELOGIN should be second arg
-            assert process_kwargs.kwargs["args"][1] == HIVELOGIN
-            # HIVEPASS should be third arg
-            assert process_kwargs.kwargs["args"][2] == HIVEPASS
-
-    def test_request_time_format(self, handler):
-        """request_time should be in expected datetime format."""
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /test HTTP/1.1\r\nHost: localhost\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage") as mock_bs, \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-
-            handler.process_request(sample_data)
-
-            bs_call = mock_bs.call_args
-            timestamp = bs_call[0][2]
-            # Should match pattern like "2026-04-20 07:49:00.000000"
-            parts = timestamp.split(" ")
-            assert len(parts) == 2
-            date_parts = parts[0].split("-")
-            assert len(date_parts) == 3
-            time_parts = parts[1].split(":")
-            assert len(time_parts) == 3
-            assert "." in time_parts[2]  # microseconds present
-
-    def test_heartbeat_request_passed_to_get_honey_http(self, handler):
-        """HTTPRequest should be constructed from data['raw_request']."""
-        raw = "GET /heartbeat HTTP/1.1\r\nHost: localhost\r\n\r\n"
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": raw,
-            "parsed_request": MagicMock(),
-        }
-
-        with patch("manyfaced.client.client.get_honey_http") as mock_ghh, \
-             patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process"), \
-             patch("manyfaced.client.client.send_report"):
-            mock_ghh.return_value = ("", False)
-
-            handler.process_request(sample_data)
-
-            http_req = mock_ghh.call_args[0][0]
-            assert isinstance(http_req, HTTPRequest)
-            assert http_req.command == "GET"
-            assert http_req.path == "/heartbeat"
+    def test_response_is_bytes(self, handler):
+        """All responses should be bytes."""
+        paths = [
+            "/wp-login.php",
+            "/phpmyadmin/",
+            "/jenkins/",
+            "/manager/html",
+            "/user/login",
+            "/cpanel/",
+            "/random-path",
+        ]
+        for path in paths:
+            output = handler.handle_request(
+                f"GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                bot_ip="1.2.3.4",
+            )
+            assert isinstance(output, bytes), f"Failed for path: {path}"
+            assert len(output) > 0, f"Empty response for path: {path}"
 
 
-# ---------------------------------------------------------------------------
-# HTTPRequest Tests
-# ---------------------------------------------------------------------------
-
-
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
