@@ -73,5 +73,21 @@ def parse():
         default=False,
         help="generate a config.toml file at ~/.config/manyfaced/config.toml and exit",
     )
+    
+    # Port mode flags (for CLIENT mode)
+    parser.add_argument(
+        "--port-mode",
+        choices=["single", "top", "all"],
+        default="single",
+        dest="port_mode",
+        help="Port listening mode: 'single' (one port), 'top' (top 50 scanned ports), 'all' (all 65535 ports). Default: single",
+    )
+    parser.add_argument(
+        "--top-ports",
+        type=str,
+        default="",
+        dest="top_ports",
+        help="Comma-separated list of ports to listen on when port-mode=top. Example: '80,443,8080,3306'",
+    )
 
     return parser.parse_args()
