@@ -101,6 +101,7 @@ _DEFAULT_AI_ENDPOINT = "http://127.0.0.1:8080/v1"
 _DEFAULT_AI_MODEL = "llama-3.1-8b-instruct"
 _DEFAULT_AI_MAX_TOKENS = 500
 _DEFAULT_AI_TIMEOUT = 5.0
+_DEFAULT_DEFAULT_KEY = "default_beehive_key"
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -216,6 +217,9 @@ class Config:
     AI_MODEL: str  # LLM model name
     AI_MAX_TOKENS: int  # maximum tokens in generated response
     AI_TIMEOUT: float  # request timeout in seconds
+    
+    # Security
+    DEFAULT_KEY: str  # default encryption key for unknown identifiers
 
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
@@ -252,6 +256,7 @@ class Config:
             AI_MODEL=str(_resolve("ai_model", _DEFAULT_AI_MODEL, "ai", toml, prefix)),
             AI_MAX_TOKENS=int(_resolve("ai_max_tokens", _DEFAULT_AI_MAX_TOKENS, "ai", toml, prefix)),
             AI_TIMEOUT=float(_resolve("ai_timeout", _DEFAULT_AI_TIMEOUT, "ai", toml, prefix)),
+            DEFAULT_KEY=str(_resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -356,3 +361,4 @@ AI_ENDPOINT = settings.AI_ENDPOINT
 AI_MODEL = settings.AI_MODEL
 AI_MAX_TOKENS = settings.AI_MAX_TOKENS
 AI_TIMEOUT = settings.AI_TIMEOUT
+DEFAULT_KEY = settings.DEFAULT_KEY

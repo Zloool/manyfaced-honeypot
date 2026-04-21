@@ -20,6 +20,17 @@ class BaseHandler(ABC):
         return self.process_request(data)
 
     def parse_message(self, message: str):
+        """Parse a message into identifier and encrypted data.
+        
+        Args:
+            message: The raw message string from the socket
+            
+        Returns:
+            Tuple of (identifier, encrypted_data)
+            
+        Raises:
+            ValueError: If message format is invalid
+        """
         request = message.split(":", 1)
         if len(request) != 2:
             raise ValueError("Invalid message format")

@@ -19,7 +19,12 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
     def __init__(self, request_text):
         if isinstance(request_text, str):
-            request_text = request_text.encode("iso-8859-1")
+            # Encode to latin-1 (iso-8859-1) which accepts any byte value
+            # Replace characters outside range with replacement char
+            try:
+                request_text = request_text.encode("iso-8859-1")
+            except UnicodeEncodeError:
+                request_text = request_text.encode("utf-8", errors="replace").decode("latin-1").encode("iso-8859-1")
         self.rfile = BytesIO(request_text)
         self.raw_requestline = self.rfile.readline()
         self.error_code = self.error_message = None
