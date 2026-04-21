@@ -135,6 +135,15 @@ def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: st
         val = toml[toml_key]
         if isinstance(default, int) and isinstance(val, str):
             return int(val)
+        if isinstance(default, dict) and isinstance(val, str):
+            # semicolon-separated key:value pairs (same as env var handling)
+            d: dict = {}
+            for pair in (val or "").split(";"):
+                pair = pair.strip()
+                if ":" in pair:
+                    k, v = pair.split(":", 1)
+                    d[k.strip()] = v.strip()
+            return d or default
         return val
 
     # 1 – default
