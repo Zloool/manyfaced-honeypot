@@ -102,6 +102,54 @@ Client internal:
 | `-u` | false | Enable auto-update (pulls from git every hour) |
 | `-v` | false | Verbose logging mode |
 | `-p` | false | Proxy mode (sets X-Forwarded-For handling) |
+| `--port-mode` | `single` | Port listening mode: `single`, `top`, or `all` |
+| `--top-ports` | empty | Comma-separated port list when `--port-mode=top` |
+
+### Port Modes
+
+The CLIENT honeypot supports three listening modes:
+
+| Mode | Description | Ports |
+|------|-------------|-------|
+| `single` | Listen on a single port (default) | `-c PORT` or `HONEYPORT` |
+| `top` | Listen on the top 50 most-scanned ports | See below |
+| `all` | Listen on all 65535 TCP ports | 1–65535 |
+
+**Top 50 ports** (default when `--port-mode=top`):
+
+```
+21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
+5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
+15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300–11311, 5000
+```
+
+Custom port list for `top` mode:
+
+```bash
+python3 mfh.py --port-mode top --top-ports "80,443,8080,3306"
+```
+
+**Example usage:**
+
+```bash
+# Single port (default, backward compatible)
+python3 mfh.py -c 80
+
+# Top 50 most-scanned ports
+python3 mfh.py --port-mode top
+
+# All 65535 ports
+python3 mfh.py --port-mode all
+
+# Custom port list
+python3 mfh.py --port-mode top --top-ports "22,80,443,8080"
+
+# Combined with server
+python3 mfh.py --port-mode top -s 666 -v
+```
+
+> **Note:** `--port-mode all` spawns 65535 threads simultaneously. This is resource-intensive and may take time to start. Use with caution on production systems.
 
 ## Configuration
 
@@ -130,6 +178,8 @@ nano ~/.config/manyfaced/config.toml
 [honeypot]
 honeyport = 80
 honeyfolder = "bots"
+port_mode = "single"        # "single", "top", or "all"
+top_ports = ""              # comma-separated, used when port_mode=top
 
 [hive]
 hivehost = "127.0.0.1"
@@ -159,6 +209,8 @@ All settings can be overridden via environment variables. The `HONEY_` prefix ma
 |----------|---------|-------------|
 | `HONEY_HONEYPORT` | `80` | Port for the CLIENT (fake web services) |
 | `HONEY_HONEYFOLDER` | `bots` | Folder for client responses |
+| `HONEY_PORT_MODE` | `single` | Port listening mode: `single`, `top`, or `all` |
+| `HONEY_TOP_PORTS` | empty | Comma-separated port list when port_mode=top |
 | `HONEY_HIVEHOST` | `127.0.0.1` | Server host to report to |
 | `HONEY_HIVEPORT` | `8080` | Server port to receive reports |
 | `HONEY_HIVELOGIN` | `honeybee` | Bot identification login |

@@ -334,6 +334,8 @@ class TestConfigGenerateConfigFile:
             DB_PG_USER="postgres",
             DB_PG_PASSWORD="***",
             AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="single",
+            HONEY_TOP_PORTS="",
         )
 
         path = cfg.generate_config_file()
@@ -377,6 +379,8 @@ class TestConfigGenerateConfigFile:
             DB_PG_USER="postgres",
             DB_PG_PASSWORD="***",
             AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="single",
+            HONEY_TOP_PORTS="",
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -422,20 +426,20 @@ class TestConfigAuthorisedBears:
     """Parse semicolon-separated authorised_bears from env var."""
 
     def test_env_var_authorised_bears(self, monkeypatch):
-        """AUTHORISEDBEARS parsed from HONEY_AUTHORISEDBEARS env var."""
+        """AUTHORISEDBEARS parsed from HONEY_AUTHORISED_BEARS env var."""
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISEDBEARS", "bear1:key1;bear2:key2;bear3:key3")
+            m.setenv("HONEY_AUTHORISED_BEARS", "bear1:key1;bear2:key2;bear3:key3")
 
             cfg = Config.load()
 
         assert cfg.AUTHORISEDBEARS == {"bear1": "key1", "bear2": "key2", "bear3": "key3"}
 
     def test_authorised_bears_empty_env(self, monkeypatch):
-        """Empty HONEY_AUTHORISEDBEARS env var returns default empty dict."""
+        """Empty HONEY_AUTHORISED_BEARS env var returns default empty dict."""
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISEDBEARS", "")
+            m.setenv("HONEY_AUTHORISED_BEARS", "")
 
             cfg = Config.load()
 
@@ -445,7 +449,7 @@ class TestConfigAuthorisedBears:
         """Pairs without colon are ignored in authorised_bears parsing."""
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISEDBEARS", "bear1:key1;invalid_no_colon;bear2:key2")
+            m.setenv("HONEY_AUTHORISED_BEARS", "bear1:key1;invalid_no_colon;bear2:key2")
 
             cfg = Config.load()
 
@@ -461,7 +465,7 @@ authorised_bears = "toml_bear:toml_key"
 
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.delenv("HONEY_AUTHORISEDBEARS", raising=False)
+            m.delenv("HONEY_AUTHORISED_BEARS", raising=False)
 
             cfg = Config.load()
 
@@ -477,7 +481,7 @@ authorised_bears = "toml_bear:toml_key"
 
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.setenv("HONEY_AUTHORISEDBEARS", "env_bear:env_key")
+            m.setenv("HONEY_AUTHORISED_BEARS", "env_bear:env_key")
 
             cfg = Config.load()
 
@@ -527,7 +531,7 @@ class TestResolve:
     def test_resolve_dict_from_toml(self):
         toml = {"security.authorised_bears": "bear1:key1"}
         result = _resolve("authorised_bears", {}, "security", toml, "HONEY_")
-        assert result == "bear1:key1"
+        assert result == {"bear1": "key1"}
 
     def test_resolve_tuple_from_env(self, monkeypatch):
         monkeypatch.setenv("HONEY_BACKENDS", "sqlite;postgresql")
@@ -577,4 +581,204 @@ hiveport = 9999
         toml_path = tmp_path / "nonexistent.toml"
         with pytest.raises(FileNotFoundError):
             _load_toml(toml_path)
+
+
+
+# ===================================================================
+# Port mode tests – Config.resolve_ports()
+# ===================================================================
+
+
+class TestConfigResolvePorts:
+    """Tests for Config.resolve_ports() method."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch):
+        """Remove all HONEY_ env vars."""
+        for key in list(os.environ.keys()):
+            if key.startswith("HONEY_"):
+                monkeypatch.delenv(key, raising=False)
+
+    def test_resolve_ports_single_default(self):
+        """Single mode returns [HONEYPORT]."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="single",
+            HONEY_TOP_PORTS="",
+        )
+        assert cfg.resolve_ports() == [80]
+
+    def test_resolve_ports_single_custom(self):
+        """Single mode with custom HONEYPORT."""
+        cfg = Config(
+            HONEYPORT=443,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="single",
+            HONEY_TOP_PORTS="",
+        )
+        assert cfg.resolve_ports() == [443]
+
+    def test_resolve_ports_top_default(self):
+        """Top mode returns the default top 50 ports."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="top",
+            HONEY_TOP_PORTS="",
+        )
+        ports = cfg.resolve_ports()
+        assert len(ports) == 50
+        assert 80 in ports
+        assert 443 in ports
+        assert 22 in ports
+
+    def test_resolve_ports_top_custom(self):
+        """Top mode with custom port list."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="top",
+            HONEY_TOP_PORTS="80,443,8080,3306",
+        )
+        ports = cfg.resolve_ports()
+        assert ports == [80, 443, 3306, 8080]
+
+    def test_resolve_ports_top_custom_with_spaces(self):
+        """Top mode with custom port list containing spaces."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="top",
+            HONEY_TOP_PORTS="80, 443, 8080",
+        )
+        ports = cfg.resolve_ports()
+        assert ports == [80, 443, 8080]
+
+    def test_resolve_ports_all(self):
+        """All mode returns all 65535 ports."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="all",
+            HONEY_TOP_PORTS="",
+        )
+        ports = cfg.resolve_ports()
+        assert len(ports) == 65535
+        assert ports[0] == 1
+        assert ports[-1] == 65535
+
+    def test_resolve_ports_case_insensitive(self):
+        """Port mode is case-insensitive."""
+        cfg = Config(
+            HONEYPORT=80,
+            HONEYFOLDER="bots",
+            HIVEHOST="127.0.0.1",
+            HIVEPORT=8080,
+            HIVELOGIN="honeybee",
+            HIVEPASS="beehive123",
+            DB_BACKEND="sqlite",
+            DB_BACKENDS=("sqlite", "postgresql"),
+            DB_PATH="bots/honeypot.db",
+            DB_PG_HOST="localhost",
+            DB_PG_PORT=5432,
+            DB_PG_DB="honeypot",
+            DB_PG_USER="postgres",
+            DB_PG_PASSWORD="***",
+            AUTHORISEDBEARS={},
+            HONEY_PORT_MODE="TOP",
+            HONEY_TOP_PORTS="",
+        )
+        ports = cfg.resolve_ports()
+        assert len(ports) == 50
+
+    def test_resolve_ports_env_override(self, monkeypatch):
+        """HONEY_PORT_MODE env var overrides config."""
+        with monkeypatch.context() as m:
+            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
+            m.setenv("HONEY_PORT_MODE", "top")
+            m.setenv("HONEY_TOP_PORTS", "8080,9090")
+            cfg = Config.load()
+        assert cfg.HONEY_PORT_MODE == "top"
+        assert cfg.HONEY_TOP_PORTS == "8080,9090"
+        ports = cfg.resolve_ports()
+        assert ports == [8080, 9090]
 

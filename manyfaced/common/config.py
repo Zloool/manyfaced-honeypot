@@ -65,8 +65,25 @@ _DEFAULT_DB_PG_HOST = "localhost"
 _DEFAULT_DB_PG_PORT = 5432
 _DEFAULT_DB_PG_DB = "honeypot"
 _DEFAULT_DB_PG_USER = "postgres"
-_DEFAULT_DB_PG_PASSWORD = "***"
+_DEFAULT_DB_PG_PASSWORD="***"
 _DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
+
+# ── port mode configuration ─────────────────────────────────────────────────
+# Port modes for CLIENT honeypot:
+#   "single"  – listen on a single port (HONEYPORT, default 80)
+#   "top"     – listen on the top 50 most popular/scanned ports
+#   "all"     – listen on all 65535 TCP ports
+
+_TOP_50_PORTS = [
+    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+    143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
+    5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
+    15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
+    11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+    5000,
+]
+
+_PORT_MODES = ("single", "top", "all")
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -171,6 +188,10 @@ class Config:
     DB_PG_USER: str
     DB_PG_PASSWORD: str
     AUTHORISEDBEARS: dict[str, str]
+    
+    # Port mode configuration
+    HONEY_PORT_MODE: str  # "single", "top", or "all"
+    HONEY_TOP_PORTS: str  # comma-separated port list (used when mode="top" and user customizes)
 
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
@@ -200,6 +221,8 @@ class Config:
             DB_PG_USER=str(_resolve("pg_user", _DEFAULT_DB_PG_USER, "database", toml, prefix)),
             DB_PG_PASSWORD=str(_resolve("pg_password", _DEFAULT_DB_PG_PASSWORD, "database", toml, prefix)),
             AUTHORISEDBEARS=dict(_resolve("authorised_bears", _DEFAULT_AUTHORISEDBEARS_DEFAULTS, "security", toml, prefix)),
+            HONEY_PORT_MODE=str(_resolve("port_mode", "single", "honeypot", toml, prefix)),
+            HONEY_TOP_PORTS=str(_resolve("top_ports", "", "honeypot", toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -241,6 +264,27 @@ class Config:
         path.write_text("\n".join(lines))
         return path
 
+    def resolve_ports(self) -> list[int]:
+        """Return the list of ports to listen on based on the port mode.
+        
+        Returns:
+            List of port numbers to bind to.
+        """
+        mode = self.HONEY_PORT_MODE.lower()
+        
+        if mode == "top":
+            # Use custom top ports if provided, otherwise use defaults
+            if self.HONEY_TOP_PORTS:
+                try:
+                    return sorted({int(p.strip()) for p in self.HONEY_TOP_PORTS.split(",") if p.strip()})
+                except ValueError:
+                    pass
+            return list(_TOP_50_PORTS)
+        elif mode == "all":
+            return list(range(1, 65536))
+        else:  # single (default)
+            return [self.HONEYPORT]
+
 
 # ── global settings instance ─────────────────────────────────────────────────
 
@@ -262,5 +306,9 @@ DB_PG_HOST = settings.DB_PG_HOST
 DB_PG_PORT = settings.DB_PG_PORT
 DB_PG_DB = settings.DB_PG_DB
 DB_PG_USER = settings.DB_PG_USER
-DB_PG_PASSWORD=settings.DB_PG_PASSWORD
-AUTHORISEDBEARS=settings.AUTHORISEDBEARS
+DB_PG_PASSWORD = settings.DB_PG_PASSWORD
+AUTHORISEDBEARS = settings.AUTHORISEDBEARS
+
+# Port mode settings
+HONEY_PORT_MODE = settings.HONEY_PORT_MODE
+HONEY_TOP_PORTS = settings.HONEY_TOP_PORTS
