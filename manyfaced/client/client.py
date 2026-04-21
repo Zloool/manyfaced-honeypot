@@ -177,7 +177,7 @@ def banner_to_bytes(banner: str, body: str | None = None) -> bytes:
     return banner.encode("iso-8859-1")
 
 
-def get_honey_http(request, bot_ip, verbose):
+def get_honey_http(request, bot_ip, verbose, ai_responder=None):
     """
     This is the place where magic happens. Function receives parsed HTTP
     request as an argument and returns an output as a string. If it
@@ -185,7 +185,29 @@ def get_honey_http(request, bot_ip, verbose):
     harder case i use if-else to determine which code should i use. As an
     example, WEBDAV protocol uses different server banner and Content-Type of
     robots.txt should be text/plain(they are also dynamically generated).
+
+    Args:
+        request: HTTPRequest object with parsed request data
+        bot_ip: Bot's IP address
+        verbose: Whether to print verbose output
+        ai_responder: Optional AIResponder instance for AI-powered responses
     """
+    from manyfaced.common.ai_responder import AIResponder as _AIResponder
+
+    if ai_responder and isinstance(ai_responder, _AIResponder) and ai_responder.is_available():
+        # Try AI responder first
+        try:
+            response_bytes, detected = ai_responder.generate_response(
+                request_path=request.path,
+                raw_request=request.raw if hasattr(request, "raw") else str(request),
+                bot_ip=bot_ip,
+            )
+            if verbose:
+                print(f"{bot_ip} {request.path} gotcha! (AI)")
+            return response_bytes, detected
+        except Exception as e:
+            logger.warning("AI response failed for %s %s: %s – falling back to static", bot_ip, request.path, e)
+
     if request.path in faces:  # If we know what to do with request
         face = faces[request.path]
         detected = 1
