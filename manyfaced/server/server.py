@@ -24,7 +24,16 @@ class ServerHandler(BaseHandler):
         super().__init__(args, update_event)
 
     def get_key(self, identifier):
-        return AUTHORISEDBEARS.get(identifier)  # Use authorized bears for key
+        """Get the AES key for a given identifier.
+        
+        Falls back to DEFAULT_KEY if identifier is not in AUTHORISEDBEARS.
+        """
+        key = AUTHORISEDBEARS.get(identifier)
+        if key is None:
+            # Use default key for unknown identifiers to avoid crashes
+            from manyfaced.common.settings import DEFAULT_KEY
+            return DEFAULT_KEY
+        return key
 
     def process_request(self, data):
         Process(

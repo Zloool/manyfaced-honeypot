@@ -1,5 +1,6 @@
 import datetime
 import os
+import socket
 from multiprocessing import Process
 
 from manyfaced.common.logging_setup import get_logger
@@ -86,6 +87,40 @@ class HTTPHandler(BaseHandler):
             logger.warning("Failed to initialize AI responder: %s", e)
             self._ai_responder = None
 
+    def handle_request(self, message: str, bot_ip: str = "127.0.0.1"):
+        """Handle a raw HTTP request from a bot.
+
+        Unlike the server-side handler, this does NOT decrypt or parse JSON.
+        It receives raw HTTP data, generates a honeypot response, and
+        spawns a process to send the report to the server.
+
+        Args:
+            message: Raw HTTP request string from the bot.
+            bot_ip: IP address of the connecting bot.
+
+        Returns:
+            The honeypot response data (HTTP response string or bytes).
+        """
+        # Parse the raw HTTP request
+        try:
+            parsed = HTTPRequest(message)
+            # If parsing failed (path is None), create a minimal valid request
+            if parsed.path is None:
+                logger.warning("HTTPRequest failed to parse path, using fallback for %s", bot_ip)
+                parsed = HTTPRequest("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n")
+        except Exception as e:
+            logger.warning("Failed to parse HTTP request: %s, using fallback for %s", e, bot_ip)
+            parsed = HTTPRequest("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n")
+
+        # Build the data dict that process_request expects
+        data = {
+            "ip": bot_ip,
+            "raw_request": message,
+            "parsed_request": parsed,
+        }
+
+        return self.process_request(data)
+
     def get_key(self, identifier):
         return HIVEPASS
 
@@ -99,13 +134,16 @@ class HTTPHandler(BaseHandler):
         logger.info("Incoming request from %s at %s", bot_ip, request_time)
 
         # Pass AI responder to get_honey_http for optional AI-powered response
+        logger.debug("Calling get_honey_http for %s", bot_ip)
         output_data, detected = get_honey_http(
-            HTTPRequest(data["raw_request"]),
+            data["parsed_request"],
             bot_ip,
             self.args.verbose,
             ai_responder=self._ai_responder,
         )
+        logger.debug("get_honey_http returned for %s, detected=%s", bot_ip, detected)
 
+        logger.debug("Creating BearStorage for %s", bot_ip)
         bs = BearStorage(
             bot_ip,
             data["raw_request"],
@@ -114,12 +152,21 @@ class HTTPHandler(BaseHandler):
             detected,
             HIVELOGIN,
         )
-        Process(
-            args=(bs, HIVELOGIN, HIVEPASS),
-            name="send_report",
-            target=send_report,
-        ).start()
+        logger.debug("BearStorage created for %s", bot_ip)
 
-        logger.debug("Spawned send_report process for %s", bot_ip)
+        # Determine server connection info for sending reports
+        server_host = getattr(self.args, "server_host", "127.0.0.1")
+        server_port = getattr(self.args, "server", None)
+
+        if server_port is not None:
+            logger.debug("Spawning send_report process for %s (server:%d)", bot_ip, server_port)
+            Process(
+                args=(bs, bot_ip, HIVEPASS, server_host, server_port),
+                name="send_report",
+                target=send_report,
+            ).start()
+            logger.debug("Spawned send_report process for %s", bot_ip)
+        else:
+            logger.debug("No server port configured, skipping report for %s", bot_ip)
 
         return output_data

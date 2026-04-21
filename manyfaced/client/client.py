@@ -93,27 +93,29 @@ faces = {
 }
 
 
-def send_report(data, client, password):
+def send_report(data, client, password, server_host, server_port):
     cypher = AESCipher(password)  # type: ignore[name-defined]
     # runtime import: from common.myenc import AESCipher
     message = (client + ":").encode()
+    # BearStorage stores fields directly; handle both old and new formats
+    parsed = data.parsed_request if hasattr(data, "parsed_request") else None
     data_dict = {
         "ip": data.ip,
         "raw_request": data.raw_request,
         "timestamp": data.timestamp,
         "parsed_request": {
-            "command": data.parsed_request.command,
-            "path": data.parsed_request.path,
-            "request_version": data.parsed_request.request_version,
-            "headers": dict(data.parsed_request.headers),
+            "command": getattr(data, "command", ""),
+            "path": getattr(data, "path", ""),
+            "request_version": getattr(data, "version", ""),
+            "headers": dict(data.headers) if hasattr(data, "headers") and isinstance(data.headers, dict) else {},
         },
-        "is_detected": data.is_detected,
-        "HIVELOGIN": data.HIVELOGIN,
+        "is_detected": data.isDetected if hasattr(data, "isDetected") else data.is_detected,
+        "HIVELOGIN": data.hostname,
     }
     message += cypher.encrypt(json.dumps(data_dict).encode())
     s = socket(AF_INET, SOCK_STREAM)
     try:
-        s.connect((HIVEHOST, HIVEPORT))
+        s.connect((server_host, server_port))
         s.sendall(message)
         response = s.recv(1024)
         if response.decode() != "200":
@@ -194,6 +196,8 @@ def get_honey_http(request, bot_ip, verbose, ai_responder=None):
     """
     from manyfaced.common.ai_responder import AIResponder as _AIResponder
 
+    logger.debug("get_honey_http: request.path=%r, bot_ip=%s", getattr(request, "path", None), bot_ip)
+
     if ai_responder and isinstance(ai_responder, _AIResponder) and ai_responder.is_available():
         # Try AI responder first
         try:
@@ -208,43 +212,58 @@ def get_honey_http(request, bot_ip, verbose, ai_responder=None):
         except Exception as e:
             logger.warning("AI response failed for %s %s: %s – falling back to static", bot_ip, request.path, e)
 
+    logger.debug("get_honey_http: checking faces dict for path=%r", getattr(request, "path", None))
     if request.path in faces:  # If we know what to do with request
         face = faces[request.path]
         detected = 1
+        logger.debug("get_honey_http: face=%s", face)
         if face == "webdav.xml":  # Compile response for WEBDAV listing
+            logger.debug("get_honey_http: calling honey_webdav")
             output_data = honey_webdav(bot_ip)
         elif face == "robots":  # Generate robots.txt from faces dict
+            logger.debug("get_honey_http: calling honey_robots")
             output_data = honey_robots()
         else:  # If our request doesnt require special treatment, it goes here
+            logger.debug("get_honey_http: calling honey_generic(%s)", face)
             output_data = honey_generic(face)
         if verbose:
             print(bot_ip + " " + request.path + " gotcha!")
     else:  # If we dont know what to do with that request
+        logger.debug("get_honey_http: path not in faces, using zero face")
         if verbose:
-            print(bot_ip + " " + request.path[:50] + " not detected...")
+            path_str = getattr(request, "path", None) or "<unknown>"
+            print(bot_ip + " " + path_str[:50] + " not detected...")
         output_data = honey_generic(faces["zero"])
         detected = UNKNOWN_HTTP
+    logger.debug("get_honey_http: returning output_data len=%d", len(output_data))
     return output_data, detected
 
 
 def honey_generic(face):
+    logger.debug("honey_generic: reading face file %s", face)
     root_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(root_dir, "responses", face)
+    logger.debug("honey_generic: path=%s", path)
     with open(path, "r") as f:
         body = f.read()
+    logger.debug("honey_generic: read %d bytes from %s", len(body), face)
     # Detect XML faces and use appropriate Content-Type
     content_type = "text/html; charset=UTF-8"
     if face.endswith(".xml"):
         content_type = "application/xml; charset=utf-8"
+    logger.debug("honey_generic: calling compile_banner with msg_size=%d", len(body))
     output_data = compile_banner(msg_size=len(body), content_type=content_type)
     output_data += body
+    logger.debug("honey_generic: returning %d bytes", len(output_data))
     return output_data
 
 
 def honey_robots():
+    logger.debug("honey_robots: generating robots.txt")
     body = "User-Agent: *\r\nAllow: /\r\n"
     for url in set(faces.keys()):
         body += "Disallow: " + url + "\r\n"
+    logger.debug("honey_robots: body len=%d", len(body))
     output_data = compile_banner(
         msg_size=len(body), content_type="text/plain; charset=UTF-8"
     )
@@ -253,6 +272,7 @@ def honey_robots():
 
 
 def honey_webdav(bot_ip):
+    logger.debug("honey_webdav: reading webdav.xml for bot_ip=%s", bot_ip)
     root_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(root_dir, "responses", "webdav.xml")
     with open(path, "r") as f:
@@ -290,7 +310,7 @@ def create_server(args, update_event: Event, port: int):
                 break
             connection_socket: socket | None = None
             try:
-                connection_socket, _bot_socket = server_socket.accept()
+                connection_socket, bot_addr = server_socket.accept()
             except KeyboardInterrupt:
                 break
             try:
@@ -299,10 +319,12 @@ def create_server(args, update_event: Event, port: int):
                 if args.verbose:
                     print("Failed to receive data from bot")
                 continue
+            bot_ip = bot_addr[0] if bot_addr else "127.0.0.1"
             handler = HTTPHandler(args, update_event)
-            output_data = handler.handle_request(message)
+            output_data = handler.handle_request(message, bot_ip=bot_ip)
             try:
-                connection_socket.sendall(output_data)
+                logger.debug("Sending response of length %d", len(output_data))
+                connection_socket.sendall(output_data.encode("iso-8859-1"))
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
