@@ -26,13 +26,14 @@ class ServerHandler(BaseHandler):
     def get_key(self, identifier):
         """Get the AES key for a given identifier.
         
-        Falls back to DEFAULT_KEY if identifier is not in AUTHORISEDBEARS.
+        Falls back to HIVEPASS if identifier is not in AUTHORISEDBEARS.
         """
         key = AUTHORISEDBEARS.get(identifier)
         if key is None:
-            # Use default key for unknown identifiers to avoid crashes
-            from manyfaced.common.settings import DEFAULT_KEY
-            return DEFAULT_KEY
+            # Use HIVEPASS as default key for unknown identifiers
+            # This matches the key used by CLIENT's send_report()
+            from manyfaced.common.settings import HIVEPASS
+            return HIVEPASS
         return key
 
     def process_request(self, data):
