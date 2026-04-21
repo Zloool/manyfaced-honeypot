@@ -1,3 +1,18 @@
+"""Honeypot client – serves fake web services to scanning bots.
+
+The client listens on one or more ports, receives raw HTTP requests from
+bots, and uses the handler registry (in ``manyfaced.handlers``) to generate
+realistic honeypot responses. Reports are sent to the server via encrypted
+TCP connections.
+
+Architecture::
+
+    Bot connects → create_server() → HTTPHandler.handle_request()
+                                              → HandlerRegistry.generate_response()
+                                              → ServiceHandler (WordPress, phpMyAdmin, etc.)
+                                              → send_report() (encrypted to server)
+"""
+
 import datetime
 import json
 import os
@@ -22,82 +37,18 @@ from manyfaced.common.utils import dump_file, receive_timeout
 
 logger = get_logger(__name__)
 
-# List of popular pages requested by incoming hostile bots, with appropriate face to show them
-faces = {
-    "zero": "zero",
-    "/": "zero",
-    "/3001": "webdav.xml",
-    "/../../../../../../etc/passwd": "webdav.xml",
-    "/?author=1": "webdav.xml",
-    "/admin.php": "webdav.xml",
-    "/admin/": "webdav.xml",
-    "/bitrix/admin/": "webdav.xml",
-    "/blog/CHANGELOG.txt": "webdav.xml",
-    '/cgi-bin/php-cgi.bin?-d allow_url_include=on -d safe_mode=off -d suhosin.simulation=on -d disable_functions="" -d open_basedir=none -d auto_prepend_file=php://input -d cgi.force_redirect=0 -d cgi.redirect_status_env="yes" -d cgi.fix_pathinfo=1 -d auto_prepend_file=php://input -n': "webdav.xml",
-    "/cgi/common.cgi": "webdav.xml",
-    "/CHANGELOG.txt": "webdav.xml",
-    "/command.php": "webdav.xml",
-    "/dbadmin/": "webdav.xml",
-    "/drupal/": "webdav.xml",
-    "/drupal/CHANGELOG.txt": "webdav.xml",
-    "/feed2js/magpie_debug.php": "webdav.xml",
-    "/forum/CHANGELOG.txt": "webdav.xml",
-    "/Http/DataLayCfg.xml": "webdav.xml",
-    "/index.php/admin/": "webdav.xml",
-    "/invoker/JMXInvokerServlet": "webdav.xml",
-    "/jmx-console/HtmlAdaptor?action=inspectMBean&name=jboss.system:type=ServerInfo": "webdav.xml",
-    "/joom/": "webdav.xml",
-    "/joomla/": "webdav.xml",
-    "/language/Swedish${IFS}&&echo${IFS}610cker>qt&&tar${IFS}/string.js": "webdav.xml",
-    "/m/": "webdav.xml",
-    "/manager/": "webdav.xml",
-    "/manager/html": "webdav.xml",
-    "/mss": "webdav.xml",
-    "/mss-value/": "webdav.xml",
-    "/mss/": "webdav.xml",
-    "/mss/?preview_id=219&preview_nonce=6d5cf35da4&_thumbnail_id=-1&preview=true": "webdav.xml",
-    "/muieblackcat": "webdav.xml",
-    "/netcat/admin/": "webdav.xml",
-    "/new/": "webdav.xml",
-    "/OA_HTML/OA.jsp": "webdav.xml",
-    "/old/": "webdav.xml",
-    "/pma/scripts/setup.php": "webdav.xml",
-    "/program/": "webdav.xml",
-    "/RemoteControl.html": "webdav.xml",
-    "/robots.txt": "webdav.xml",
-    "/searchreplacedb2.php": "webdav.xml",
-    "/shell?id": "webdav.xml",
-    "/shop/CHANGELOG.txt": "webdav.xml",
-    "/shopdb/": "webdav.xml",
-    "/site/CHANGELOG.txt": "webdav.xml",
-    "/sitemap.xml": "webdav.xml",
-    "/store/CHANGELOG.txt": "webdav.xml",
-    "/stssys.htm": "webdav.xml",
-    "/test": "webdav.xml",
-    "/test/": "webdav.xml",
-    "/test/CHANGELOG.txt": "webdav.xml",
-    "/uoytamiw.html": "webdav.xml",
-    "/uplink_info.xml": "webdav.xml",
-    "/user": "webdav.xml",
-    "/user/": "webdav.xml",
-    "/w00tw00t.at.blackhats.romanian.anti-sec:": "webdav.xml",
-    "/web-console/ServerInfo.jsp": "webdav.xml",
-    "/webdav/info.php": "webdav.xml",
-    "/wp-content": "webdav.xml",
-    "/wp-content/debug.log": "webdav.xml",
-    "/www/start.html": "webdav.xml",
-    "/x": "webdav.xml",
-    "/xmlrpc.php": "webdav.xml",
-    "http://www.baidu.com/favicon.ico": "webdav.xml",
-    "http://www.qq.com/404/search_children.js": "webdav.xml",
-}
-
 
 def send_report(data, client, password, server_host, server_port):
-    cypher = AESCipher(password)  # type: ignore[name-defined]
-    # runtime import: from common.myenc import AESCipher
-    message = (client + ":").encode()
-    # BearStorage stores fields directly; handle both old and new formats
+    """Send a bot report to the server as an encrypted TCP message.
+
+    Args:
+        data: BearStorage instance with bot data
+        client: Bot IP address
+        password: AES encryption password (HIVEPASS)
+        server_host: Server hostname
+        server_port: Server port number
+    """
+    cypher = AESCipher(password)
     parsed = data.parsed_request if hasattr(data, "parsed_request") else None
     data_dict = {
         "ip": data.ip,
@@ -112,6 +63,7 @@ def send_report(data, client, password, server_host, server_port):
         "is_detected": data.isDetected if hasattr(data, "isDetected") else data.is_detected,
         "HIVELOGIN": data.hostname,
     }
+    message = (client + ":").encode()
     message += cypher.encrypt(json.dumps(data_dict).encode())
     s = socket(AF_INET, SOCK_STREAM)
     try:
@@ -131,167 +83,9 @@ def send_report(data, client, password, server_host, server_port):
     return
 
 
-def compile_banner(
-    msg_size: int = 0,
-    code: str = "HTTP/1.1 200 OK",
-    server_version: str = (
-        "Apache/1.3.42 (Unix)  (Red Hat/Linux)  OpenSSL/1.0.1e PHP/5.5.9 "
-    ),
-    content_type: str = "text/html; charset=UTF-8",
-    connection: str = "close",
-    date: str = str(datetime.datetime.now()),
-    nl_count: int = 2,
-) -> str:
-    """
-    Build an HTTP response banner and return it as a string.
-
-    Works with default arguments in most faces; any parameter can be overridden.
-    ``msg_size`` should equal the byte-length of the body (some browsers reject
-    mismatched values).
-
-    ``nl_count`` controls trailing CRLF blank lines:
-        2 for ``text/html``,
-        1 for ``application/xml``.
-    """
-    banner: list[str] = []
-    c = "\r\n"
-    if code != 0:
-        banner.append(f"{code}{c}")
-    if server_version != "":
-        banner.append(f"Server: {server_version}{c}")
-    if content_type != "":
-        banner.append(f"Content-Type: {content_type}{c}")
-    if connection != "":
-        banner.append(f"Connection: {connection}{c}")
-    if date != "":
-        banner.append(f"Date: {date}{c}")
-    if msg_size != "":
-        banner.append(f"Content-Length: {msg_size}")
-    for _ in range(nl_count):
-        banner.append(c)
-    return "".join(banner)
-
-
-def banner_to_bytes(banner: str, body: str | None = None) -> bytes:
-    """Encode a banner (optionally followed by body) into bytes for socket.send()."""
-    if body is not None:
-        return (banner + body).encode("iso-8859-1")
-    return banner.encode("iso-8859-1")
-
-
-def get_honey_http(request, bot_ip, verbose, ai_responder=None):
-    """
-    This is the place where magic happens. Function receives parsed HTTP
-    request as an argument and returns an output as a string. If it
-    is kind of static content, its being read from responses/. In some kind of
-    harder case i use if-else to determine which code should i use. As an
-    example, WEBDAV protocol uses different server banner and Content-Type of
-    robots.txt should be text/plain(they are also dynamically generated).
-
-    Args:
-        request: HTTPRequest object with parsed request data
-        bot_ip: Bot's IP address
-        verbose: Whether to print verbose output
-        ai_responder: Optional AIResponder instance for AI-powered responses
-    """
-    from manyfaced.common.ai_responder import AIResponder as _AIResponder
-
-    logger.debug("get_honey_http: request.path=%r, bot_ip=%s", getattr(request, "path", None), bot_ip)
-
-    if ai_responder and isinstance(ai_responder, _AIResponder) and ai_responder.is_available():
-        # Try AI responder first
-        try:
-            response_bytes, detected = ai_responder.generate_response(
-                request_path=request.path,
-                raw_request=request.raw if hasattr(request, "raw") else str(request),
-                bot_ip=bot_ip,
-            )
-            if verbose:
-                print(f"{bot_ip} {request.path} gotcha! (AI)")
-            return response_bytes, detected
-        except Exception as e:
-            logger.warning("AI response failed for %s %s: %s – falling back to static", bot_ip, request.path, e)
-
-    logger.debug("get_honey_http: checking faces dict for path=%r", getattr(request, "path", None))
-    if request.path in faces:  # If we know what to do with request
-        face = faces[request.path]
-        detected = 1
-        logger.debug("get_honey_http: face=%s", face)
-        if face == "webdav.xml":  # Compile response for WEBDAV listing
-            logger.debug("get_honey_http: calling honey_webdav")
-            output_data = honey_webdav(bot_ip)
-        elif face == "robots":  # Generate robots.txt from faces dict
-            logger.debug("get_honey_http: calling honey_robots")
-            output_data = honey_robots()
-        else:  # If our request doesnt require special treatment, it goes here
-            logger.debug("get_honey_http: calling honey_generic(%s)", face)
-            output_data = honey_generic(face)
-        if verbose:
-            print(bot_ip + " " + request.path + " gotcha!")
-    else:  # If we dont know what to do with that request
-        logger.debug("get_honey_http: path not in faces, using zero face")
-        if verbose:
-            path_str = getattr(request, "path", None) or "<unknown>"
-            print(bot_ip + " " + path_str[:50] + " not detected...")
-        output_data = honey_generic(faces["zero"])
-        detected = UNKNOWN_HTTP
-    logger.debug("get_honey_http: returning output_data len=%d", len(output_data))
-    return output_data, detected
-
-
-def honey_generic(face):
-    logger.debug("honey_generic: reading face file %s", face)
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(root_dir, "responses", face)
-    logger.debug("honey_generic: path=%s", path)
-    with open(path, "r") as f:
-        body = f.read()
-    logger.debug("honey_generic: read %d bytes from %s", len(body), face)
-    # Detect XML faces and use appropriate Content-Type
-    content_type = "text/html; charset=UTF-8"
-    if face.endswith(".xml"):
-        content_type = "application/xml; charset=utf-8"
-    logger.debug("honey_generic: calling compile_banner with msg_size=%d", len(body))
-    output_data = compile_banner(msg_size=len(body), content_type=content_type)
-    output_data += body
-    logger.debug("honey_generic: returning %d bytes", len(output_data))
-    return output_data
-
-
-def honey_robots():
-    logger.debug("honey_robots: generating robots.txt")
-    body = "User-Agent: *\r\nAllow: /\r\n"
-    for url in set(faces.keys()):
-        body += "Disallow: " + url + "\r\n"
-    logger.debug("honey_robots: body len=%d", len(body))
-    output_data = compile_banner(
-        msg_size=len(body), content_type="text/plain; charset=UTF-8"
-    )
-    output_data += body
-    return output_data
-
-
-def honey_webdav(bot_ip):
-    logger.debug("honey_webdav: reading webdav.xml for bot_ip=%s", bot_ip)
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(root_dir, "responses", "webdav.xml")
-    with open(path, "r") as f:
-        body = f.read()
-    output_data = compile_banner(
-        code="HTTP/1.1 207 Multi-Status",
-        content_type="application/xml; charset=utf-8",
-        connection="",
-        date="",
-        server_version="",
-        nl_count=1,
-    )
-    output_data += body
-    return output_data
-
-
 def create_server(args, update_event: Event, port: int):
     """Create a single-port honeypot server.
-    
+
     Args:
         args: CLI arguments namespace
         update_event: Event to signal shutdown
@@ -336,16 +130,16 @@ def create_server(args, update_event: Event, port: int):
 
 def create_multiport_server(args, update_event: Event, ports: list[int]):
     """Create a multi-port honeypot server that listens on multiple ports simultaneously.
-    
+
     Each port runs in its own thread. All threads share the same update_event for shutdown.
-    
+
     Args:
         args: CLI arguments namespace
         update_event: Event to signal shutdown
         ports: List of port numbers to listen on
     """
     threads: list[threading.Thread] = []
-    
+
     for port in ports:
         t = threading.Thread(
             target=create_server,
@@ -354,46 +148,52 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
             daemon=True,
         )
         threads.append(t)
-    
+
     # Start all threads
     for t in threads:
         t.start()
-    
+
     # Log all ports
     port_list_str = ", ".join(str(p) for p in ports)
     logger.info("Client honeypot listening on %d ports: %s", len(ports), port_list_str)
     if args.verbose:
         print(f"Serving honey on {len(ports)} ports: {port_list_str}")
-    
+
     # Wait for shutdown signal
     try:
         while not update_event.is_set():
             update_event.wait(timeout=1)
     except KeyboardInterrupt:
         pass
-    
+
     # Wait for all threads to finish
     for t in threads:
         t.join(timeout=5)
-    
+
     logger.info("All honeypot threads stopped")
 
 
 def main(args, update_event):
+    """Main entry point for the honeypot client.
+
+    Supports single-port, top-ports, and all-ports modes.
+
+    Args:
+        args: CLI arguments namespace
+        update_event: Event to signal shutdown
+    """
     if getattr(signal, "SIGCHLD", None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    
+
     port_mode = getattr(args, "port_mode", "single")
     top_ports = getattr(args, "top_ports", "")
-    
+
     if port_mode == "all":
-        # All ports: 1-65535
         ports = list(range(1, 65536))
         logger.warning("Listening on ALL 65535 ports – this may take time to start")
         print(f"WARNING: Listening on all 65535 TCP ports...")
         create_multiport_server(args, update_event, ports)
     elif port_mode == "top":
-        # Top 50 (or custom) ports
         if top_ports:
             try:
                 ports = sorted({int(p.strip()) for p in top_ports.split(",") if p.strip()})
@@ -417,6 +217,5 @@ def main(args, update_event):
             ]
         create_multiport_server(args, update_event, ports)
     else:
-        # Single port mode (default)
         port = args.client
         create_server(args, update_event, port)
