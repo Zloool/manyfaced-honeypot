@@ -41,6 +41,13 @@ TOML config file layout (the file is auto-generated if run with --generate-confi
 
     [security]
     authorised_bears = ""  # semicolon-separated "bear_id:key" pairs
+
+    [ai]
+    enabled = false
+    endpoint = "http://127.0.0.1:8080/v1"
+    model = "llama-3.1-8b-instruct"
+    max_tokens = 500
+    timeout = 5.0
 """
 
 from __future__ import annotations
@@ -84,6 +91,16 @@ _TOP_50_PORTS = [
 ]
 
 _PORT_MODES = ("single", "top", "all")
+
+# ── AI responder configuration ──────────────────────────────────────────────
+# AI responder provides LLM-powered, interactive HTTP responses to probe bots.
+# Disabled by default (AI_ENABLED=false).
+
+_DEFAULT_AI_ENABLED = False
+_DEFAULT_AI_ENDPOINT = "http://127.0.0.1:8080/v1"
+_DEFAULT_AI_MODEL = "llama-3.1-8b-instruct"
+_DEFAULT_AI_MAX_TOKENS = 500
+_DEFAULT_AI_TIMEOUT = 5.0
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -193,6 +210,13 @@ class Config:
     HONEY_PORT_MODE: str  # "single", "top", or "all"
     HONEY_TOP_PORTS: str  # comma-separated port list (used when mode="top" and user customizes)
 
+    # AI responder configuration
+    AI_ENABLED: bool  # enable AI-powered response generation
+    AI_ENDPOINT: str  # LLM API endpoint (OpenAI-compatible)
+    AI_MODEL: str  # LLM model name
+    AI_MAX_TOKENS: int  # maximum tokens in generated response
+    AI_TIMEOUT: float  # request timeout in seconds
+
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
         """Build a Config resolving defaults → TOML → env var."""
@@ -223,6 +247,11 @@ class Config:
             AUTHORISEDBEARS=dict(_resolve("authorised_bears", _DEFAULT_AUTHORISEDBEARS_DEFAULTS, "security", toml, prefix)),
             HONEY_PORT_MODE=str(_resolve("port_mode", "single", "honeypot", toml, prefix)),
             HONEY_TOP_PORTS=str(_resolve("top_ports", "", "honeypot", toml, prefix)),
+            AI_ENABLED=bool(_resolve("ai_enabled", _DEFAULT_AI_ENABLED, "honeypot", toml, prefix)),
+            AI_ENDPOINT=str(_resolve("ai_endpoint", _DEFAULT_AI_ENDPOINT, "ai", toml, prefix)),
+            AI_MODEL=str(_resolve("ai_model", _DEFAULT_AI_MODEL, "ai", toml, prefix)),
+            AI_MAX_TOKENS=int(_resolve("ai_max_tokens", _DEFAULT_AI_MAX_TOKENS, "ai", toml, prefix)),
+            AI_TIMEOUT=float(_resolve("ai_timeout", _DEFAULT_AI_TIMEOUT, "ai", toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -259,6 +288,14 @@ class Config:
             "[security]",
             '  # semicolon-separated bearid:key pairs; e.g. "bear1:key1;bear2:key2"',
             '  authorised_bears = ""',
+            "",
+            "[ai]",
+            f'  # AI responder for interactive bot engagement',
+            f'  enabled = {self.AI_ENABLED}',
+            f'  endpoint = "{self.AI_ENDPOINT}"',
+            f'  model = "{self.AI_MODEL}"',
+            f"  max_tokens = {self.AI_MAX_TOKENS}",
+            f"  timeout = {self.AI_TIMEOUT}",
             "",
         ]
         path.write_text("\n".join(lines))
@@ -312,3 +349,10 @@ AUTHORISEDBEARS = settings.AUTHORISEDBEARS
 # Port mode settings
 HONEY_PORT_MODE = settings.HONEY_PORT_MODE
 HONEY_TOP_PORTS = settings.HONEY_TOP_PORTS
+
+# AI responder settings
+AI_ENABLED = settings.AI_ENABLED
+AI_ENDPOINT = settings.AI_ENDPOINT
+AI_MODEL = settings.AI_MODEL
+AI_MAX_TOKENS = settings.AI_MAX_TOKENS
+AI_TIMEOUT = settings.AI_TIMEOUT

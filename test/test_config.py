@@ -336,6 +336,11 @@ class TestConfigGenerateConfigFile:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="single",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
 
         path = cfg.generate_config_file()
@@ -381,6 +386,11 @@ class TestConfigGenerateConfigFile:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="single",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -619,6 +629,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="single",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         assert cfg.resolve_ports() == [80]
 
@@ -642,6 +657,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="single",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         assert cfg.resolve_ports() == [443]
 
@@ -665,6 +685,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="top",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -692,6 +717,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="top",
             HONEY_TOP_PORTS="80,443,8080,3306",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -716,6 +746,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="top",
             HONEY_TOP_PORTS="80, 443, 8080",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -740,6 +775,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="all",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -766,6 +806,11 @@ class TestConfigResolvePorts:
             AUTHORISEDBEARS={},
             HONEY_PORT_MODE="TOP",
             HONEY_TOP_PORTS="",
+            AI_ENABLED=False,
+            AI_ENDPOINT="http://127.0.0.1:8080/v1",
+            AI_MODEL="llama-3.1-8b-instruct",
+            AI_MAX_TOKENS=500,
+            AI_TIMEOUT=5.0,
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
