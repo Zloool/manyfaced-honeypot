@@ -1,8 +1,10 @@
-import time
 import pickle
-from socket import error as socket_error
+from socket import error as socket_error, timeout as socket_timeout
 
+from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.status import CLIENT_TIMEOUT
+
+logger = get_logger(__name__)
 
 
 def dump_file(data):
@@ -18,35 +20,30 @@ def dump_file(data):
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
-    # make socket non blocking
-    the_socket.setblocking(0)
+    """Receive data from a socket with a timeout.
 
-    # total data partwise in an array
+    Uses blocking mode with settimeout() for reliable data reception.
+    """
+    the_socket.settimeout(timeout)
     total_data = []
+    try:
+        while True:
+            try:
+                data = the_socket.recv(8192)
+                if data:
+                    total_data.append(data)
+                else:
+                    # Connection closed by peer
+                    break
+            except socket_timeout:
+                # Timeout reached, return what we have
+                break
+    except socket_error:
+        pass
+    finally:
+        the_socket.settimeout(None)  # Reset to blocking
 
-    # beginning time
-    begin = time.time()
-    while True:
-        # if you got some data, then break after timeout
-        if total_data and time.time() - begin > timeout:
-            break
-
-        # if you got no data at all, wait a little longer, twice the timeout
-        elif time.time() - begin > timeout * 2:
-            break
-
-        # recv something
-        try:
-            data = the_socket.recv(8192)
-            if data:
-                total_data.append(data)
-                # change the beginning time for measurement
-                begin = time.time()
-            else:
-                # sleep for sometime to indicate a gap
-                time.sleep(0.1)
-        except socket_error:
-            pass
-
-    # join all parts to make final string
-    return "".join(total_data)
+    raw = b"".join(total_data)
+    result = raw.decode("utf-8", errors="replace")
+    logger.debug("receive_timeout: received %d bytes, repr=%r", len(raw), repr(result[:200]))
+    return result
