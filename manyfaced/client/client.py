@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import signal
+import threading
 from multiprocessing import Event
 from socket import (
     socket,
@@ -246,15 +247,21 @@ def honey_webdav(bot_ip):
     return output_data
 
 
-def create_server(args, update_event: Event):
-    port = args.client
+def create_server(args, update_event: Event, port: int):
+    """Create a single-port honeypot server.
+    
+    Args:
+        args: CLI arguments namespace
+        update_event: Event to signal shutdown
+        port: Port number to listen on
+    """
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(("", port))
     server_socket.listen(1)
     logger.info("Client honeypot listening on port %d", port)
     if args.verbose:
-        print("Serving honey on port %s", port)
+        print(f"Serving honey on port {port}")
     try:
         while True:
             if update_event.is_set():
@@ -283,7 +290,89 @@ def create_server(args, update_event: Event):
         server_socket.close()
 
 
+def create_multiport_server(args, update_event: Event, ports: list[int]):
+    """Create a multi-port honeypot server that listens on multiple ports simultaneously.
+    
+    Each port runs in its own thread. All threads share the same update_event for shutdown.
+    
+    Args:
+        args: CLI arguments namespace
+        update_event: Event to signal shutdown
+        ports: List of port numbers to listen on
+    """
+    threads: list[threading.Thread] = []
+    
+    for port in ports:
+        t = threading.Thread(
+            target=create_server,
+            args=(args, update_event, port),
+            name=f"honeyport-{port}",
+            daemon=True,
+        )
+        threads.append(t)
+    
+    # Start all threads
+    for t in threads:
+        t.start()
+    
+    # Log all ports
+    port_list_str = ", ".join(str(p) for p in ports)
+    logger.info("Client honeypot listening on %d ports: %s", len(ports), port_list_str)
+    if args.verbose:
+        print(f"Serving honey on {len(ports)} ports: {port_list_str}")
+    
+    # Wait for shutdown signal
+    try:
+        while not update_event.is_set():
+            update_event.wait(timeout=1)
+    except KeyboardInterrupt:
+        pass
+    
+    # Wait for all threads to finish
+    for t in threads:
+        t.join(timeout=5)
+    
+    logger.info("All honeypot threads stopped")
+
+
 def main(args, update_event):
     if getattr(signal, "SIGCHLD", None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    create_server(args, update_event)
+    
+    port_mode = getattr(args, "port_mode", "single")
+    top_ports = getattr(args, "top_ports", "")
+    
+    if port_mode == "all":
+        # All ports: 1-65535
+        ports = list(range(1, 65536))
+        logger.warning("Listening on ALL 65535 ports – this may take time to start")
+        print(f"WARNING: Listening on all 65535 TCP ports...")
+        create_multiport_server(args, update_event, ports)
+    elif port_mode == "top":
+        # Top 50 (or custom) ports
+        if top_ports:
+            try:
+                ports = sorted({int(p.strip()) for p in top_ports.split(",") if p.strip()})
+            except ValueError:
+                ports = [
+                    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+                    143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
+                    5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
+                    15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
+                    11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+                    5000,
+                ]
+        else:
+            ports = [
+                21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
+                143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
+                5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
+                15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
+                11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+                5000,
+            ]
+        create_multiport_server(args, update_event, ports)
+    else:
+        # Single port mode (default)
+        port = args.client
+        create_server(args, update_event, port)
