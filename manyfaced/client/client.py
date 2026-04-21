@@ -118,7 +118,7 @@ def send_report(data, client, password, server_host, server_port):
         s.connect((server_host, server_port))
         s.sendall(message)
         response = s.recv(1024)
-        if response.decode() != "200":
+        if not response.decode().startswith("200"):
             logger.warning("Failed to send report: Non-200 response from server")
             print(response)
         s.close()
