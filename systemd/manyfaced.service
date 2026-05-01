@@ -11,8 +11,18 @@ Group=honeypot
 WorkingDirectory=/opt/manyfaced
 EnvironmentFile=/opt/manyfaced/honeypot.env
 ExecStart=/opt/manyfaced/venv/bin/python3 -m manyfaced.mfh
+
+# Kill the entire process tree on stop/restart (prevents orphaned child processes)
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Restart policy: only restart on failure, not on success
 Restart=on-failure
 RestartSec=10
+
+# Increase file descriptor limit (was 1024, causing "Too many open files" crashes)
+LimitNOFILE=65536
 
 # Security hardening
 NoNewPrivileges=true
