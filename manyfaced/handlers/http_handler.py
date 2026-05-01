@@ -294,9 +294,11 @@ class HTTPHandler:
         class _ParsedSSH:
             command = "SSH"
             path = "/"
-            version = version or "SSH-2.0"
             headers = {}
             user_agent = client or "unknown"
+
+        ssh_version = version or "SSH-2.0"
+        _ParsedSSH.version = ssh_version
 
         self._send_report(
             bot_ip, banner_versions[0], _ParsedSSH(), SSH_CLIENT, protocol="ssh"
