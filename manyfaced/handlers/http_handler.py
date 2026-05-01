@@ -265,7 +265,7 @@ class HTTPHandler:
         )
 
     def _handle_ssh_probe(self, bot_ip: str, protocol_info: dict) -> bytes:
-        """Handle an SSH probe by responding with a fake SSH banner.
+        """Handle an SSH probe by responding with a fake SSH banner and capturing credentials.
 
         Args:
             bot_ip: IP address of the connecting bot.
