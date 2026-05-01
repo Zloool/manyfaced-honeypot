@@ -8,9 +8,9 @@ TCP connections.
 Architecture::
 
     Bot connects → create_server() → HTTPHandler.handle_request()
-                                              → HandlerRegistry.generate_response()
-                                              → ServiceHandler (WordPress, phpMyAdmin, etc.)
-                                              → send_report() (encrypted to server)
+                                          → HandlerRegistry.generate_response()
+                                          → ServiceHandler (WordPress, phpMyAdmin, etc.)
+                                          → send_report() (encrypted to server)
 """
 
 import json
@@ -158,6 +158,10 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
         update_event: Event to signal shutdown
         ports: List of port numbers to listen on
     """
+    # Filter out the server port to avoid "Address already in use" conflicts
+    server_port = getattr(args, "server", None)
+    if server_port is not None and server_port in ports:
+        ports = [p for p in ports if p != server_port]
     threads: list[threading.Thread] = []
     successful_ports: list[int] = []
     failed_ports: list[tuple[int, str]] = []
