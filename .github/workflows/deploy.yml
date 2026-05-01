@@ -73,49 +73,9 @@ jobs:
             pip install -e ${DEPLOY_DIR} -q
           "
           
-          # Update systemd service file with improved cleanup settings
+          # Update systemd service file (rsynced from repo, no heredoc)
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            cat > /etc/systemd/system/manyfaced.service << 'SERVICEEOF'
-[Unit]
-Description=Manyfaced Honeypot - Multi-faced honeypot for detecting bot activity
-Documentation=https://github.com/Zloool/manyfaced-honeypot
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=honeypot
-Group=honeypot
-WorkingDirectory=/opt/manyfaced
-EnvironmentFile=/opt/manyfaced/honeypot.env
-ExecStart=/opt/manyfaced/venv/bin/python3 -m manyfaced.mfh
-
-# Kill the entire process tree on stop/restart (prevents orphaned child processes)
-KillMode=control-group
-KillSignal=SIGTERM
-TimeoutStopSec=10
-
-# Restart policy: only restart on failure, not on success
-Restart=on-failure
-RestartSec=10
-
-# Increase file descriptor limit (was 1024, causing Too many open files crashes)
-LimitNOFILE=65536
-
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-PrivateTmp=true
-ReadWritePaths=/opt/manyfaced/bots /home/honeypot/.config
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=manyfaced
-
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
+            cp ${DEPLOY_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
             systemctl daemon-reload
           "
           
