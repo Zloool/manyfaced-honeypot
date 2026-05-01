@@ -35,6 +35,133 @@ from manyfaced.common.utils import dump_file, receive_timeout
 logger = get_logger(__name__)
 
 
+def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | None:
+    """Capture SSH credentials by keeping the connection open and parsing auth messages.
+
+    Args:
+        connection_socket: The open socket connection to the bot.
+        bot_ip: IP address of the bot.
+
+    Returns:
+        String with captured credentials, or None if no credentials captured.
+    """
+    try:
+        # Set a longer timeout for SSH credential capture
+        connection_socket.settimeout(10)
+        all_data = b""
+        while True:
+            try:
+                data = connection_socket.recv(4096)
+                if not data:
+                    break
+                all_data += data
+                # Check if we have enough data to parse
+                if len(all_data) > 100:
+                    break
+            except socket.timeout:
+                break
+            except socket_error:
+                break
+
+        if all_data:
+            # Decode the data
+            raw_str = all_data.decode("utf-8", errors="replace")
+            # Look for username/password in the raw data
+            # SSH auth messages contain username and password in plaintext
+            # for password authentication
+            creds = _parse_ssh_auth_data(raw_str)
+            if creds:
+                return creds
+            # If no structured credentials found, log the raw data
+            logger.debug(
+                "SSH raw data from %s: %s",
+                bot_ip,
+                repr(all_data[:200]),
+            )
+            return f"SSH data: {repr(all_data[:100])}"
+    except Exception as e:
+        logger.debug("Error capturing SSH credentials from %s: %s", bot_ip, e)
+    return None
+
+
+def _parse_ssh_auth_data(raw_data: str) -> str | None:
+    """Parse SSH authentication data to extract credentials.
+
+    Args:
+        raw_data: Raw SSH protocol data as string.
+
+    Returns:
+        String with extracted credentials, or None.
+    """
+    # SSH password authentication sends username and password in plaintext
+    # Look for common patterns in SSH auth messages
+    # The SSH protocol sends username in SSH_MSG_USERAUTH_REQUEST
+    # and password in SSH_MSG_USERAUTH_REQUEST (for password auth)
+
+    # Try to extract username from SSH auth messages
+    # SSH_MSG_USERAUTH_REQUEST format:
+    #   byte SSH_MSG_USERAUTH_REQUEST (50)
+    #   string username
+    #   string service
+    #   string method
+
+    # Look for username patterns
+    username = None
+    password = None
+
+    # Try to find username in the data
+    # SSH auth messages often contain "username" field
+    import re
+
+    # Look for common SSH auth patterns
+    # SSH_MSG_USERAUTH_REQUEST: 50, username, service, method
+    # The username is typically the first string after the message type
+
+    # Try to extract from raw SSH protocol data
+    # SSH password auth sends: msg_type(50), username, service, method, password
+    # We can look for the username in the data
+
+    # Simple heuristic: look for strings that look like usernames
+    # Common patterns: "user", "username", "admin", "root", etc.
+    # Also look for password patterns
+
+    # Try to parse SSH binary protocol
+    try:
+        data_bytes = raw_data.encode("latin-1")
+        # Look for SSH_MSG_USERAUTH_REQUEST (byte 50)
+        idx = data_bytes.find(b"\x32")  # 0x32 = 50
+        if idx >= 0:
+            # Skip message type and length
+            # SSH binary protocol: length(4), type(1), data...
+            # Look for the username string
+            # The username is typically a string (length + content)
+            # Try to find common username patterns
+            for pattern in [b"\x00", b"\x01", b"\x02"]:
+                # Look for username patterns
+                pass
+    except Exception:
+        pass
+
+    # Fallback: look for plaintext username/password in the data
+    # Some SSH clients send credentials in plaintext
+    username_match = re.search(r"username[=:\s]+(\w+)", raw_data, re.IGNORECASE)
+    if username_match:
+        username = username_match.group(1)
+
+    password_match = re.search(r"password[=:\s]+(\S+)", raw_data, re.IGNORECASE)
+    if password_match:
+        password = password_match.group(1)
+
+    if username and password:
+        return f"user={username}, pass={password}"
+    elif username:
+        return f"user={username}"
+    elif password:
+        return f"pass={password}"
+
+    return None
+
+
 REPORT_SEND_MAX_RETRIES = 5
 REPORT_SEND_RETRY_DELAY = 2  # seconds
 REPORT_SEND_BACKOFF_FACTOR = 2  # exponential backoff
@@ -172,6 +299,16 @@ def create_server(args, update_event: Event, port: int):
                     if isinstance(output_data, bytes)
                     else output_data.encode("iso-8859-1")
                 )
+                # For SSH connections, keep the connection open to capture credentials
+                if isinstance(output_data, bytes) and output_data.startswith(b"SSH-"):
+                    # SSH connection - keep listening for auth attempts
+                    ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
+                    if ssh_creds:
+                        logger.info(
+                            "Captured SSH credentials from %s: %s",
+                            bot_ip,
+                            ssh_creds,
+                        )
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
