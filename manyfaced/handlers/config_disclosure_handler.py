@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import re
-from typing import Any
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
@@ -1110,9 +1108,9 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:create_app"]
                 "phpunit/phpunit": "^10.0",
             },
             "config": {
-                "optimize-autoloader": true,
+                "optimize-autoloader": True,
                 "preferred-install": "dist",
-                "sort-packages": true,
+                "sort-packages": True,
             },
             "extra": {
                 "laravel": {

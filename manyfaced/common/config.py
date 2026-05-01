@@ -295,7 +295,7 @@ class Config:
             '  authorised_bears = ""',
             "",
             "[ai]",
-            f'  # AI responder for interactive bot engagement',
+            '  # AI responder for interactive bot engagement',
             f'  enabled = {self.AI_ENABLED}',
             f'  endpoint = "{self.AI_ENDPOINT}"',
             f'  model = "{self.AI_MODEL}"',

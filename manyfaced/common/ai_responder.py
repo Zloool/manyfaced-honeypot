@@ -30,9 +30,7 @@ Dependencies:
 from __future__ import annotations
 
 import datetime
-import json
 import threading
-from typing import Optional
 
 from manyfaced.common.logging_setup import get_logger
 
@@ -370,7 +368,6 @@ class AIResponder:
         Returns:
             Complete HTTP response as bytes
         """
-        import datetime
 
         # Determine content type based on face type
         if known_face and known_face.endswith(".xml"):

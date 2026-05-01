@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import Any
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
@@ -316,7 +315,7 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
 </div>
 </body>
 </html>"""
-        return self._build_http_response(body, 200, "OK"), self.DETECTED_ID
+        return self._build_http_response(body, 200, "OK")
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""

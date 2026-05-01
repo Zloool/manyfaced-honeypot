@@ -6,10 +6,7 @@ Usage:
 """
 
 import os
-import pickle
 import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,9 +30,7 @@ sys.modules["GeoIP"] = MagicMock()
 # ---------------------------------------------------------------------------
 # Import units under test
 # ---------------------------------------------------------------------------
-from manyfaced.common.utils import dump_file, receive_timeout
-from manyfaced.common.config import Config, _find_config_file, _load_toml, _resolve, _env_prefix
-from manyfaced.common.arguments import parse
+from manyfaced.common.config import Config, _load_toml, _resolve, _env_prefix
 
 
 # ===================================================================
@@ -86,7 +81,6 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-from manyfaced.common.config import Config, _load_toml, _resolve, _env_prefix
 
 def _write_toml(tmp_path, content):
     """Write a TOML file and return its Path."""
@@ -341,6 +335,7 @@ class TestConfigGenerateConfigFile:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
 
         path = cfg.generate_config_file()
@@ -391,6 +386,7 @@ class TestConfigGenerateConfigFile:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -634,6 +630,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         assert cfg.resolve_ports() == [80]
 
@@ -662,6 +659,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         assert cfg.resolve_ports() == [443]
 
@@ -690,6 +688,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -722,6 +721,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -751,6 +751,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -780,6 +781,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -811,6 +813,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
+            DEFAULT_KEY="default_beehive_key"
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50

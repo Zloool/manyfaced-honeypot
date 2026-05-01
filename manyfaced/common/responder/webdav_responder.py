@@ -18,9 +18,6 @@ Usage:
 from __future__ import annotations
 
 import datetime
-import random
-import xml.etree.ElementTree as ET
-from typing import Any
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.responder.responder_base import ResponderBase
@@ -202,35 +199,35 @@ Return ONLY the response body (not HTTP headers). Keep it concise.
 
         xml = '<?xml version="1.0" encoding="utf-8"?>\n'
         xml += '<D:multistatus xmlns:D="DAV:">\n'
-        xml += f'  <D:response>\n'
+        xml += '  <D:response>\n'
         xml += f'    <D:href>{path}</D:href>\n'
-        xml += f'    <D:propstat>\n'
-        xml += f'      <D:prop>\n'
-        xml += f'        <D:resourcetype><D:collection/></D:resourcetype>\n'
-        xml += f'        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>\n'
-        xml += f'        <D:getlastmodified>Wed, 15 Apr 2026 10:00:00 GMT</D:getlastmodified>\n'
-        xml += f'        <D:getetag>"4d67-5f0a-6487-42c0"</D:getetag>\n'
-        xml += f'      </D:prop>\n'
-        xml += f'      <D:status>HTTP/1.1 200 OK</D:status>\n'
-        xml += f'    </D:propstat>\n'
-        xml += f'  </D:response>\n'
+        xml += '    <D:propstat>\n'
+        xml += '      <D:prop>\n'
+        xml += '        <D:resourcetype><D:collection/></D:resourcetype>\n'
+        xml += '        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>\n'
+        xml += '        <D:getlastmodified>Wed, 15 Apr 2026 10:00:00 GMT</D:getlastmodified>\n'
+        xml += '        <D:getetag>"4d67-5f0a-6487-42c0"</D:getetag>\n'
+        xml += '      </D:prop>\n'
+        xml += '      <D:status>HTTP/1.1 200 OK</D:status>\n'
+        xml += '    </D:propstat>\n'
+        xml += '  </D:response>\n'
 
         for file in files:
-            xml += f'  <D:response>\n'
+            xml += '  <D:response>\n'
             xml += f'    <D:href>{path}{file["name"]}</D:href>\n'
-            xml += f'    <D:propstat>\n'
-            xml += f'      <D:prop>\n'
+            xml += '    <D:propstat>\n'
+            xml += '      <D:prop>\n'
             if file.get("is_dir"):
-                xml += f'        <D:resourcetype><D:collection/></D:resourcetype>\n'
+                xml += '        <D:resourcetype><D:collection/></D:resourcetype>\n'
             else:
                 xml += f'        <D:getcontentlength>{file["size"]}</D:getcontentlength>\n'
-                xml += f'        <D:getcontenttype>application/octet-stream</D:getcontenttype>\n'
+                xml += '        <D:getcontenttype>application/octet-stream</D:getcontenttype>\n'
             xml += f'        <D:getlastmodified>{file["modified"]}</D:getlastmodified>\n'
             xml += f'        <D:getetag>"{hash(file["name"])}"</D:getetag>\n'
-            xml += f'      </D:prop>\n'
-            xml += f'      <D:status>HTTP/1.1 200 OK</D:status>\n'
-            xml += f'    </D:propstat>\n'
-            xml += f'  </D:response>\n'
+            xml += '      </D:prop>\n'
+            xml += '      <D:status>HTTP/1.1 200 OK</D:status>\n'
+            xml += '    </D:propstat>\n'
+            xml += '  </D:response>\n'
 
         xml += '</D:multistatus>\n'
         xml += '<!-- Apache/2.4.7 (Ubuntu) mod_dav/1.0.3 -->'

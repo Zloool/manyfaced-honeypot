@@ -13,9 +13,8 @@ Tests cover:
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 # Ensure project root is importable
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -699,8 +698,6 @@ class TestModularResponderIntegration:
     def test_escalation_accumulates_across_requests(self):
         """Escalation level should accumulate across requests."""
         from manyfaced.common.responder import (
-            BotProfile,
-            EscalationLevel,
             PhpMyAdminResponder,
             ResponderRegistry,
         )

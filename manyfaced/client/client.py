@@ -13,9 +13,7 @@ Architecture::
                                               → send_report() (encrypted to server)
 """
 
-import datetime
 import json
-import os
 import signal
 import threading
 from multiprocessing import Event
@@ -30,8 +28,7 @@ from socket import (
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.myenc import AESCipher
-from manyfaced.common.status import BOT_TIMEOUT, UNKNOWN_HTTP
-from manyfaced.common.settings import HIVEHOST, HIVEPORT
+from manyfaced.common.status import BOT_TIMEOUT
 from manyfaced.handlers.http_handler import HTTPHandler
 from manyfaced.common.utils import dump_file, receive_timeout
 
@@ -222,7 +219,7 @@ def main(args, update_event):
     if port_mode == "all":
         ports = list(range(1, 65536))
         logger.warning("Listening on ALL 65535 ports – this may take time to start")
-        print(f"WARNING: Listening on all 65535 TCP ports...")
+        print("WARNING: Listening on all 65535 TCP ports...")
         create_multiport_server(args, update_event, ports)
     elif port_mode == "top":
         if top_ports:
