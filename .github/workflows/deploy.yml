@@ -1,20 +1,29 @@
 name: Deploy to Droplet
 
+# Trigger AFTER CI workflow completes successfully on the same commit
 on:
-  push:
-    branches: [master, main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: read
 
 jobs:
   deploy:
+    # Only deploy if CI passed and the commit is on master or main
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.head_branch == 'master' ||
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (exact CI-tested commit)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
