@@ -26,17 +26,20 @@ jobs:
 
       - name: Deploy to droplet
         env:
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
           DEPLOY_DIR: "/opt/manyfaced"
           VENV_DIR: "/opt/manyfaced/venv"
         run: |
-          echo "=== Deploying to ${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}:${{ secrets.DROPLET_SSH_PORT }} ==="
+          echo "=== Deploying to ${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:${DROPLET_SSH_PORT} ==="
           
           # Create deploy temp directory
-          ssh -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}" "mkdir -p /tmp/manyfaced-deploy"
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "mkdir -p /tmp/manyfaced-deploy"
           
           # rsync code (excluding git, venv, cache, and ignored files)
           rsync -avz --delete \
-            -e "ssh -p ${{ secrets.DROPLET_SSH_PORT }}" \
+            -e "ssh -p ${DROPLET_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             --exclude='.git/' \
             --exclude='.venv/' \
             --exclude='__pycache__/' \
@@ -48,20 +51,20 @@ jobs:
             --exclude='*.log' \
             --exclude='.gitignore' \
             . \
-            "${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}:/tmp/manyfaced-deploy/"
+            "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:/tmp/manyfaced-deploy/"
           
           # Move code into place
-          ssh -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}" "rm -rf ${DEPLOY_DIR}/manyfaced && mv /tmp/manyfaced-deploy/manyfaced ${DEPLOY_DIR}/ && rm -rf /tmp/manyfaced-deploy"
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${DEPLOY_DIR}/manyfaced && mv /tmp/manyfaced-deploy/manyfaced ${DEPLOY_DIR}/ && rm -rf /tmp/manyfaced-deploy"
           
           # Install/update Python dependencies in venv
-          ssh -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}" "
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             source ${VENV_DIR}/bin/activate && \
             pip install --upgrade pip -q && \
             pip install -e ${DEPLOY_DIR} -q
           "
           
           # Restart the service
-          ssh -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SSH_USER }}@${{ secrets.DROPLET_SERVER_IP }}" "
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             systemctl restart manyfaced && \
             sleep 2 && \
             systemctl status manyfaced --no-pager
