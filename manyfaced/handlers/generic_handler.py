@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import sys
 import textwrap
 from typing import Any
 

@@ -17,9 +17,8 @@ RestartSec=10
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/manyfaced/bots
+ReadWritePaths=/opt/manyfaced/bots /home/honeypot/.config
 
 # Logging
 StandardOutput=journal

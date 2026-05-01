@@ -16,13 +16,11 @@ The base class handles:
 from __future__ import annotations
 
 import abc
-import datetime
-import logging
 import threading
 from typing import Any
 
 from manyfaced.common.logging_setup import get_logger
-from manyfaced.common.responder.bot_profile import BotProfile, EscalationLevel
+from manyfaced.common.responder.bot_profile import BotProfile
 
 logger = get_logger(__name__)
 

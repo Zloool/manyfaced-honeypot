@@ -6,10 +6,7 @@ Usage:
 """
 
 import os
-import pickle
 import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,8 +30,6 @@ sys.modules["GeoIP"] = MagicMock()
 # ---------------------------------------------------------------------------
 # Import units under test
 # ---------------------------------------------------------------------------
-from manyfaced.common.utils import dump_file, receive_timeout
-from manyfaced.common.config import Config, _find_config_file, _load_toml, _resolve, _env_prefix
 from manyfaced.common.arguments import parse
 
 
@@ -86,7 +81,6 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-from manyfaced.common.arguments import parse
 
 def _parse_with_args(monkeypatch, argv):
     """Helper: set sys.argv and call parse()."""
