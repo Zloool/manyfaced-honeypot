@@ -25,7 +25,11 @@ class HTTPRequest(BaseHTTPRequestHandler):
             try:
                 request_text = request_text.encode("iso-8859-1")
             except UnicodeEncodeError:
-                request_text = request_text.encode("utf-8", errors="replace").decode("latin-1").encode("iso-8859-1")
+                request_text = (
+                    request_text.encode("utf-8", errors="replace")
+                    .decode("latin-1")
+                    .encode("iso-8859-1")
+                )
         elif isinstance(request_text, bytes):
             # Already bytes — use as-is (handles the case where raw socket data is passed)
             request_text = request_text

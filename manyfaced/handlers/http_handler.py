@@ -50,7 +50,10 @@ def _get_registry() -> HandlerRegistry:
         _registry.register(CPanelHandler())
         # Generic handler is last – catches everything else
         _registry.register(GenericHandler())
-        logger.info("HandlerRegistry initialized with %d handlers", len(_registry.get_all_handlers()))
+        logger.info(
+            "HandlerRegistry initialized with %d handlers",
+            len(_registry.get_all_handlers()),
+        )
     return _registry
 
 
@@ -97,9 +100,7 @@ class HTTPHandler:
                     "HONEY_AI_ENDPOINT", "http://127.0.0.1:8080/v1"
                 )
             if not ai_model:
-                ai_model = os.environ.get(
-                    "HONEY_AI_MODEL", "llama-3.1-8b-instruct"
-                )
+                ai_model = os.environ.get("HONEY_AI_MODEL", "llama-3.1-8b-instruct")
             if ai_max_tokens == 0:
                 ai_max_tokens = int(os.environ.get("HONEY_AI_MAX_TOKENS", "500"))
 
@@ -148,12 +149,20 @@ class HTTPHandler:
             parsed = HTTPRequest(message)
             # If parsing failed (path is None), create a minimal valid request
             if parsed.path is None:
-                logger.warning("HTTPRequest failed to parse path, using fallback for %s", bot_ip)
-                fallback = "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
+                logger.warning(
+                    "HTTPRequest failed to parse path, using fallback for %s", bot_ip
+                )
+                fallback = (
+                    "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
+                )
                 parsed = HTTPRequest(fallback)
         except Exception as e:
-            logger.warning("Failed to parse HTTP request: %s, using fallback for %s", e, bot_ip)
-            fallback = "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
+            logger.warning(
+                "Failed to parse HTTP request: %s, using fallback for %s", e, bot_ip
+            )
+            fallback = (
+                "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
+            )
             parsed = HTTPRequest(fallback)
 
         # Build the data dict that process_request expects
@@ -208,7 +217,11 @@ class HTTPHandler:
 
         if result is not None:
             output_data, detected = result
-            logger.debug("Handler registry returned response for %s (detected=%s)", bot_ip, detected)
+            logger.debug(
+                "Handler registry returned response for %s (detected=%s)",
+                bot_ip,
+                detected,
+            )
 
             # Record the full interaction in the dialogue for all matching handlers
             request_data = {
@@ -237,7 +250,12 @@ class HTTPHandler:
             else:
                 output_data, detected = self._fallback_response(path), 1
 
-        logger.debug("Generated response for %s, detected=%s, size=%d", bot_ip, detected, len(output_data))
+        logger.debug(
+            "Generated response for %s, detected=%s, size=%d",
+            bot_ip,
+            detected,
+            len(output_data),
+        )
 
         # Create BearStorage for reporting
         logger.debug("Creating BearStorage for %s", bot_ip)
@@ -256,7 +274,9 @@ class HTTPHandler:
         server_port = getattr(self.args, "server", None)
 
         if server_port is not None:
-            logger.debug("Spawning send_report process for %s (server:%d)", bot_ip, server_port)
+            logger.debug(
+                "Spawning send_report process for %s (server:%d)", bot_ip, server_port
+            )
             Process(
                 args=(bs, bot_ip, HIVEPASS, server_host, server_port),
                 name="send_report",

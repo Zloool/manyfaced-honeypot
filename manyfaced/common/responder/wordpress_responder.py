@@ -39,13 +39,24 @@ class WordPressResponder(ResponderBase):
 
     # Path patterns that this responder handles
     PATH_PATTERNS = [
-        "/wp-login", "/wp-login.php",
-        "/wp-admin", "/wp-admin/", "/wp-admin/admin-ajax.php",
-        "/wp-content", "/wp-content/", "/wp-content/uploads",
-        "/wp-includes", "/wp-includes/", "/wp-includes/xmlrpc.php",
+        "/wp-login",
+        "/wp-login.php",
+        "/wp-admin",
+        "/wp-admin/",
+        "/wp-admin/admin-ajax.php",
+        "/wp-content",
+        "/wp-content/",
+        "/wp-content/uploads",
+        "/wp-includes",
+        "/wp-includes/",
+        "/wp-includes/xmlrpc.php",
         "/xmlrpc.php",
-        "/wordpress", "/wordpress/", "/wordpress/wp-login.php",
-        "/blog", "/blog/", "/blog/wp-login.php",
+        "/wordpress",
+        "/wordpress/",
+        "/wordpress/wp-login.php",
+        "/blog",
+        "/blog/",
+        "/blog/wp-login.php",
     ]
 
     def __init__(self, ai_responder=None, enabled: bool = True):

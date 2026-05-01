@@ -55,9 +55,13 @@ def send_report(data, client, password, server_host, server_port):
             "command": getattr(data, "command", ""),
             "path": getattr(data, "path", ""),
             "request_version": getattr(data, "version", ""),
-            "headers": dict(data.headers) if hasattr(data, "headers") and isinstance(data.headers, dict) else {},
+            "headers": dict(data.headers)
+            if hasattr(data, "headers") and isinstance(data.headers, dict)
+            else {},
         },
-        "is_detected": data.isDetected if hasattr(data, "isDetected") else data.is_detected,
+        "is_detected": data.isDetected
+        if hasattr(data, "isDetected")
+        else data.is_detected,
         "HIVELOGIN": data.hostname,
     }
     message = (client + ":").encode()
@@ -96,7 +100,10 @@ def create_server(args, update_event: Event, port: int):
     try:
         server_socket.bind(("", port))
     except PermissionError:
-        logger.warning("Permission denied binding to port %d (try running as root or use a higher port)", port)
+        logger.warning(
+            "Permission denied binding to port %d (try running as root or use a higher port)",
+            port,
+        )
         return False
     except OSError as e:
         logger.warning("Failed to bind to port %d: %s", port, e)
@@ -126,7 +133,11 @@ def create_server(args, update_event: Event, port: int):
             try:
                 logger.debug("Sending response of length %d", len(output_data))
                 # output_data is already bytes from HTTPHandler
-                connection_socket.sendall(output_data if isinstance(output_data, bytes) else output_data.encode("iso-8859-1"))
+                connection_socket.sendall(
+                    output_data
+                    if isinstance(output_data, bytes)
+                    else output_data.encode("iso-8859-1")
+                )
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
@@ -179,13 +190,19 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
     # Log summary
     if successful_ports:
         port_list_str = ", ".join(str(p) for p in successful_ports)
-        logger.info("Client honeypot listening on %d ports: %s", len(successful_ports), port_list_str)
+        logger.info(
+            "Client honeypot listening on %d ports: %s",
+            len(successful_ports),
+            port_list_str,
+        )
         if args.verbose:
             print(f"Serving honey on {len(successful_ports)} ports: {port_list_str}")
 
     if failed_ports:
         failed_str = ", ".join(f"{p}" for p, _ in failed_ports)
-        logger.warning("Failed to bind on %d ports (skipped): %s", len(failed_ports), failed_str)
+        logger.warning(
+            "Failed to bind on %d ports (skipped): %s", len(failed_ports), failed_str
+        )
 
     # Wait for shutdown signal
     try:
@@ -224,23 +241,113 @@ def main(args, update_event):
     elif port_mode == "top":
         if top_ports:
             try:
-                ports = sorted({int(p.strip()) for p in top_ports.split(",") if p.strip()})
+                ports = sorted(
+                    {int(p.strip()) for p in top_ports.split(",") if p.strip()}
+                )
             except ValueError:
                 ports = [
-                    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
-                    143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
-                    5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
-                    15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
-                    11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+                    21,
+                    22,
+                    23,
+                    25,
+                    53,
+                    80,
+                    110,
+                    111,
+                    135,
+                    139,
+                    143,
+                    443,
+                    445,
+                    993,
+                    995,
+                    1433,
+                    1521,
+                    2049,
+                    3306,
+                    3389,
+                    5432,
+                    5900,
+                    5901,
+                    6379,
+                    8080,
+                    8443,
+                    9200,
+                    11211,
+                    27017,
+                    5672,
+                    15672,
+                    4369,
+                    2181,
+                    9090,
+                    8888,
+                    7001,
+                    7002,
+                    11300,
+                    11301,
+                    11302,
+                    11303,
+                    11304,
+                    11305,
+                    11306,
+                    11307,
+                    11308,
+                    11309,
+                    11310,
+                    11311,
                     5000,
                 ]
         else:
             ports = [
-                21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
-                143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
-                5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
-                15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
-                11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+                21,
+                22,
+                23,
+                25,
+                53,
+                80,
+                110,
+                111,
+                135,
+                139,
+                143,
+                443,
+                445,
+                993,
+                995,
+                1433,
+                1521,
+                2049,
+                3306,
+                3389,
+                5432,
+                5900,
+                5901,
+                6379,
+                8080,
+                8443,
+                9200,
+                11211,
+                27017,
+                5672,
+                15672,
+                4369,
+                2181,
+                9090,
+                8888,
+                7001,
+                7002,
+                11300,
+                11301,
+                11302,
+                11303,
+                11304,
+                11305,
+                11306,
+                11307,
+                11308,
+                11309,
+                11310,
+                11311,
                 5000,
             ]
         create_multiport_server(args, update_event, ports)

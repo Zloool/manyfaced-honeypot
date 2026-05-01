@@ -22,14 +22,26 @@ class DrupalHandler(HTTPHandlerBase):
 
     domain = "drupal"
     PATH_PATTERNS = [
-        "/user", "/user/", "/user/login", "/user/register",
-        "/admin", "/admin/", "/admin/config",
-        "/node", "/node/", "/node/",
-        "/sites", "/sites/", "/sites/default",
+        "/user",
+        "/user/",
+        "/user/login",
+        "/user/register",
+        "/admin",
+        "/admin/",
+        "/admin/config",
+        "/node",
+        "/node/",
+        "/node/",
+        "/sites",
+        "/sites/",
+        "/sites/default",
         "/xmlrpc.php",
-        "/drupal", "/drupal/",
-        "/cgi-bin", "/cgi-bin/",
-        "/files", "/files/",
+        "/drupal",
+        "/drupal/",
+        "/cgi-bin",
+        "/cgi-bin/",
+        "/files",
+        "/files/",
     ]
     DETECTED_ID = 1
 
@@ -62,7 +74,9 @@ class DrupalHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and "user/login" in path_lower:
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 response = self._login_failed_response()
                 return response, detected
@@ -383,7 +397,9 @@ $databases['default']['default'] = [
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
 

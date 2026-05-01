@@ -23,11 +23,18 @@ class JenkinsHandler(HTTPHandlerBase):
 
     domain = "jenkins"
     PATH_PATTERNS = [
-        "/jenkins", "/jenkins/", "/jenkins/login",
-        "/jenkins/script", "/jenkins/manage",
-        "/jenkins/api", "/jenkins/computer",
-        "/jenkins/view", "/jenkins/job",
-        "/hudson", "/hudson/", "/hudson/login",
+        "/jenkins",
+        "/jenkins/",
+        "/jenkins/login",
+        "/jenkins/script",
+        "/jenkins/manage",
+        "/jenkins/api",
+        "/jenkins/computer",
+        "/jenkins/view",
+        "/jenkins/job",
+        "/hudson",
+        "/hudson/",
+        "/hudson/login",
     ]
     DETECTED_ID = 1
 
@@ -59,8 +66,12 @@ class JenkinsHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and ("login" in path_lower or "j_security_check" in raw_request):
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+        if method == "POST" and (
+            "login" in path_lower or "j_security_check" in raw_request
+        ):
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 # Fake "login failed" response (encourages brute force)
                 response = self._login_failed_response()
@@ -334,7 +345,9 @@ class JenkinsHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
 

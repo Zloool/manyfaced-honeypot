@@ -38,7 +38,9 @@ class TestTrigger:
         def raise_keyboard_interrupt(*args, **kwargs):
             raise KeyboardInterrupt()
 
-        with patch("manyfaced.common.update.time.sleep", side_effect=raise_keyboard_interrupt):
+        with patch(
+            "manyfaced.common.update.time.sleep", side_effect=raise_keyboard_interrupt
+        ):
             with patch("manyfaced.common.update.sys.exit") as mock_exit:
                 trigger(event)
                 mock_exit.assert_called_once_with()
@@ -65,7 +67,12 @@ class TestPull:
             assert mock_call.call_count == 2
             # First call should be git pull
             git_call = mock_call.call_args_list[0]
-            assert git_call[0][0] == ("git", "pull", "https://github.com/example/repo.git", "main")
+            assert git_call[0][0] == (
+                "git",
+                "pull",
+                "https://github.com/example/repo.git",
+                "main",
+            )
 
     def test_calls_pip_install(self):
         """pull calls subprocess.call with pip install arguments."""

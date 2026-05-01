@@ -72,7 +72,7 @@ _DEFAULT_DB_PG_HOST = "localhost"
 _DEFAULT_DB_PG_PORT = 5432
 _DEFAULT_DB_PG_DB = "honeypot"
 _DEFAULT_DB_PG_USER = "postgres"
-_DEFAULT_DB_PG_PASSWORD="***"
+_DEFAULT_DB_PG_PASSWORD = "***"
 _DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
 
 # ── port mode configuration ─────────────────────────────────────────────────
@@ -82,11 +82,55 @@ _DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
 #   "all"     – listen on all 65535 TCP ports
 
 _TOP_50_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 111, 135, 139,
-    143, 443, 445, 993, 995, 1433, 1521, 2049, 3306, 3389,
-    5432, 5900, 5901, 6379, 8080, 8443, 9200, 11211, 27017, 5672,
-    15672, 4369, 2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302,
-    11303, 11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311,
+    21,
+    22,
+    23,
+    25,
+    53,
+    80,
+    110,
+    111,
+    135,
+    139,
+    143,
+    443,
+    445,
+    993,
+    995,
+    1433,
+    1521,
+    2049,
+    3306,
+    3389,
+    5432,
+    5900,
+    5901,
+    6379,
+    8080,
+    8443,
+    9200,
+    11211,
+    27017,
+    5672,
+    15672,
+    4369,
+    2181,
+    9090,
+    8888,
+    7001,
+    7002,
+    11300,
+    11301,
+    11302,
+    11303,
+    11304,
+    11305,
+    11306,
+    11307,
+    11308,
+    11309,
+    11310,
+    11311,
     5000,
 ]
 
@@ -105,16 +149,20 @@ _DEFAULT_DEFAULT_KEY = "default_beehive_key"
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
+
 def _find_config_file() -> Path | None:
     """Return the first existing config file, or None if not found anywhere."""
     candidates: list[Path] = []
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
         candidates.append(Path(xdg) / "manyfaced" / "config.toml")
-        candidates.extend([
-            Path.home() / ".config" / "manyfaced" / "config.toml",
-            Path(__file__).resolve().parent.parent / "settings.toml.example",  # in-package fallback
-        ])
+        candidates.extend(
+            [
+                Path.home() / ".config" / "manyfaced" / "config.toml",
+                Path(__file__).resolve().parent.parent
+                / "settings.toml.example",  # in-package fallback
+            ]
+        )
     for c in candidates:
         if c.is_file():
             return c
@@ -124,6 +172,7 @@ def _find_config_file() -> Path | None:
 def _load_toml(path: Path) -> dict:
     """Load a TOML file and return a flat dict of section.key → value."""
     import tomllib
+
     with open(path, "rb") as fh:
         raw = tomllib.load(fh)
     result: dict = {}
@@ -139,6 +188,7 @@ def _env_prefix() -> str:
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
 
 def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: str):
     toml_key = f"{section}.{name}"
@@ -187,6 +237,7 @@ def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: st
 
 # ── Config singleton (lazy) ─────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class Config:
     """Immutable configuration. Created lazily at module-level as the global ``settings``."""
@@ -206,10 +257,12 @@ class Config:
     DB_PG_USER: str
     DB_PG_PASSWORD: str
     AUTHORISEDBEARS: dict[str, str]
-    
+
     # Port mode configuration
     HONEY_PORT_MODE: str  # "single", "top", or "all"
-    HONEY_TOP_PORTS: str  # comma-separated port list (used when mode="top" and user customizes)
+    HONEY_TOP_PORTS: (
+        str  # comma-separated port list (used when mode="top" and user customizes)
+    )
 
     # AI responder configuration
     AI_ENABLED: bool  # enable AI-powered response generation
@@ -217,7 +270,7 @@ class Config:
     AI_MODEL: str  # LLM model name
     AI_MAX_TOKENS: int  # maximum tokens in generated response
     AI_TIMEOUT: float  # request timeout in seconds
-    
+
     # Security
     DEFAULT_KEY: str  # default encryption key for unknown identifiers
 
@@ -234,29 +287,71 @@ class Config:
         prefix = _env_prefix()
 
         return Config(
-            HONEYPORT=int(_resolve("honeyport", _DEFAULT_HONEYPORT, "honeypot", toml, prefix)),
-            HONEYFOLDER=str(_resolve("honeyfolder", _DEFAULT_HONEYFOLDER, "honeypot", toml, prefix)),
+            HONEYPORT=int(
+                _resolve("honeyport", _DEFAULT_HONEYPORT, "honeypot", toml, prefix)
+            ),
+            HONEYFOLDER=str(
+                _resolve("honeyfolder", _DEFAULT_HONEYFOLDER, "honeypot", toml, prefix)
+            ),
             HIVEHOST=str(_resolve("hivehost", _DEFAULT_HIVEHOST, "hive", toml, prefix)),
             HIVEPORT=int(_resolve("hiveport", _DEFAULT_HIVEPORT, "hive", toml, prefix)),
-            HIVELOGIN=str(_resolve("hivelogin", _DEFAULT_HIVELOGIN, "hive", toml, prefix)),
+            HIVELOGIN=str(
+                _resolve("hivelogin", _DEFAULT_HIVELOGIN, "hive", toml, prefix)
+            ),
             HIVEPASS=str(_resolve("hivepass", _DEFAULT_HIVEPASS, "hive", toml, prefix)),
-            DB_BACKEND=str(_resolve("backend", _DEFAULT_DB_BACKEND, "database", toml, prefix)),
-            DB_BACKENDS=tuple(_resolve("backends", _DEFAULT_DB_BACKENDS, "database", toml, prefix)),
+            DB_BACKEND=str(
+                _resolve("backend", _DEFAULT_DB_BACKEND, "database", toml, prefix)
+            ),
+            DB_BACKENDS=tuple(
+                _resolve("backends", _DEFAULT_DB_BACKENDS, "database", toml, prefix)
+            ),
             DB_PATH=str(_resolve("path", _DEFAULT_DB_PATH, "database", toml, prefix)),
-            DB_PG_HOST=str(_resolve("pg_host", _DEFAULT_DB_PG_HOST, "database", toml, prefix)),
-            DB_PG_PORT=int(_resolve("pg_port", _DEFAULT_DB_PG_PORT, "database", toml, prefix)),
-            DB_PG_DB=str(_resolve("pg_db", _DEFAULT_DB_PG_DB, "database", toml, prefix)),
-            DB_PG_USER=str(_resolve("pg_user", _DEFAULT_DB_PG_USER, "database", toml, prefix)),
-            DB_PG_PASSWORD=str(_resolve("pg_password", _DEFAULT_DB_PG_PASSWORD, "database", toml, prefix)),
-            AUTHORISEDBEARS=dict(_resolve("authorised_bears", _DEFAULT_AUTHORISEDBEARS_DEFAULTS, "security", toml, prefix)),
-            HONEY_PORT_MODE=str(_resolve("port_mode", "single", "honeypot", toml, prefix)),
+            DB_PG_HOST=str(
+                _resolve("pg_host", _DEFAULT_DB_PG_HOST, "database", toml, prefix)
+            ),
+            DB_PG_PORT=int(
+                _resolve("pg_port", _DEFAULT_DB_PG_PORT, "database", toml, prefix)
+            ),
+            DB_PG_DB=str(
+                _resolve("pg_db", _DEFAULT_DB_PG_DB, "database", toml, prefix)
+            ),
+            DB_PG_USER=str(
+                _resolve("pg_user", _DEFAULT_DB_PG_USER, "database", toml, prefix)
+            ),
+            DB_PG_PASSWORD=str(
+                _resolve(
+                    "pg_password", _DEFAULT_DB_PG_PASSWORD, "database", toml, prefix
+                )
+            ),
+            AUTHORISEDBEARS=dict(
+                _resolve(
+                    "authorised_bears",
+                    _DEFAULT_AUTHORISEDBEARS_DEFAULTS,
+                    "security",
+                    toml,
+                    prefix,
+                )
+            ),
+            HONEY_PORT_MODE=str(
+                _resolve("port_mode", "single", "honeypot", toml, prefix)
+            ),
             HONEY_TOP_PORTS=str(_resolve("top_ports", "", "honeypot", toml, prefix)),
-            AI_ENABLED=bool(_resolve("ai_enabled", _DEFAULT_AI_ENABLED, "ai", toml, prefix)),
-            AI_ENDPOINT=str(_resolve("ai_endpoint", _DEFAULT_AI_ENDPOINT, "ai", toml, prefix)),
+            AI_ENABLED=bool(
+                _resolve("ai_enabled", _DEFAULT_AI_ENABLED, "ai", toml, prefix)
+            ),
+            AI_ENDPOINT=str(
+                _resolve("ai_endpoint", _DEFAULT_AI_ENDPOINT, "ai", toml, prefix)
+            ),
             AI_MODEL=str(_resolve("ai_model", _DEFAULT_AI_MODEL, "ai", toml, prefix)),
-            AI_MAX_TOKENS=int(_resolve("ai_max_tokens", _DEFAULT_AI_MAX_TOKENS, "ai", toml, prefix)),
-            AI_TIMEOUT=float(_resolve("ai_timeout", _DEFAULT_AI_TIMEOUT, "ai", toml, prefix)),
-            DEFAULT_KEY=str(_resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)),
+            AI_MAX_TOKENS=int(
+                _resolve("ai_max_tokens", _DEFAULT_AI_MAX_TOKENS, "ai", toml, prefix)
+            ),
+            AI_TIMEOUT=float(
+                _resolve("ai_timeout", _DEFAULT_AI_TIMEOUT, "ai", toml, prefix)
+            ),
+            DEFAULT_KEY=str(
+                _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
+            ),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -295,8 +390,8 @@ class Config:
             '  authorised_bears = ""',
             "",
             "[ai]",
-            '  # AI responder for interactive bot engagement',
-            f'  enabled = {self.AI_ENABLED}',
+            "  # AI responder for interactive bot engagement",
+            f"  enabled = {self.AI_ENABLED}",
             f'  endpoint = "{self.AI_ENDPOINT}"',
             f'  model = "{self.AI_MODEL}"',
             f"  max_tokens = {self.AI_MAX_TOKENS}",
@@ -308,17 +403,23 @@ class Config:
 
     def resolve_ports(self) -> list[int]:
         """Return the list of ports to listen on based on the port mode.
-        
+
         Returns:
             List of port numbers to bind to.
         """
         mode = self.HONEY_PORT_MODE.lower()
-        
+
         if mode == "top":
             # Use custom top ports if provided, otherwise use defaults
             if self.HONEY_TOP_PORTS:
                 try:
-                    return sorted({int(p.strip()) for p in self.HONEY_TOP_PORTS.split(",") if p.strip()})
+                    return sorted(
+                        {
+                            int(p.strip())
+                            for p in self.HONEY_TOP_PORTS.split(",")
+                            if p.strip()
+                        }
+                    )
                 except ValueError:
                     pass
             return list(_TOP_50_PORTS)

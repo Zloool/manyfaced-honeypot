@@ -7,12 +7,12 @@ vulnerable-looking responses that encourage further probing.
 
 Usage:
     from manyfaced.common.ai_responder import AIResponder
-    
+
     responder = AIResponder(
         endpoint="http://127.0.0.1:8080/v1",
         model="llama-3.1-8b-instruct",
     )
-    
+
     if responder.is_available():
         response_bytes, detected = responder.generate_response(
             request_path="/wp-login.php",
@@ -138,7 +138,9 @@ class AIResponder:
             from llama_cpp import Llama
 
             logger.info(
-                "Initializing AI responder with model %s at %s", self.model, self.endpoint
+                "Initializing AI responder with model %s at %s",
+                self.model,
+                self.endpoint,
             )
             # Note: We use the OpenAI-compatible endpoint, not local GGUF loading
             # This allows flexibility – the endpoint could be llama.cpp server,
@@ -180,7 +182,10 @@ class AIResponder:
         """
         path_lower = request_path.lower()
 
-        if any(kw in path_lower for kw in ["wp-login", "wp-admin", "wp-content", "wordpress"]):
+        if any(
+            kw in path_lower
+            for kw in ["wp-login", "wp-admin", "wp-content", "wordpress"]
+        ):
             return "wordpress"
         if any(kw in path_lower for kw in ["phpmyadmin", "pma", "phpmy"]):
             return "phpmyadmin"

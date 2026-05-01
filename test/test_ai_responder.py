@@ -121,7 +121,9 @@ class TestAIResponderClassification:
             responder = AIResponder()
             assert responder._classify_request("/wp-login.php", "") == "wordpress"
             assert responder._classify_request("/wp-admin/", "") == "wordpress"
-            assert responder._classify_request("/wp-content/uploads/", "") == "wordpress"
+            assert (
+                responder._classify_request("/wp-content/uploads/", "") == "wordpress"
+            )
             assert responder._classify_request("/wordpress/", "") == "wordpress"
 
     def test_classify_phpmyadmin(self):
@@ -272,7 +274,9 @@ class TestAIResponderHTTPResponse:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="HTTPHandler AI integration tests need updating for current code structure")
+@pytest.mark.skip(
+    reason="HTTPHandler AI integration tests need updating for current code structure"
+)
 class TestHTTPHandlerAIIntegration:
     """Tests for HTTPHandler AI responder integration."""
 
@@ -388,7 +392,9 @@ class TestHTTPHandlerAIIntegration:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="get_honey_http function does not exist in manyfaced.client.client")
+@pytest.mark.skip(
+    reason="get_honey_http function does not exist in manyfaced.client.client"
+)
 class TestGetHoneyHttpAI:
     """Tests for get_honey_http with AI responder."""
 
@@ -408,7 +414,9 @@ class TestGetHoneyHttpAI:
         from manyfaced.common.httphandler import HTTPRequest
 
         request = HTTPRequest("GET / HTTP/1.1\r\n\r\n")
-        response, detected = get_honey_http(request, "1.2.3.4", False, ai_responder=None)
+        response, detected = get_honey_http(
+            request, "1.2.3.4", False, ai_responder=None
+        )
         assert response is not None
         assert isinstance(detected, int)
 
@@ -437,7 +445,9 @@ class TestGetHoneyHttpAI:
         responder._initialized = True
         responder._available = True
 
-        with patch.object(responder, "_call_llm", return_value="<html>AI response</html>"):
+        with patch.object(
+            responder, "_call_llm", return_value="<html>AI response</html>"
+        ):
             request = HTTPRequest("GET /wp-login.php HTTP/1.1\r\n\r\n")
             response, detected = get_honey_http(
                 request, "1.2.3.4", False, ai_responder=responder

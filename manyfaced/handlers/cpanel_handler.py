@@ -23,14 +23,25 @@ class CPanelHandler(HTTPHandlerBase):
 
     domain = "cpanel"
     PATH_PATTERNS = [
-        "/cpanel", "/cpanel/", "/cpanel/hotlinkprotect",
-        "/whm", "/whm/", "/whm/login",
-        "/webmail", "/webmail/", "/webmail/login",
-        "/mail", "/mail/",
-        "/webdisk", "/webdisk/",
-        "/cpsess", "/cpsess",
-        "/setup1", "/setup1/",
-        "/~", "/~",
+        "/cpanel",
+        "/cpanel/",
+        "/cpanel/hotlinkprotect",
+        "/whm",
+        "/whm/",
+        "/whm/login",
+        "/webmail",
+        "/webmail/",
+        "/webmail/login",
+        "/mail",
+        "/mail/",
+        "/webdisk",
+        "/webdisk/",
+        "/cpsess",
+        "/cpsess",
+        "/setup1",
+        "/setup1/",
+        "/~",
+        "/~",
     ]
     DETECTED_ID = 1
 
@@ -63,7 +74,9 @@ class CPanelHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and ("login" in path_lower or "cpsess" in path_lower):
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 response = self._login_failed_response()
                 return response, detected
@@ -257,7 +270,9 @@ class CPanelHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
 

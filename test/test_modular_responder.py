@@ -220,19 +220,23 @@ class TestBotProfilePersonalization:
         from manyfaced.common.responder import BotProfile
 
         profile = BotProfile(bot_ip="1.2.3.4")
-        profile.record_request({
-            "path": "/admin/",
-            "method": "GET",
-            "headers": {},
-            "raw": "GET /admin/ HTTP/1.1\r\n\r\n",
-            "timestamp": "2026-04-21T10:00:00",
-        })
-        profile.record_response({
-            "status_code": 200,
-            "body": "<html>",
-            "content_type": "text/html",
-            "timestamp": "2026-04-21T10:00:01",
-        })
+        profile.record_request(
+            {
+                "path": "/admin/",
+                "method": "GET",
+                "headers": {},
+                "raw": "GET /admin/ HTTP/1.1\r\n\r\n",
+                "timestamp": "2026-04-21T10:00:00",
+            }
+        )
+        profile.record_response(
+            {
+                "status_code": 200,
+                "body": "<html>",
+                "content_type": "text/html",
+                "timestamp": "2026-04-21T10:00:01",
+            }
+        )
 
         context = profile.get_personalization_context()
 
@@ -257,7 +261,10 @@ class TestBotProfileUpdateKnowledge:
         assert profile.personalized_knowledge["known_services"] == ["phpmyadmin"]
 
         profile.update_knowledge({"known_services": ["wordpress"]})
-        assert profile.personalized_knowledge["known_services"] == ["phpmyadmin", "wordpress"]
+        assert profile.personalized_knowledge["known_services"] == [
+            "phpmyadmin",
+            "wordpress",
+        ]
 
 
 # ---------------------------------------------------------------------------

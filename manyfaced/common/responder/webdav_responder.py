@@ -39,9 +39,15 @@ class WebDAVResponder(ResponderBase):
 
     # Path patterns that this responder handles
     PATH_PATTERNS = [
-        "/webdav", "/webdav/", "/webdav/index.php",
-        "/dav", "/dav/", "/dav/index.php",
-        "/files", "/files/", "/files/index.php",
+        "/webdav",
+        "/webdav/",
+        "/webdav/index.php",
+        "/dav",
+        "/dav/",
+        "/dav/index.php",
+        "/files",
+        "/files/",
+        "/files/index.php",
     ]
 
     def __init__(self, ai_responder=None, enabled: bool = True):
@@ -191,46 +197,64 @@ Return ONLY the response body (not HTTP headers). Keep it concise.
         files = [
             {"name": "index.php", "size": 1024, "modified": "2026-04-15T10:00:00Z"},
             {"name": "config.php", "size": 512, "modified": "2026-04-15T10:00:00Z"},
-            {"name": "uploads/", "size": 0, "modified": "2026-04-15T10:00:00Z", "is_dir": True},
-            {"name": "backup/", "size": 0, "modified": "2026-04-15T10:00:00Z", "is_dir": True},
+            {
+                "name": "uploads/",
+                "size": 0,
+                "modified": "2026-04-15T10:00:00Z",
+                "is_dir": True,
+            },
+            {
+                "name": "backup/",
+                "size": 0,
+                "modified": "2026-04-15T10:00:00Z",
+                "is_dir": True,
+            },
             {"name": ".htaccess", "size": 256, "modified": "2026-04-15T10:00:00Z"},
-            {"name": "wp-config.php.bak", "size": 2048, "modified": "2026-04-15T10:00:00Z"},
+            {
+                "name": "wp-config.php.bak",
+                "size": 2048,
+                "modified": "2026-04-15T10:00:00Z",
+            },
         ]
 
         xml = '<?xml version="1.0" encoding="utf-8"?>\n'
         xml += '<D:multistatus xmlns:D="DAV:">\n'
-        xml += '  <D:response>\n'
-        xml += f'    <D:href>{path}</D:href>\n'
-        xml += '    <D:propstat>\n'
-        xml += '      <D:prop>\n'
-        xml += '        <D:resourcetype><D:collection/></D:resourcetype>\n'
-        xml += '        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>\n'
-        xml += '        <D:getlastmodified>Wed, 15 Apr 2026 10:00:00 GMT</D:getlastmodified>\n'
+        xml += "  <D:response>\n"
+        xml += f"    <D:href>{path}</D:href>\n"
+        xml += "    <D:propstat>\n"
+        xml += "      <D:prop>\n"
+        xml += "        <D:resourcetype><D:collection/></D:resourcetype>\n"
+        xml += "        <D:getcontenttype>httpd/unix-directory</D:getcontenttype>\n"
+        xml += "        <D:getlastmodified>Wed, 15 Apr 2026 10:00:00 GMT</D:getlastmodified>\n"
         xml += '        <D:getetag>"4d67-5f0a-6487-42c0"</D:getetag>\n'
-        xml += '      </D:prop>\n'
-        xml += '      <D:status>HTTP/1.1 200 OK</D:status>\n'
-        xml += '    </D:propstat>\n'
-        xml += '  </D:response>\n'
+        xml += "      </D:prop>\n"
+        xml += "      <D:status>HTTP/1.1 200 OK</D:status>\n"
+        xml += "    </D:propstat>\n"
+        xml += "  </D:response>\n"
 
         for file in files:
-            xml += '  <D:response>\n'
-            xml += f'    <D:href>{path}{file["name"]}</D:href>\n'
-            xml += '    <D:propstat>\n'
-            xml += '      <D:prop>\n'
+            xml += "  <D:response>\n"
+            xml += f"    <D:href>{path}{file['name']}</D:href>\n"
+            xml += "    <D:propstat>\n"
+            xml += "      <D:prop>\n"
             if file.get("is_dir"):
-                xml += '        <D:resourcetype><D:collection/></D:resourcetype>\n'
+                xml += "        <D:resourcetype><D:collection/></D:resourcetype>\n"
             else:
-                xml += f'        <D:getcontentlength>{file["size"]}</D:getcontentlength>\n'
-                xml += '        <D:getcontenttype>application/octet-stream</D:getcontenttype>\n'
-            xml += f'        <D:getlastmodified>{file["modified"]}</D:getlastmodified>\n'
+                xml += (
+                    f"        <D:getcontentlength>{file['size']}</D:getcontentlength>\n"
+                )
+                xml += "        <D:getcontenttype>application/octet-stream</D:getcontenttype>\n"
+            xml += (
+                f"        <D:getlastmodified>{file['modified']}</D:getlastmodified>\n"
+            )
             xml += f'        <D:getetag>"{hash(file["name"])}"</D:getetag>\n'
-            xml += '      </D:prop>\n'
-            xml += '      <D:status>HTTP/1.1 200 OK</D:status>\n'
-            xml += '    </D:propstat>\n'
-            xml += '  </D:response>\n'
+            xml += "      </D:prop>\n"
+            xml += "      <D:status>HTTP/1.1 200 OK</D:status>\n"
+            xml += "    </D:propstat>\n"
+            xml += "  </D:response>\n"
 
-        xml += '</D:multistatus>\n'
-        xml += '<!-- Apache/2.4.7 (Ubuntu) mod_dav/1.0.3 -->'
+        xml += "</D:multistatus>\n"
+        xml += "<!-- Apache/2.4.7 (Ubuntu) mod_dav/1.0.3 -->"
         return xml
 
     def _mkcol_response(self, path: str) -> str:
@@ -267,7 +291,9 @@ Return ONLY the response body (not HTTP headers). Keep it concise.
     </D:propstat>
   </D:response>
 </D:multistatus>
-<!-- Apache/2.4.7 (Ubuntu) mod_dav/1.0.3 | File uploaded successfully -->""".format(path=path)
+<!-- Apache/2.4.7 (Ubuntu) mod_dav/1.0.3 | File uploaded successfully -->""".format(
+            path=path
+        )
 
     def _delete_response(self, path: str) -> str:
         """Generate a DELETE response."""

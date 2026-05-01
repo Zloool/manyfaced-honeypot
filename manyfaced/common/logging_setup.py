@@ -25,11 +25,16 @@ from typing import Any
 
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FILE = os.environ.get(
-    "HONEY_LOG_FILE", os.path.join(os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log")
+    "HONEY_LOG_FILE",
+    os.path.join(
+        os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
+    ),
 )
 DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 DEFAULT_LOG_BACKUP_COUNT = 5
-DEFAULT_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(processName)s | %(message)s"
+DEFAULT_LOG_FORMAT = (
+    "%(asctime)s | %(levelname)-8s | %(name)s | %(processName)s | %(message)s"
+)
 DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # ---------------------------------------------------------------------------
@@ -41,10 +46,10 @@ class ColouredFormatter(logging.Formatter):
     """Stderr formatter with ANSI colour codes for readability."""
 
     _COLOURS = {
-        "DEBUG": "\033[36m",    # cyan
-        "INFO": "\033[32m",     # green
+        "DEBUG": "\033[36m",  # cyan
+        "INFO": "\033[32m",  # green
         "WARNING": "\033[33m",  # yellow
-        "ERROR": "\033[31m",    # red
+        "ERROR": "\033[31m",  # red
         "CRITICAL": "\033[1;31m",  # bold red
     }
     _RESET = "\033[0m"
@@ -68,7 +73,9 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         extra: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "process": record.process,
