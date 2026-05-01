@@ -29,7 +29,7 @@ For development you can also run without installing:
 pip install -r requirements.txt
 
 # 2. Generate config example
-cp manyfaced/common/settings.toml.example manyfaced/common/config.toml
+cp manyfaced/settings.toml.example manyfaced/common/config.toml
 # Edit config.toml with your keys and credentials
 
 # 3. Run the client only (impersonates web services)
@@ -66,7 +66,7 @@ python3 mfh.py -c 80 -s 666 -u
               │                │
               ▼                ▼
      ┌────────────────┐  ┌──────────────┐
-     │ Faces (fake    │  │ BearStorage  │
+     │ Handlers (fake │  │ BearStorage  │
      │  web services) │  │ DB insert    │
      └────────────────┘  └──────────────┘
 ```
@@ -75,7 +75,7 @@ python3 mfh.py -c 80 -s 666 -u
 
 The honeypot runs two independent processes:
 
-- **CLIENT** (`-c PORT`): Listens on a port and impersonates well-known vulnerable services. When a bot requests paths like `/wp-login.php` or `/phpmyadmin`, the client responds with fake but realistic content from `manyfaced/client/responses/`. After serving the fake response, the client **reports back** the bot's IP, raw request, and metadata to the SERVER via an encrypted TCP connection.
+- **CLIENT** (`-c PORT`): Listens on a port and impersonates well-known vulnerable services. When a bot requests paths like `/wp-login.php` or `/phpmyadmin`, the client responds with fake but realistic content from specialized handlers (WordPress, phpMyAdmin, WebDAV, etc.). After serving the fake response, the client **reports back** the bot's IP, raw request, and metadata to the SERVER via an encrypted TCP connection.
 
 - **SERVER** (`-s PORT`): Listens on a separate port for encrypted bot reports from clients (or from external clients). It decrypts the report using a shared AES key, parses the data, and stores it in the database via `Process` (spawns a background subprocess for the insertion).
 
@@ -89,7 +89,7 @@ Bot → Client (fake HTTP response)
      → Server decrypts → parses JSON → saves to SQLite/PostgreSQL
 
 Client internal:
-  Bot request → look up path in faces/ → return fake page
+  Bot request → route to handler → generate response
   Client → send_report() → encrypted TCP to SERVER
 ```
 
@@ -225,12 +225,16 @@ All settings can be overridden via environment variables. The `HONEY_` prefix ma
 
 ### Backward compatibility
 
-For backward compatibility, `manyfaced/common/settings.py` still works as a thin wrapper:
+For backward compatibility, you can still import from `manyfaced.common.config`:
 
 ```python
-from manyfaced.common.settings import HONEYPORT, HIVELOGIN
+from manyfaced.common.config import settings
+HONEYPORT = settings.HONEYPORT
+HIVELOGIN = settings.HIVELOGIN
 # Works exactly as before, delegates to Config behind the scenes
 ```
+
+Old code that did `from manyfaced.common.settings import HONEYPORT` is no longer supported — use `from manyfaced.common.config import settings` instead.
 
 ## Database
 
@@ -263,21 +267,24 @@ CREATE TABLE honeypot_bears (
 
 Set `HONEY_DB_BACKEND=postgresql` and configure the `HONEY_PG_*` environment variables.
 
-## Faces (Impersonated Services)
+## Handlers (Impersonated Services)
 
-The client impersonates 70+ different web service endpoints. When a bot requests a known path, the client serves a fake but realistic response from `manyfaced/client/responses/`:
+The client impersonates 7+ different web service endpoints. When a bot requests a known path, the client serves a fake but realistic response from the appropriate handler:
 
-| Fake Service | Response Files |
-|-------------|----------------|
-| WordPress login | `wplogin.html` |
-| WordPress debug log | `wp-content.html` |
-| WordPress config | `wpconfig.php` |
-| phpMyAdmin | `phpadmin.php`, `phpadminsetup.php` |
-| WebDAV | `webdav.xml`, `webdav.html` |
-| Bitrix admin | `bitrix.html` |
-| Generic/unknown | `zero` (77 bytes) |
+| Handler | Domain | Key Paths |
+|---------|--------|-----------|
+| WordPressHandler | wordpress | `/wp-login.php`, `/wp-admin/`, `/xmlrpc.php`, `/wp-content/` |
+| PhpMyAdminHandler | phpmyadmin | `/phpmyadmin/`, `/pma/` |
+| JenkinsHandler | jenkins | `/jenkins/`, `/manage/` |
+| TomcatHandler | tomcat | `/manager/`, `/host-manager/`, `/server-status/` |
+| DrupalHandler | drupal | `/user/login`, `/admin/` |
+| CPanelHandler | cpanel | `/cpanel/`, `/webmail/` |
+| WebDAVHandler | webdav | `/webdav/`, `/dav/` |
+| BitrixHandler | bitrix | `/bitrix/` |
+| ConfigDisclosureHandler | config_disclosure | `/.env`, `/wp-config.php.bak`, `/config.json` |
+| GenericHandler | generic | Fallback for unknown paths |
 
-The complete list of detected paths is in `manyfaced/client/client.py` (the `faces` dict at the top of the file).
+Handler implementations are in `manyfaced/handlers/`. Each handler defines `PATH_PATTERNS` and implements `matches_path()` and `generate_response()`.
 
 ## Project Structure
 
@@ -289,10 +296,7 @@ manyfaced-honeypot/
 │   ├── __init__.py                 # Package init
 │   ├── common/
 │   │   ├── config.py               # Modern Config (TOML + env + defaults)
-│   │   ├── settings.py             # Backward-compat shim (delegates to Config)
-│   │   ├── settings.toml.example   # Template config (in-package copy)
 │   │   ├── arguments.py            # CLI argument parser
-│   │   ├── handler.py              # DEPRECATED (use handlers/base_handler.py)
 │   │   ├── httphandler.py          # HTTPRequest wrapper class
 │   │   ├── myenc.py                # AESCipher (AES-256-CBC encrypt/decrypt)
 │   │   ├── bearstorage.py          # BearStorage data container
@@ -302,11 +306,12 @@ manyfaced-honeypot/
 │   ├── server/
 │   │   └── server.py               # ServerHandler + TCP listener
 │   ├── client/
-│   │   ├── client.py               # Face routing, responses, create_server()
-│   │   └── responses/              # Fake web service content (10 files)
+│   │   └── client.py               # create_server(), send_report()
 │   ├── handlers/
-│   │   ├── base_handler.py         # BaseHandler ABC (parse, decrypt, route)
-│   │   └── http_handler.py         # HTTPHandler (CLIENT-side request processing)
+│   │   ├── base_handler.py         # BaseHandler ABC, HTTPHandlerBase, BotProfile
+│   │   ├── http_handler.py         # HTTPHandler (CLIENT-side request processing)
+│   │   ├── registry.py             # HandlerRegistry (routes requests)
+│   │   └── *.py                    # Service handlers (WordPress, phpMyAdmin, etc.)
 │   └── db/
 │       ├── dbconnect.py            # BearRequests dataclass + Insert()
 │       ├── storage.py              # SQLiteStorage, PostgreSQLStorage, get_storage()
@@ -315,7 +320,8 @@ manyfaced-honeypot/
 ├── test/
 │   ├── conftest.py                 # Test utilities
 │   ├── test_integration.py         # Full pipeline integration tests
-│   └── test_client.py              # Client unit tests
+│   ├── test_client.py              # Client unit tests
+│   └── test_*.py                   # Other test modules
 ├── requirements.txt                # Legacy manual deps
 ├── pytest.ini                      # pytest config
 └── .gitignore
@@ -370,8 +376,6 @@ pip install -e ".[dev]"   # runtime + dev
 
 ## Known Issues & TODOs
 
-- `manyfaced/common/handler.py` is DEPRECATED but still present
 - `tracert` field in BearStorage is marked TODO (never implemented)
-- `settings.py` uses `__getattr__` magic for AUTHORISEDBEARS (test note: must set via sys.modules)
 - `utils.py:dump_file()` uses unsafe pickle (see [DEVELOPER.md](./DEVELOPER.md#security))
 - ClickHouse support replaced with SQLite/PostgreSQL but ClickHouse SQL file still in repo

@@ -33,8 +33,7 @@ include = ["manyfaced*"]
 
 [tool.setuptools.package-data]
 manyfaced = [
-    "client/responses/*",
-    "common/settings.toml.example",
+    "settings.toml.example",
     "*.py",
 ]
 
