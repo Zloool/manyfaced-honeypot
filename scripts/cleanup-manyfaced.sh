@@ -30,10 +30,10 @@ echo
 
 # 2. Clean up lockfile if stale
 echo "[2/3] Cleaning up stale lockfile..."
-if [ -f /run/manyfaced/lockfile ]; then
-    LOCK_PID=$(cat /run/manyfaced/lockfile 2>/dev/null || echo "")
+if [ -f /opt/manyfaced/bots/lockfile ]; then
+    LOCK_PID=$(cat /opt/manyfaced/bots/lockfile 2>/dev/null || echo "")
     if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-        rm -f /run/manyfaced/lockfile
+        rm -f /opt/manyfaced/bots/lockfile
         echo "  Removed stale lockfile (PID $LOCK_PID was not running)"
     else
         echo "  Lockfile exists and PID $LOCK_PID is still running — keeping it"
