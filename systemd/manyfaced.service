@@ -6,21 +6,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/manyfaced --server 8080 --client 8081
+User=honeypot
+Group=honeypot
+WorkingDirectory=/opt/manyfaced
+EnvironmentFile=/opt/manyfaced/honeypot.env
+ExecStart=/opt/manyfaced/venv/bin/python3 -m manyfaced.mfh
 Restart=on-failure
 RestartSec=10
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/manyfaced /var/log/manyfaced
-
-# Environment
-Environment=HONEY_DB_PATH=/var/lib/manyfaced/bots/honeypot.sqlite
-Environment=HONEY_LOG_FILE=/var/log/manyfaced/honeypot.log
-Environment=PYTHONUNBUFFERED=1
+ReadWritePaths=/opt/manyfaced/bots /home/honeypot/.config
 
 # Logging
 StandardOutput=journal

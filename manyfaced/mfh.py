@@ -6,9 +6,12 @@ import os
 import signal
 import sys
 import time
+import logging
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def run() -> None:
@@ -20,27 +23,48 @@ def run() -> None:
 
     # Auto-generate XDG config file if none exists
     xdg_config = os.path.join(
-        os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")),
+        os.environ.get(
+            "XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")
+        ),
         "manyfaced",
         "config.toml",
     )
     if not os.path.isfile(xdg_config):
-        example = os.path.join(os.path.dirname(os.path.abspath(__file__)), "common", "config.toml.example")
+        example = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "common", "config.toml.example"
+        )
         if os.path.isfile(example):
             import shutil
+
             os.makedirs(os.path.dirname(xdg_config), exist_ok=True)
             shutil.copy2(example, xdg_config)
-            print(f"[manyfaced] Generated config at {xdg_config} – edit it to customize.", file=sys.stderr)
+            print(
+                f"[manyfaced] Generated config at {xdg_config} – edit it to customize.",
+                file=sys.stderr,
+            )
         else:
             new_cfg = Config.load()
             new_cfg.generate_config_file(xdg_config)
-            print(f"[manyfaced] Generated config at {xdg_config} – edit it to customize.", file=sys.stderr)
+            print(
+                f"[manyfaced] Generated config at {xdg_config} – edit it to customize.",
+                file=sys.stderr,
+            )
 
     from manyfaced.common.arguments import parse
     from manyfaced.client import client
     from manyfaced.server import server
 
     args = parse()
+
+    # Auto-detect: if neither -c nor -s specified, start both based on config
+    if args.client is None and args.server is None:
+        args.client = int(os.environ.get("HONEY_PORT", 80))
+        args.server = int(os.environ.get("HONEY_HIVEPORT", 8080))
+        logger.info(
+            "No CLI args specified — starting client on port %d, server on port %d",
+            args.client,
+            args.server,
+        )
 
     # --generate-config: create config file and exit
     if args.generate_config:
@@ -51,7 +75,11 @@ def run() -> None:
 
     update_event = Event()
 
-    procs: dict[str, Process | None] = {"client_proc": None, "server_proc": None, "terminate_proc": None}
+    procs: dict[str, Process | None] = {
+        "client_proc": None,
+        "server_proc": None,
+        "terminate_proc": None,
+    }
 
     def _terminate(proc: Process | None) -> None:
         if proc is not None and proc.is_alive():
@@ -77,7 +105,9 @@ def run() -> None:
     if args.updater:
         from manyfaced.common.update import pull, trigger
 
-        procs["terminate_proc"] = Process(args=(update_event,), name="trigger", target=trigger)
+        procs["terminate_proc"] = Process(
+            args=(update_event,), name="trigger", target=trigger
+        )
         procs["terminate_proc"].start()
         procs["terminate_proc"].join()
         pull("origin", "master")
