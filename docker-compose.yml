@@ -6,14 +6,22 @@ services:
     container_name: manyfaced-honeypot
     restart: unless-stopped
     ports:
-      - "8080:8080"  # Server honeypot (receives bot connections)
-      - "8081:8081"  # Client honeypot (spoofs bot behaviour)
+      - "${HONEY_PORT:-8080}:8080"  # Client honeypot (spoofs bot behaviour)
+      - "${HIVE_PORT:-8888}:8888"  # Server honeypot (receives bot reports)
     volumes:
       - db-data:/var/lib/manyfaced/bots
       - log-data:/var/log/manyfaced
     environment:
+      - HONEY_HONEYPORT=8080
+      - HONEY_PORT_MODE=top
+      - HONEY_HIVEHOST=127.0.0.1
+      - HONEY_HIVEPORT=8888
+      - HONEY_HIVELOGIN=${HONEY_HIVELOGIN:-manyfaced}
+      - HONEY_HIVEPASS=${HONEY_HIVEPASS:-CHANGE-ME-GENERATE-NEW-KEY}
+      - HONEY_DB_BACKEND=sqlite
       - HONEY_DB_PATH=/var/lib/manyfaced/bots/honeypot.sqlite
       - HONEY_LOG_FILE=/var/log/manyfaced/honeypot.log
+      - HONEY_AUTHORISEDBEARS=""
       - PYTHONUNBUFFERED=1
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 8080)); s.close()"]
