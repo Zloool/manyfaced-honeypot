@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import sys
@@ -14,11 +15,54 @@ from manyfaced.common.config import settings, Config
 
 logger = logging.getLogger(__name__)
 
+# Lockfile path for preventing multiple instances
+LOCKFILE = "/run/manyfaced/lockfile"
+
+_lock_fd = None
+
+
+def _acquire_lockfile():
+    """Acquire an exclusive lockfile to prevent multiple instances.
+
+    Uses fcntl.flock() for atomic lock acquisition. If the lock is already
+    held (another instance running), exits with an error.
+    """
+    global _lock_fd
+    try:
+        os.makedirs(os.path.dirname(LOCKFILE), exist_ok=True)
+        _lock_fd = open(LOCKFILE, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd.write(str(os.getpid()))
+        _lock_fd.flush()
+        logger.info("Lockfile acquired (PID %d)", os.getpid())
+    except (IOError, OSError) as e:
+        if "Text file busy" in str(e) or "Resource temporarily unavailable" in str(e):
+            logger.error("Another instance is already running (lockfile held)")
+            sys.exit(1)
+        raise
+
+
+def _release_lockfile():
+    """Release the lockfile and clean up."""
+    global _lock_fd
+    if _lock_fd is not None:
+        try:
+            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+            _lock_fd.close()
+            os.unlink(LOCKFILE)
+            logger.info("Lockfile released")
+        except (IOError, OSError):
+            pass
+        _lock_fd = None
+
 
 def run() -> None:
     """CLI entry point – called by the ``manyfaced`` console_scripts command."""
     # Initialise system-wide logging early
     setup_logging(level="DEBUG", log_file=settings.LOG_FILE)
+
+    # Acquire lockfile to prevent multiple instances
+    _acquire_lockfile()
 
     # Auto-generate XDG config file if none exists
     xdg_config = os.path.join(
@@ -132,6 +176,12 @@ def run() -> None:
         update_event.set()
         for p in procs.values():
             _terminate(p)
+        # Gracefully shut down the report thread pool
+        from manyfaced.handlers.http_handler import shutdown_report_executor
+
+        shutdown_report_executor()
+        # Release lockfile
+        _release_lockfile()
 
 
 if __name__ == "__main__":

@@ -334,7 +334,7 @@ class TestServerHandlerDirect:
     """Direct server handler tests (no encryption, just process_request)."""
 
     def test_process_request_starts_save_process(self):
-        """process_request should start save process and return True."""
+        """process_request should save data and return True."""
         from manyfaced.server.server import ServerHandler
 
         data = {
@@ -343,6 +343,7 @@ class TestServerHandlerDirect:
             "timestamp": "2026-04-19 03:00:00.000000",
             "parsed_request": {"command": "GET", "path": "/"},
             "is_detected": 1,
+            "HIVELOGIN": "test_bear",
         }
 
         handler = ServerHandler(MagicMock(server=(0, 6676), verbose=False), MagicMock())

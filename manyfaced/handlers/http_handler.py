@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import datetime
 import os
-from multiprocessing import Process
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.config import settings
@@ -33,6 +34,36 @@ logger = get_logger(__name__)
 
 # Singleton registry – initialized on first use
 _registry: HandlerRegistry | None = None
+
+# Thread pool for sending reports (replaces per-request subprocess spawning)
+# Using a thread pool instead of multiprocessing.Process per request prevents
+# process explosion (was spawning 1 process per bot request → 200+ processes)
+_report_executor: ThreadPoolExecutor | None = None
+_report_executor_lock = threading.Lock()
+
+MAX_REPORT_THREADS = 10
+
+
+def _get_report_executor() -> ThreadPoolExecutor:
+    """Get or create the module-level report thread pool (singleton)."""
+    global _report_executor
+    if _report_executor is None or _report_executor._shutdown:
+        with _report_executor_lock:
+            # Double-check after acquiring lock
+            if _report_executor is None or _report_executor._shutdown:
+                _report_executor = ThreadPoolExecutor(
+                    max_workers=MAX_REPORT_THREADS,
+                    thread_name_prefix="report_send",
+                )
+    return _report_executor
+
+
+def shutdown_report_executor():
+    """Gracefully shut down the report thread pool."""
+    global _report_executor
+    if _report_executor is not None and not _report_executor._shutdown:
+        _report_executor.shutdown(wait=True, cancel_futures=True)
+        _report_executor = None
 
 
 def _get_registry() -> HandlerRegistry:
@@ -275,15 +306,14 @@ class HTTPHandler:
         server_port = getattr(self.args, "server", None)
 
         if server_port is not None:
-            logger.debug(
-                "Spawning send_report process for %s (server:%d)", bot_ip, server_port
+            # Use thread pool instead of spawning a subprocess per request.
+            # This prevents process explosion: the old code spawned 1 Process
+            # per bot request (200+ processes logged), causing file descriptor
+            # exhaustion and crashes. ThreadPoolExecutor reuses threads.
+            executor = _get_report_executor()
+            executor.submit(
+                send_report, bs, bot_ip, settings.HIVEPASS, server_host, server_port
             )
-            Process(
-                args=(bs, bot_ip, settings.HIVEPASS, server_host, server_port),
-                name="send_report",
-                target=send_report,
-            ).start()
-            logger.debug("Spawned send_report process for %s", bot_ip)
         else:
             logger.debug("No server port configured, skipping report for %s", bot_ip)
 
