@@ -18,6 +18,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
     """
 
     def __init__(self, request_text):
+        # Normalize input: ensure we work with bytes throughout
         if isinstance(request_text, str):
             # Encode to latin-1 (iso-8859-1) which accepts any byte value
             # Replace characters outside range with replacement char
@@ -25,6 +26,9 @@ class HTTPRequest(BaseHTTPRequestHandler):
                 request_text = request_text.encode("iso-8859-1")
             except UnicodeEncodeError:
                 request_text = request_text.encode("utf-8", errors="replace").decode("latin-1").encode("iso-8859-1")
+        elif isinstance(request_text, bytes):
+            # Already bytes — use as-is (handles the case where raw socket data is passed)
+            request_text = request_text
         self.rfile = BytesIO(request_text)
         self.raw_requestline = self.rfile.readline()
         self.error_code = self.error_message = None

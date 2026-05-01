@@ -42,6 +42,13 @@ def run() -> None:
 
     args = parse()
 
+    # Auto-detect: if neither -c nor -s specified, start both based on config
+    if args.client is None and args.server is None:
+        args.client = settings.HONEYPORT
+        args.server = settings.HIVEPORT
+        logger.info("No CLI args specified — starting client on port %d, server on port %d",
+                     args.client, args.server)
+
     # --generate-config: create config file and exit
     if args.generate_config:
         cfg = Config.load()
