@@ -360,9 +360,7 @@ class Config:
             DEFAULT_KEY=str(
                 _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
             ),
-            LOG_FILE=str(
-                _resolve("file", _DEFAULT_LOG_FILE, "logging", toml, prefix)
-            ),
+            LOG_FILE=str(_resolve("file", _DEFAULT_LOG_FILE, "logging", toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -380,9 +378,9 @@ class Config:
             "[honeypot]",
             f"honeyport = {self.HONEYPORT}",
             f'honeyfolder = "{self.HONEYFOLDER}"',
-            f'# Port listening mode: "single", "top", or "all"',
+            '# Port listening mode: "single", "top", or "all"',
             f'port_mode = "{self.HONEY_PORT_MODE}"',
-            f'# Comma-separated ports for top mode (empty = use defaults)',
+            "# Comma-separated ports for top mode (empty = use defaults)",
             f'top_ports = "{self.HONEY_TOP_PORTS}"',
             "",
             "[hive]",
@@ -413,7 +411,7 @@ class Config:
             f"  timeout = {self.AI_TIMEOUT}",
             "",
             "[logging]",
-            f'  # Path to the JSON log file',
+            "  # Path to the JSON log file",
             f'  file = "{self.LOG_FILE}"',
             "",
         ]
