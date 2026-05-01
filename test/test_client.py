@@ -24,6 +24,9 @@ from manyfaced.handlers import (
     TomcatHandler,
     DrupalHandler,
     CPanelHandler,
+    BitrixHandler,
+    WebDAVHandler,
+    ConfigDisclosureHandler,
     GenericHandler,
     HandlerRegistry,
     BotProfile,
@@ -242,6 +245,293 @@ class TestDrupalHandler(unittest.TestCase):
         self.assertIn(b"Drupal", response)
         self.assertIn(b"edit-name", response)
         self.assertIn(b"edit-pass", response)
+
+
+class TestBitrixHandler(unittest.TestCase):
+    """Test BitrixHandler responses."""
+
+    def setUp(self):
+        self.handler = BitrixHandler()
+
+    def test_matches_path(self):
+        self.assertTrue(self.handler.matches_path("/bitrix/admin/"))
+        self.assertTrue(self.handler.matches_path("/bitrix/"))
+        self.assertTrue(self.handler.matches_path("/bitrix/auth/"))
+        self.assertTrue(self.handler.matches_path("/bitrix/setup/"))
+        self.assertFalse(self.handler.matches_path("/wp-login.php"))
+
+    def test_admin_login_page(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/bitrix/admin/",
+            "GET /bitrix/admin/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Bitrix", response)
+        self.assertIn(b"Administrative Panel", response)
+        self.assertIn(b"USER_LOGIN", response)
+        self.assertIn(b"USER_PASSWORD", response)
+
+    def test_auth_page(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/bitrix/auth/",
+            "GET /bitrix/auth/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Bitrix", response)
+        self.assertIn(b"USER_LOGIN", response)
+
+    def test_setup_page(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/bitrix/setup/",
+            "GET /bitrix/setup/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Bitrix", response)
+        self.assertIn(b"Installation Wizard", response)
+
+ def test_login_post_captures_credentials(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/bitrix/admin/",
+            "POST /bitrix/admin/ HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nUSER_LOGIN=admin&USER_PASSWORD=secret123",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Authorization Error", response)
+        self.assertIn(b"Invalid login or password", response)
+
+
+class TestWebDAVHandler(unittest.TestCase):
+    """Test WebDAVHandler responses."""
+
+    def setUp(self):
+        self.handler = WebDAVHandler()
+
+    def test_matches_path(self):
+        self.assertTrue(self.handler.matches_path("/webdav/"))
+        self.assertTrue(self.handler.matches_path("/webdav/server.php"))
+        self.assertTrue(self.handler.matches_path("/dav/"))
+        self.assertTrue(self.handler.matches_path("/remote.php/"))
+        self.assertFalse(self.handler.matches_path("/wp-login.php"))
+
+    def test_directory_listing(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/webdav/",
+            "GET /webdav/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Index of", response)
+        self.assertIn(b"webdav", response)
+        self.assertIn(b"documents/", response)
+        self.assertIn(b"uploads/", response)
+
+    def test_propfind_response(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/webdav/",
+            "PROPFIND /webdav/ HTTP/1.1\r\nHost: example.com\r\nDepth: 0\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"multistatus", response)
+        self.assertIn(b"DAV:", response)
+        self.assertIn(b"207", response)
+
+    def test_options_response(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/webdav/",
+            "OPTIONS /webdav/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"DAV", response)
+        self.assertIn(b"PROPFIND", response)
+
+    def test_basic_auth_captures_credentials(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        import base64
+        auth = base64.b64encode(b"admin:secretpass").decode()
+        response, _ = self.handler.generate_response(
+            "/webdav/",
+            "GET /webdav/ HTTP/1.1\r\nHost: example.com\r\nAuthorization: Basic " + auth + "\r\n\r\n",
+            "1.2.3.4",
+        )
+        # WebDAV returns directory listing (honeypot doesn't enforce auth)
+        self.assertIn(b"HTTP/1.1 200", response)
+        self.assertIn(b"webdav", response.lower())
+
+    def test_put_upload(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/webdav/upload.php",
+            "PUT /webdav/malicious.php HTTP/1.1\r\nHost: example.com\r\n\r\n<?php system('id'); ?>",
+            "1.2.3.4",
+        )
+        self.assertEqual(response.split()[1], b"201")
+
+    def test_forbidden_sensitive_files(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/webdav/.htaccess",
+            "GET /webdav/.htaccess HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"403", response)
+        self.assertIn(b"Forbidden", response)
+
+
+class TestConfigDisclosureHandler(unittest.TestCase):
+    """Test ConfigDisclosureHandler responses."""
+
+    def setUp(self):
+        self.handler = ConfigDisclosureHandler()
+
+    def test_matches_path(self):
+        self.assertTrue(self.handler.matches_path("/wp-config.php"))
+        self.assertTrue(self.handler.matches_path("/.env"))
+        self.assertTrue(self.handler.matches_path("/.htaccess"))
+        self.assertTrue(self.handler.matches_path("/config.json"))
+        self.assertTrue(self.handler.matches_path("/database.yml"))
+        self.assertTrue(self.handler.matches_path("/settings.py"))
+        self.assertFalse(self.handler.matches_path("/wp-login.php"))
+
+    def test_wp_config_php(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/wp-config.php",
+            "GET /wp-config.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"DB_NAME", response)
+        self.assertIn(b"DB_USER", response)
+        self.assertIn(b"DB_PASSWORD", response)
+        self.assertIn(b"wpdb", response)
+
+    def test_env_file(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.env",
+            "GET /.env HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"DB_CONNECTION", response)
+        self.assertIn(b"DB_PASSWORD", response)
+        self.assertIn(b"AWS_ACCESS_KEY_ID", response)
+
+    def test_htaccess_file(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.htaccess",
+            "GET /.htaccess HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Options -Indexes", response)
+        self.assertIn(b"X-Content-Type-Options", response)
+
+    def test_htpasswd_file(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.htpasswd",
+            "GET /.htpasswd HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"$apr1$", response)
+        self.assertIn(b"admin", response)
+
+    def test_config_json(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/config.json",
+            "GET /config.json HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"database", response)
+        self.assertIn(b"password", response)
+        self.assertIn(b"redis", response.lower())
+
+    def test_database_yml(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/database.yml",
+            "GET /database.yml HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"mysql2", response)
+        self.assertIn(b"password", response)
+
+    def test_settings_py(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/settings.py",
+            "GET /settings.py HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"SECRET_KEY", response)
+        self.assertIn(b"DATABASES", response)
+        self.assertIn(b"password", response)
+
+    def test_backup_sql(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/backup.sql",
+            "GET /backup.sql HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"CREATE TABLE", response)
+        self.assertIn(b"INSERT INTO", response)
+        self.assertIn(b"users", response)
+
+    def test_phpinfo(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/phpinfo.php",
+            "GET /phpinfo.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"phpinfo", response)
+
+    def test_docker_compose(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/docker-compose.yml",
+            "GET /docker-compose.yml HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"mysql", response)
+        self.assertIn(b"redis", response)
+        self.assertIn(b"PASSWORD", response)
+
+    def test_xmlrpc_php(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/xmlrpc.php",
+            "GET /xmlrpc.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"XML-RPC", response)
 
 
 class TestCPanelHandler(unittest.TestCase):
