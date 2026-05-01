@@ -147,6 +147,9 @@ _DEFAULT_AI_MODEL = "llama-3.1-8b-instruct"
 _DEFAULT_AI_MAX_TOKENS = 500
 _DEFAULT_AI_TIMEOUT = 5.0
 _DEFAULT_DEFAULT_KEY = "default_beehive_key"
+_DEFAULT_LOG_FILE = os.path.join(
+    os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
+)
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -157,13 +160,14 @@ def _find_config_file() -> Path | None:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
         candidates.append(Path(xdg) / "manyfaced" / "config.toml")
-        candidates.extend(
-            [
-                Path.home() / ".config" / "manyfaced" / "config.toml",
-                Path(__file__).resolve().parent.parent
-                / "settings.toml.example",  # in-package fallback
-            ]
-        )
+    # Always check fallback paths (XDG is optional)
+    candidates.extend(
+        [
+            Path.home() / ".config" / "manyfaced" / "config.toml",
+            Path(__file__).resolve().parent.parent
+            / "settings.toml.example",  # in-package fallback
+        ]
+    )
     for c in candidates:
         if c.is_file():
             return c
@@ -275,6 +279,9 @@ class Config:
     # Security
     DEFAULT_KEY: str  # default encryption key for unknown identifiers
 
+    # Logging
+    LOG_FILE: str  # path to the JSON log file
+
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
         """Build a Config resolving defaults → TOML → env var."""
@@ -353,6 +360,7 @@ class Config:
             DEFAULT_KEY=str(
                 _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
             ),
+            LOG_FILE=str(_resolve("file", _DEFAULT_LOG_FILE, "logging", toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -370,6 +378,10 @@ class Config:
             "[honeypot]",
             f"honeyport = {self.HONEYPORT}",
             f'honeyfolder = "{self.HONEYFOLDER}"',
+            '# Port listening mode: "single", "top", or "all"',
+            f'port_mode = "{self.HONEY_PORT_MODE}"',
+            "# Comma-separated ports for top mode (empty = use defaults)",
+            f'top_ports = "{self.HONEY_TOP_PORTS}"',
             "",
             "[hive]",
             f'  hivehost = "{self.HIVEHOST}"',
@@ -397,6 +409,10 @@ class Config:
             f'  model = "{self.AI_MODEL}"',
             f"  max_tokens = {self.AI_MAX_TOKENS}",
             f"  timeout = {self.AI_TIMEOUT}",
+            "",
+            "[logging]",
+            "  # Path to the JSON log file",
+            f'  file = "{self.LOG_FILE}"',
             "",
         ]
         path.write_text("\n".join(lines))

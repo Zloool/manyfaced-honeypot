@@ -332,6 +332,7 @@ class TestConfigGenerateConfigFile:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
 
         path = cfg.generate_config_file()
@@ -383,6 +384,7 @@ class TestConfigGenerateConfigFile:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -628,6 +630,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         assert cfg.resolve_ports() == [80]
 
@@ -657,6 +660,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         assert cfg.resolve_ports() == [443]
 
@@ -686,6 +690,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -719,6 +724,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -749,6 +755,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -779,6 +786,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -811,6 +819,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50

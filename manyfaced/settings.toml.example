@@ -5,6 +5,10 @@
 [honeypot]
 honeyport = 80
 honeyfolder = "bots"
+# Port listening mode: "single" (one port), "top" (top 50 scanned ports), "all" (all 65535 ports)
+port_mode = "single"
+# Comma-separated list of ports to listen on when port_mode=top (empty = use default top 50)
+top_ports = ""
 
 [hive]
 hivehost = "127.0.0.1"
@@ -26,3 +30,7 @@ pg_password = "postgres"
 # semicolon-separated bearid:key pairs for authorized bots
 # e.g. "bear1:key1;bear2:key2"
 authorised_bears = ""
+
+[logging]
+# Path to the log file (JSON format). Falls back to ~/.local/share/manyfaced/honeypot.log
+file = "/opt/manyfaced/bots/honeypot.log"
