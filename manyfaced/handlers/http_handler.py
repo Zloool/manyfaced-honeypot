@@ -296,12 +296,10 @@ class HTTPHandler:
             path = "/"
             headers = {}
             user_agent = client or "unknown"
-
-        ssh_version = version or "SSH-2.0"
-        _ParsedSSH.version = ssh_version
+            request_version = version or "SSH-2.0"
 
         self._send_report(
-            bot_ip, banner_versions[0], _ParsedSSH(), SSH_CLIENT, protocol="ssh"
+            bot_ip, version or "SSH-2.0-PUTTY", _ParsedSSH(), SSH_CLIENT, protocol="ssh"
         )
         return banner.encode("utf-8")
 
