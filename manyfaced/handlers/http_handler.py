@@ -16,7 +16,7 @@ import os
 from multiprocessing import Process
 
 from manyfaced.common.logging_setup import get_logger
-from manyfaced.common.settings import HIVELOGIN, HIVEPASS
+from manyfaced.common.config import settings
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.httphandler import HTTPRequest
 from .registry import HandlerRegistry
@@ -265,7 +265,7 @@ class HTTPHandler:
             request_time,
             parsed,
             detected,
-            HIVELOGIN,
+            settings.HIVELOGIN,
         )
         logger.debug("BearStorage created for %s", bot_ip)
 
@@ -278,7 +278,7 @@ class HTTPHandler:
                 "Spawning send_report process for %s (server:%d)", bot_ip, server_port
             )
             Process(
-                args=(bs, bot_ip, HIVEPASS, server_host, server_port),
+                args=(bs, bot_ip, settings.HIVEPASS, server_host, server_port),
                 name="send_report",
                 target=send_report,
             ).start()

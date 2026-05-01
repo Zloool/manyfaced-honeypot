@@ -18,7 +18,7 @@ python3 mfh.py -c 80 -v
 python3 mfh.py -s 666 -v
 ```
 
-The config file auto-generates from `manyfaced/common/settings.toml.example` on first run via `manyfaced --generate-config`.
+The config file auto-generates from `manyfaced/settings.toml.example` on first run via `manyfaced --generate-config`.
 
 ## Codebase Deep Dive
 
@@ -26,11 +26,10 @@ The config file auto-generates from `manyfaced/common/settings.toml.example` on 
 
 ```
 mfh.py (main)
-  ├── settings.py.example -> settings.py (auto-copy if missing)
   ├── args = parse()          # CLI parsing
-  ├── Process(client)        # client.main() in child
-  ├── Process(server)        # server.main() in child
-  └── Process(updater)     # trigger() in child (optional)
+  ├── Process(client)        # HTTPHandler in child
+  ├── Process(server)        # ServerHandler in child
+  └── Process(updater)       # trigger() in child (optional)
 ```
 
 Both client and server run as separate `multiprocessing.Process` instances. They communicate over raw TCP with encrypted payloads.
@@ -39,10 +38,10 @@ Both client and server run as separate `multiprocessing.Process` instances. They
 
 ```
 manyfaced/
-├── common/        # Shared utilities
-├── client/        # Honeypot CLIENT (impersonates web services)
+├── common/        # Shared utilities (config, args, crypto, utils)
+├── client/        # Honeypot CLIENT (create_server, send_report)
 ├── server/        # Honeypot SERVER (collects bot reports)
-├── handlers/      # Request processing (ABC pattern)
+├── handlers/      # Request processing (ABC pattern, service handlers)
 └── db/            # Data persistence layer
 ```
 
@@ -175,7 +174,7 @@ Dataclass: `ip`, `raw_request`, `timestamp`, `parsed_request`, `is_detected`, `H
 2. Define `domain` and `PATH_PATTERNS`
 3. Implement `matches_path()` and `generate_response()`
 4. Add login handling with `handle_login()` if the service has auth
-5. Register the handler in `handlers/http_handler.py`'s `_get_registry()`
+5. Register the handler in `handlers/registry.py`
 6. Export it from `handlers/__init__.py`
 
 ```python
@@ -259,9 +258,14 @@ cd /home/zlol/manyfaced-honeypot
 ### Test file structure
 ```
 test/
-├── test_integration.py   # Full pipeline: socket -> decrypt -> DB -> query
-├── test_client.py        # Client-specific unit tests
-└── conftest.py           # Shared test utilities
+├── conftest.py               # Shared test utilities
+├── test_integration.py       # Full pipeline: socket -> decrypt -> DB -> query
+├── test_client.py            # Client-specific unit tests
+├── test_http_handler.py      # HTTPHandler tests
+├── test_config.py            # Config system tests
+├── test_storage.py           # Storage backend tests
+├── test_ai_responder.py      # AI responder tests
+└── test_*.py                 # Other test modules
 ```
 
 ### Key testing patterns
@@ -275,7 +279,7 @@ test/
 
 1. **pickle.dump_file()** — `common/utils.py` uses `pickle` for fallback data storage. This is unsafe with untrusted data. The file is written to `temp.db` in the working directory.
 
-2. **Shared secrets** — `HIVEPASS` is the shared encryption key. Never commit real keys. Use environment variables or `settings.py` (gitignored).
+2. **Shared secrets** — `HIVEPASS` is the shared encryption key. Never commit real keys. Use environment variables or `settings.toml.example` (gitignored).
 
 3. **AUTHORISEDBEARS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
 

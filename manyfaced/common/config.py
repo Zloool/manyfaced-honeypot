@@ -12,8 +12,9 @@ From code (preferred):
     from manyfaced.common.config import settings
     port = settings.HONEYPORT
 
-From code (legacy compat, still works):
-    from manyfaced.common.settings import HONEYPORT  → still works, delegates to config
+Import directly from this module:
+    from manyfaced.common.config import settings
+    port = settings.HONEYPORT
 
 To change the TOML path at runtime:
     from manyfaced.common.config import Config
@@ -432,34 +433,3 @@ class Config:
 # ── global settings instance ─────────────────────────────────────────────────
 
 settings: Config = Config.load()
-
-# ── backward-compat module-level aliases ─────────────────────────────────────
-# These let old code ``from manyfaced.common.settings import HONEYPORT`` still work.
-
-HONEYPORT = settings.HONEYPORT
-HONEYFOLDER = settings.HONEYFOLDER
-HIVEHOST = settings.HIVEHOST
-HIVEPORT = settings.HIVEPORT
-HIVELOGIN = settings.HIVELOGIN
-HIVEPASS = settings.HIVEPASS
-DB_BACKEND = settings.DB_BACKEND
-DB_BACKENDS = settings.DB_BACKENDS
-DB_PATH = settings.DB_PATH
-DB_PG_HOST = settings.DB_PG_HOST
-DB_PG_PORT = settings.DB_PG_PORT
-DB_PG_DB = settings.DB_PG_DB
-DB_PG_USER = settings.DB_PG_USER
-DB_PG_PASSWORD = settings.DB_PG_PASSWORD
-AUTHORISEDBEARS = settings.AUTHORISEDBEARS
-
-# Port mode settings
-HONEY_PORT_MODE = settings.HONEY_PORT_MODE
-HONEY_TOP_PORTS = settings.HONEY_TOP_PORTS
-
-# AI responder settings
-AI_ENABLED = settings.AI_ENABLED
-AI_ENDPOINT = settings.AI_ENDPOINT
-AI_MODEL = settings.AI_MODEL
-AI_MAX_TOKENS = settings.AI_MAX_TOKENS
-AI_TIMEOUT = settings.AI_TIMEOUT
-DEFAULT_KEY = settings.DEFAULT_KEY
