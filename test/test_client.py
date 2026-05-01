@@ -9,7 +9,7 @@ Tests the new handler registry architecture:
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Ensure the project root is in sys.path for imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
