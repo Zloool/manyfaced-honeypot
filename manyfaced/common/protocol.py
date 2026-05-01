@@ -22,7 +22,13 @@ _PROTOCOL_SIGNATURES = [
     ("rdp", re.compile(rb"^\x03\x00", re.IGNORECASE), b"\x03\x00"),
     ("vnc", re.compile(rb"^(RFB \d\.\d)", re.IGNORECASE), b"RFB 003.003"),
     # HTTP detection (for comparison)
-    ("http", re.compile(rb"^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE)\s", re.IGNORECASE), b"GET / HTTP/1.1"),
+    (
+        "http",
+        re.compile(
+            rb"^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE)\s", re.IGNORECASE
+        ),
+        b"GET / HTTP/1.1",
+    ),
 ]
 
 # HTTP detection (for comparison)
@@ -92,7 +98,9 @@ def get_protocol_info(raw_data: bytes) -> dict:
         # Try to extract client name
         client_match = re.match(r"SSH-\d\.\d-(.+)", info["version"])
         if client_match:
-            info["client"] = client_match.group(1).split("\r\n")[0].split("\n")[0].strip()
+            info["client"] = (
+                client_match.group(1).split("\r\n")[0].split("\n")[0].strip()
+            )
         return info
 
     # FTP detection
