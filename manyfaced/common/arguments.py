@@ -73,7 +73,7 @@ def parse():
         default=False,
         help="generate a config.toml file at ~/.config/manyfaced/config.toml and exit",
     )
-    
+
     # Port mode flags (for CLIENT mode)
     parser.add_argument(
         "--port-mode",

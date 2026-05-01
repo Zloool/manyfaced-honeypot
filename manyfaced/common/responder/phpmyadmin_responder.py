@@ -39,11 +39,21 @@ class PhpMyAdminResponder(ResponderBase):
 
     # Path patterns that this responder handles
     PATH_PATTERNS = [
-        "/phpmyadmin", "/phpmyadmin/", "/phpmyadmin/index.php",
-        "/pma", "/pma/", "/pma/index.php",
-        "/mysql", "/mysql/", "/mysql/index.php",
-        "/db", "/db/", "/db/index.php",
-        "/database", "/database/", "/database/index.php",
+        "/phpmyadmin",
+        "/phpmyadmin/",
+        "/phpmyadmin/index.php",
+        "/pma",
+        "/pma/",
+        "/pma/index.php",
+        "/mysql",
+        "/mysql/",
+        "/mysql/index.php",
+        "/db",
+        "/db/",
+        "/db/index.php",
+        "/database",
+        "/database/",
+        "/database/index.php",
     ]
 
     def __init__(self, ai_responder=None, enabled: bool = True):

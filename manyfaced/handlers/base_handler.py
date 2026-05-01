@@ -201,11 +201,21 @@ class BotProfile:
             raw_req = request.get("raw", "")
             max_raw = 5000
             if len(raw_req) > max_raw:
-                raw_req = raw_req[:max_raw] + f"\n... (truncated, {len(request.get('raw', ''))} total bytes)"
+                raw_req = (
+                    raw_req[:max_raw]
+                    + f"\n... (truncated, {len(request.get('raw', ''))} total bytes)"
+                )
 
-            raw_resp = response.decode("iso-8859-1", errors="replace") if isinstance(response, bytes) else str(response)
+            raw_resp = (
+                response.decode("iso-8859-1", errors="replace")
+                if isinstance(response, bytes)
+                else str(response)
+            )
             if len(raw_resp) > max_raw:
-                raw_resp = raw_resp[:max_raw] + f"\n... (truncated, {len(response) if isinstance(response, bytes) else len(str(response))} total bytes)"
+                raw_resp = (
+                    raw_resp[:max_raw]
+                    + f"\n... (truncated, {len(response) if isinstance(response, bytes) else len(str(response))} total bytes)"
+                )
 
             dialogue_entry = {
                 "sequence": len(self.dialogue) + 1,
@@ -218,15 +228,19 @@ class BotProfile:
                 },
                 "response": {
                     "raw": raw_resp,
-                    "size": len(response) if isinstance(response, bytes) else len(str(response)),
+                    "size": len(response)
+                    if isinstance(response, bytes)
+                    else len(str(response)),
                     "detected": detected,
                 },
             }
             self.dialogue.append(dialogue_entry)
             logger.info(
                 "Recorded dialogue entry #%d for %s (path=%s, method=%s)",
-                dialogue_entry["sequence"], self.bot_ip,
-                request.get("path", ""), request.get("method", ""),
+                dialogue_entry["sequence"],
+                self.bot_ip,
+                request.get("path", ""),
+                request.get("method", ""),
             )
 
     def _extract_metadata(self, raw_request: str) -> None:
@@ -273,10 +287,26 @@ class BotProfile:
 
         # Detect if it looks like a known scanner/tool
         ua = self.metadata.get("user_agent", "").lower()
-        if any(kw in ua for kw in ["nikto", "sqlmap", "nmap", "dirbuster", "gobuster", "wfuzz", "burp", "hydra", "medusa", "masscan"]):
+        if any(
+            kw in ua
+            for kw in [
+                "nikto",
+                "sqlmap",
+                "nmap",
+                "dirbuster",
+                "gobuster",
+                "wfuzz",
+                "burp",
+                "hydra",
+                "medusa",
+                "masscan",
+            ]
+        ):
             self.metadata["scanner_detected"] = True
             self.metadata["scanner_name"] = ua
-        elif any(kw in ua for kw in ["python-requests", "curl", "wget", "java", "go-http"]):
+        elif any(
+            kw in ua for kw in ["python-requests", "curl", "wget", "java", "go-http"]
+        ):
             self.metadata["tool_detected"] = True
             self.metadata["tool_name"] = ua
 
@@ -288,9 +318,20 @@ class BotProfile:
 
         # Detect SQL injection patterns
         sqli_patterns = [
-            "union", "select", "drop", "insert", "delete", "update",
-            "or 1=1", "and 1=1", "sleep(", "benchmark(",
-            "or+1=1", "and+1=1", "admin'--", "1=1--",
+            "union",
+            "select",
+            "drop",
+            "insert",
+            "delete",
+            "update",
+            "or 1=1",
+            "and 1=1",
+            "sleep(",
+            "benchmark(",
+            "or+1=1",
+            "and+1=1",
+            "admin'--",
+            "1=1--",
         ]
         for pattern in sqli_patterns:
             if pattern in path or pattern in raw:
@@ -298,18 +339,36 @@ class BotProfile:
                 break
 
         # Detect LFI/RFI patterns
-        lfi_patterns = ["../", "..\\", "/etc/passwd", "/etc/shadow",
-                        "php://", "expect://", "data://"]
+        lfi_patterns = [
+            "../",
+            "..\\",
+            "/etc/passwd",
+            "/etc/shadow",
+            "php://",
+            "expect://",
+            "data://",
+        ]
         for pattern in lfi_patterns:
             if pattern in path or pattern in raw:
                 self.detected_behaviors.add("lfi_rfi")
                 break
 
         # Detect RCE patterns
-        rce_patterns = ["; ls", "| cat", "&& wget", "$(curl",
-                        "`nc`", "eval(", "exec(",
-                        "| cat ", "; cat ", "&& cat ",
-                        "cat /etc", "wget http", "curl http"]
+        rce_patterns = [
+            "; ls",
+            "| cat",
+            "&& wget",
+            "$(curl",
+            "`nc`",
+            "eval(",
+            "exec(",
+            "| cat ",
+            "; cat ",
+            "&& cat ",
+            "cat /etc",
+            "wget http",
+            "curl http",
+        ]
         for pattern in rce_patterns:
             if pattern in raw:
                 self.detected_behaviors.add("rce")
@@ -320,12 +379,23 @@ class BotProfile:
             self.detected_behaviors.add("directory_traversal")
 
         # Detect credential stuffing
-        if method == "POST" and any(kw in path for kw in ["login", "admin", "auth", "wp-login", "index.php"]):
+        if method == "POST" and any(
+            kw in path for kw in ["login", "admin", "auth", "wp-login", "index.php"]
+        ):
             self.detected_behaviors.add("credential_stuffing")
 
         # Detect enumeration
-        enum_paths = ["/admin", "/wp-admin", "/phpmyadmin", "/server-status",
-                      "/.git", "/.env", "/config", "/backup", "/manager"]
+        enum_paths = [
+            "/admin",
+            "/wp-admin",
+            "/phpmyadmin",
+            "/server-status",
+            "/.git",
+            "/.env",
+            "/config",
+            "/backup",
+            "/manager",
+        ]
         if any(path.startswith(p) for p in enum_paths):
             self.detected_behaviors.add("enumeration")
 
@@ -356,7 +426,8 @@ class BotProfile:
             self.escalation_level = max(self.escalation_level, self.EXPLOIT_ATTEMPT)
             logger.info(
                 "Captured credentials from %s (session=%s): %s",
-                self.bot_ip, self.session_id,
+                self.bot_ip,
+                self.session_id,
                 {k: "***" if k == "password" else v for k, v in credentials.items()},
             )
 
@@ -383,7 +454,9 @@ class BotProfile:
                 "last_updated": self.last_updated.isoformat(),
                 "metadata": dict(self.metadata),
                 "escalation_level": self.escalation_level,
-                "escalation_label": self.ESCALATION_LABELS.get(self.escalation_level, "unknown"),
+                "escalation_label": self.ESCALATION_LABELS.get(
+                    self.escalation_level, "unknown"
+                ),
                 "detected_behaviors": list(self.detected_behaviors),
                 "request_count": len(self.request_history),
                 "dialogue_count": len(self.dialogue),
@@ -400,7 +473,9 @@ class BotProfile:
                 "bot_ip": self.bot_ip,
                 "session_id": self.session_id,
                 "escalation_level": self.escalation_level,
-                "escalation_label": self.ESCALATION_LABELS.get(self.escalation_level, "unknown"),
+                "escalation_label": self.ESCALATION_LABELS.get(
+                    self.escalation_level, "unknown"
+                ),
                 "detected_behaviors": list(self.detected_behaviors),
                 "request_count": len(self.request_history),
                 "dialogue_count": len(self.dialogue),
@@ -478,7 +553,9 @@ class HTTPHandlerBase(abc.ABC):
                 self.bot_profiles[bot_ip] = profile
                 logger.info(
                     "Created new BotProfile for %s (session=%s, domain=%s)",
-                    bot_ip, profile.session_id, self.domain,
+                    bot_ip,
+                    profile.session_id,
+                    self.domain,
                 )
             return self.bot_profiles[bot_ip]
 
@@ -536,14 +613,29 @@ class HTTPHandlerBase(abc.ABC):
         # Normalize field names: strip trailing '=' so we can append it once
         # This fixes the bug where fields like "log=" became "log=="
         username_fields = [
-            "log", "user", "username", "login", "user_login", "USER_LOGIN",
-            "j_username", "uid", "email",
-            "pma_username", "server[0][user]",
+            "log",
+            "user",
+            "username",
+            "login",
+            "user_login",
+            "USER_LOGIN",
+            "j_username",
+            "uid",
+            "email",
+            "pma_username",
+            "server[0][user]",
         ]
         password_fields = [
-            "pwd", "pass", "password", "login_password",
-            "j_password", "passwort", "user_pass", "USER_PASSWORD",
-            "pma_password", "server[0][password]",
+            "pwd",
+            "pass",
+            "password",
+            "login_password",
+            "j_password",
+            "passwort",
+            "user_pass",
+            "USER_PASSWORD",
+            "pma_password",
+            "server[0][password]",
         ]
 
         # URL-decode the body
@@ -613,10 +705,7 @@ class HTTPHandlerBase(abc.ABC):
                 "total_credential_captures": sum(
                     len(p.captured_credentials) for p in self.bot_profiles.values()
                 ),
-                "profiles": {
-                    ip: p.get_stats()
-                    for ip, p in self.bot_profiles.items()
-                },
+                "profiles": {ip: p.get_stats() for ip, p in self.bot_profiles.items()},
             }
 
     def __repr__(self) -> str:

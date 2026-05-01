@@ -213,7 +213,9 @@ class TestFullPathSocketToDatabase:
             value="PROPFIND",
         )
 
-    @pytest.mark.skip(reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers")
+    @pytest.mark.skip(
+        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
+    )
     def test_incorrect_identifier_fails_gracefully(self):
         """An unknown identifier should raise ValueError and not save."""
         from manyfaced.server.server import ServerHandler
@@ -438,8 +440,12 @@ class TestServerHandlerKeyLookup:
         key = handler.get_key("testbear")
         assert key == TEST_KEY
 
-    @pytest.mark.skip(reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers")
-    @pytest.mark.skip(reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers")
+    @pytest.mark.skip(
+        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
+    )
+    @pytest.mark.skip(
+        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
+    )
     def test_get_key_returns_none_for_unknown_bear(self):
         import sys
         from manyfaced.server.server import ServerHandler

@@ -24,14 +24,22 @@ class BitrixHandler(HTTPHandlerBase):
 
     domain = "bitrix"
     PATH_PATTERNS = [
-        "/bitrix/", "/bitrix/",
-        "/bitrix/admin/", "/bitrix/admin",
-        "/bitrix/auth/", "/bitrix/auth",
-        "/bitrix/components/", "/bitrix/components",
-        "/bitrix/templates/", "/bitrix/templates",
-        "/bitrix/modules/", "/bitrix/modules",
-        "/bitrix/cache/", "/bitrix/cache",
-        "/bitrix/panels/", "/bitrix/panels",
+        "/bitrix/",
+        "/bitrix/",
+        "/bitrix/admin/",
+        "/bitrix/admin",
+        "/bitrix/auth/",
+        "/bitrix/auth",
+        "/bitrix/components/",
+        "/bitrix/components",
+        "/bitrix/templates/",
+        "/bitrix/templates",
+        "/bitrix/modules/",
+        "/bitrix/modules",
+        "/bitrix/cache/",
+        "/bitrix/cache",
+        "/bitrix/panels/",
+        "/bitrix/panels",
         "/bitrix/admin/popup.php",
         "/bitrix/admin/index.php",
         "/bitrix/auth/fr/?backurl=",
@@ -39,7 +47,8 @@ class BitrixHandler(HTTPHandlerBase):
         "/bitrix/auth/",
         "/bitrix/404.php",
         "/bitrix/error.php",
-        "/bitrix/setup/", "/bitrix/setup",
+        "/bitrix/setup/",
+        "/bitrix/setup",
         "/bitrix/modules/main/include/",
         "/bitrix/modules/main/classes/",
         "/bitrix/modules/iblock/classes/",
@@ -83,7 +92,9 @@ class BitrixHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and ("login" in path_lower or "admin" in path_lower):
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 response = self._login_failed_response()
                 return response, detected
@@ -324,10 +335,16 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, status_code: int = 200, status_text: str = "OK", content_type: str = "text/html; charset=windows-1251") -> bytes:
+    def _build_http_response(
+        self,
+        body: str,
+        status_code: int = 200,
+        status_text: str = "OK",
+        content_type: str = "text/html; charset=windows-1251",
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
-        
+
         response = (
             f"HTTP/1.1 {status_code} {status_text}\r\n"
             f"Server: bitrix/22.5.0\r\n"
@@ -340,7 +357,7 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
             f"\r\n"
             f"{body}"
         )
-        
+
         return response.encode("iso-8859-1")
 
     def __repr__(self) -> str:

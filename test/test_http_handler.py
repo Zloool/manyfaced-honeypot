@@ -150,8 +150,10 @@ class TestHTTPHandlerProcessRequest:
             "parsed_request": MagicMock(),
         }
 
-        with patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
+        with (
+            patch("manyfaced.handlers.http_handler.BearStorage"),
+            patch("manyfaced.handlers.http_handler.Process") as mock_proc,
+        ):
             mock_proc.return_value = MagicMock()
             handler.process_request(sample_data)
             assert mock_proc.called
@@ -165,8 +167,10 @@ class TestHTTPHandlerProcessRequest:
             "parsed_request": MagicMock(),
         }
 
-        with patch("manyfaced.handlers.http_handler.BearStorage"), \
-             patch("manyfaced.handlers.http_handler.Process") as mock_proc:
+        with (
+            patch("manyfaced.handlers.http_handler.BearStorage"),
+            patch("manyfaced.handlers.http_handler.Process") as mock_proc,
+        ):
             mock_proc.return_value = MagicMock()
             handler.process_request(sample_data)
             # Process should NOT be called when server port is None
@@ -204,16 +208,22 @@ class TestHTTPRequest:
         assert req.request_version == "HTTP/1.1"
 
     def test_parse_post(self):
-        req = HTTPRequest("POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Length: 20\r\n\r\nlog=admin&pwd=test")
+        req = HTTPRequest(
+            "POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Length: 20\r\n\r\nlog=admin&pwd=test"
+        )
         assert req.command == "POST"
         assert req.path == "/wp-login.php"
 
     def test_parse_with_query_string(self):
-        req = HTTPRequest("GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        req = HTTPRequest(
+            "GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        )
         assert req.path == "/search?q=test&lang=en"
 
     def test_parse_headers(self):
-        req = HTTPRequest("GET /test HTTP/1.1\r\nHost: example.com\r\nUser-Agent: TestBot\r\n\r\n")
+        req = HTTPRequest(
+            "GET /test HTTP/1.1\r\nHost: example.com\r\nUser-Agent: TestBot\r\n\r\n"
+        )
         assert req.headers is not None
         headers = dict(req.headers) if req.headers else {}
         assert "Host" in headers or "host" in headers

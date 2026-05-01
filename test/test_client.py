@@ -57,11 +57,13 @@ class TestBotProfile(unittest.TestCase):
 
     def test_escalation_on_exploit(self):
         profile = BotProfile("1.2.3.4")
-        profile.record_request({
-            "path": "/admin?or+1=1",
-            "method": "GET",
-            "raw": "GET /admin?or+1=1 HTTP/1.1",
-        })
+        profile.record_request(
+            {
+                "path": "/admin?or+1=1",
+                "method": "GET",
+                "raw": "GET /admin?or+1=1 HTTP/1.1",
+            }
+        )
         self.assertIn("sql_injection", profile.detected_behaviors)
         self.assertGreater(profile.escalation_level, BotProfile.IDLE)
 
@@ -360,10 +362,13 @@ class TestWebDAVHandler(unittest.TestCase):
         profile = MagicMock()
         self.handler.bot_profiles = {"1.2.3.4": profile}
         import base64
+
         auth = base64.b64encode(b"admin:secretpass").decode()
         response, _ = self.handler.generate_response(
             "/webdav/",
-            "GET /webdav/ HTTP/1.1\r\nHost: example.com\r\nAuthorization: Basic " + auth + "\r\n\r\n",
+            "GET /webdav/ HTTP/1.1\r\nHost: example.com\r\nAuthorization: Basic "
+            + auth
+            + "\r\n\r\n",
             "1.2.3.4",
         )
         # WebDAV returns directory listing (honeypot doesn't enforce auth)
@@ -714,7 +719,7 @@ class TestBotProfileDialogue(unittest.TestCase):
         }
         response = b"HTTP/1.1 200 OK\r\n\r\n<html>WordPress</html>"
         profile.record_interaction(request, response, 1)
-        
+
         dialogue = profile.get_dialogue()
         self.assertEqual(len(dialogue), 1)
         self.assertEqual(dialogue[0]["sequence"], 1)
@@ -731,7 +736,7 @@ class TestBotProfileDialogue(unittest.TestCase):
             "headers": {},
         }
         profile.record_request(request)
-        
+
         self.assertIn("user_agent", profile.metadata)
         self.assertEqual(profile.metadata["user_agent"], "WPScan v3.8.22")
         self.assertEqual(profile.metadata["host"], "example.com")
@@ -747,7 +752,7 @@ class TestBotProfileDialogue(unittest.TestCase):
             "headers": {},
         }
         profile.record_request(request)
-        
+
         self.assertIn("scanner_detected", profile.metadata)
         self.assertTrue(profile.metadata["scanner_detected"])
         self.assertEqual(profile.metadata["scanner_name"].lower(), "nikto/2.1.6")
@@ -765,7 +770,7 @@ class TestBotProfileDialogue(unittest.TestCase):
         profile.record_request(request)
         profile.record_interaction(request, response, 1)
         profile.capture_credentials({"username": "admin", "password": "test"})
-        
+
         report = profile.get_full_report()
         self.assertEqual(report["bot_ip"], "1.2.3.4")
         self.assertEqual(report["dialogue_count"], 1)
@@ -785,7 +790,7 @@ class TestBotProfileDialogue(unittest.TestCase):
         }
         large_response = b"HTTP/1.1 200 OK\r\n\r\n" + b"Y" * 10000
         profile.record_interaction(request, large_response, 1)
-        
+
         dialogue = profile.get_dialogue()
         self.assertEqual(len(dialogue), 1)
         # Check that truncation marker is present
@@ -803,12 +808,16 @@ class TestHTTPRequest(unittest.TestCase):
         self.assertEqual(req.request_version, "HTTP/1.1")
 
     def test_parse_post(self):
-        req = HTTPRequest("POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Length: 20\r\n\r\nlog=admin&pwd=test")
+        req = HTTPRequest(
+            "POST /wp-login.php HTTP/1.1\r\nHost: example.com\r\nContent-Length: 20\r\n\r\nlog=admin&pwd=test"
+        )
         self.assertEqual(req.command, "POST")
         self.assertEqual(req.path, "/wp-login.php")
 
     def test_parse_with_query_string(self):
-        req = HTTPRequest("GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        req = HTTPRequest(
+            "GET /search?q=test&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        )
         self.assertEqual(req.path, "/search?q=test&lang=en")
 
 
