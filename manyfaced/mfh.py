@@ -10,6 +10,7 @@ import logging
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
+from manyfaced.common.config import settings, Config
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,7 @@ logger = logging.getLogger(__name__)
 def run() -> None:
     """CLI entry point – called by the ``manyfaced`` console_scripts command."""
     # Initialise system-wide logging early
-    setup_logging(level="DEBUG")
-
-    from manyfaced.common.config import Config
+    setup_logging(level="DEBUG", log_file=settings.LOG_FILE)
 
     # Auto-generate XDG config file if none exists
     xdg_config = os.path.join(
@@ -58,8 +57,16 @@ def run() -> None:
 
     # Auto-detect: if neither -c nor -s specified, start both based on config
     if args.client is None and args.server is None:
-        args.client = int(os.environ.get("HONEY_PORT", 80))
-        args.server = int(os.environ.get("HONEY_HIVEPORT", 8080))
+        args.client = settings.HONEYPORT
+        args.server = settings.HIVEPORT
+        # Also apply port_mode and top_ports from config when starting client
+        if (
+            getattr(args, "port_mode", "single") == "single"
+            and settings.HONEY_PORT_MODE != "single"
+        ):
+            args.port_mode = settings.HONEY_PORT_MODE
+            if settings.HONEY_TOP_PORTS:
+                args.top_ports = settings.HONEY_TOP_PORTS
         logger.info(
             "No CLI args specified — starting client on port %d, server on port %d",
             args.client,

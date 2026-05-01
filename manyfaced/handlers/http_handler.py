@@ -148,7 +148,8 @@ class HTTPHandler:
         try:
             parsed = HTTPRequest(message)
             # If parsing failed (path is None), create a minimal valid request
-            if parsed.path is None:
+            path_val = getattr(parsed, "path", None)
+            if path_val is None:
                 logger.warning(
                     "HTTPRequest failed to parse path, using fallback for %s", bot_ip
                 )
