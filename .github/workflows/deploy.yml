@@ -1,0 +1,69 @@
+name: Deploy to Droplet
+
+on:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DROPLET_SSH_KEY }}
+
+      - name: Deploy to droplet
+        env:
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DEPLOY_DIR: "/opt/manyfaced"
+          VENV_DIR: "/opt/manyfaced/venv"
+        run: |
+          echo "=== Deploying to ${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:${DROPLET_SSH_PORT} ==="
+          
+          # Create deploy temp directory
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "mkdir -p /tmp/manyfaced-deploy"
+          
+          # rsync code (excluding git, venv, cache, and ignored files)
+          rsync -avz --delete \
+            -e "ssh -p ${DROPLET_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            --exclude='.git/' \
+            --exclude='.venv/' \
+            --exclude='__pycache__/' \
+            --exclude='*.egg-info/' \
+            --exclude='.ruff_cache/' \
+            --exclude='.pytest_cache/' \
+            --exclude='deployment-analysis/' \
+            --exclude='*.db' \
+            --exclude='*.log' \
+            --exclude='.gitignore' \
+            . \
+            "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:/tmp/manyfaced-deploy/"
+          
+          # Move code into place
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${DEPLOY_DIR}/manyfaced && mv /tmp/manyfaced-deploy/manyfaced ${DEPLOY_DIR}/ && rm -rf /tmp/manyfaced-deploy"
+          
+          # Install/update Python dependencies in venv
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            source ${VENV_DIR}/bin/activate && \
+            pip install --upgrade pip -q && \
+            pip install -e ${DEPLOY_DIR} -q
+          "
+          
+          # Restart the service
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            systemctl restart manyfaced && \
+            sleep 2 && \
+            systemctl status manyfaced --no-pager
+          "
+          
+          echo "=== Deployment complete ==="
