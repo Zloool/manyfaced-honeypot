@@ -20,6 +20,10 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DROPLET_SSH_KEY }}
 
+      - name: Add droplet host key
+        run: |
+          ssh-keyscan -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SERVER_IP }}" >> ~/.ssh/known_hosts
+
       - name: Deploy to droplet
         env:
           DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
