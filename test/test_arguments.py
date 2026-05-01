@@ -6,10 +6,7 @@ Usage:
 """
 
 import os
-import pickle
 import sys
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,14 +30,13 @@ sys.modules["GeoIP"] = MagicMock()
 # ---------------------------------------------------------------------------
 # Import units under test
 # ---------------------------------------------------------------------------
-from manyfaced.common.utils import dump_file, receive_timeout
-from manyfaced.common.config import Config, _find_config_file, _load_toml, _resolve, _env_prefix
 from manyfaced.common.arguments import parse
 
 
 # ===================================================================
 # Helper utilities
 # ===================================================================
+
 
 class _TempDB:
     """Context manager that patches dump_file to use a temp file."""
@@ -86,8 +82,6 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-from manyfaced.common.arguments import parse
-
 def _parse_with_args(monkeypatch, argv):
     """Helper: set sys.argv and call parse()."""
     monkeypatch.setattr("sys.argv", ["mfh.py"] + argv)
@@ -111,14 +105,12 @@ class TestParseDefaults:
         assert args.top_ports == ""
 
 
-
 class TestParseClient:
     """-c 80 → client=80."""
 
     def test_client_port(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-c", "80"])
         assert args.client == 80
-
 
 
 class TestParseServer:
@@ -129,7 +121,6 @@ class TestParseServer:
         assert args.server == 666
 
 
-
 class TestParseClientServer:
     """-c 80 -s 666 → both set."""
 
@@ -137,7 +128,6 @@ class TestParseClientServer:
         args = _parse_with_args(monkeypatch, ["-c", "80", "-s", "666"])
         assert args.client == 80
         assert args.server == 666
-
 
 
 class TestParseVerbose:
@@ -152,14 +142,12 @@ class TestParseVerbose:
         assert args.verbose is True
 
 
-
 class TestParseUpdater:
     """-u → updater=True."""
 
     def test_updater(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-u"])
         assert args.updater is True
-
 
 
 class TestParseProxy:
@@ -174,7 +162,6 @@ class TestParseProxy:
         assert args.proxy is True
 
 
-
 class TestParseGenerateConfig:
     """--generate-config → generate_config=True."""
 
@@ -183,12 +170,14 @@ class TestParseGenerateConfig:
         assert args.generate_config is True
 
 
-
 class TestParseAllFlags:
     """Combine all flags."""
 
     def test_all_flags(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-c", "80", "-s", "666", "-u", "-v", "-p", "--generate-config"])
+        args = _parse_with_args(
+            monkeypatch,
+            ["-c", "80", "-s", "666", "-u", "-v", "-p", "--generate-config"],
+        )
         assert args.client == 80
         assert args.server == 666
         assert args.updater is True
@@ -197,20 +186,24 @@ class TestParseAllFlags:
         assert args.generate_config is True
 
 
-
 class TestParseClientNoPort:
     """-c without port → client=HONEYPORT default."""
 
     def test_client_no_port_uses_default(self, monkeypatch):
-        from manyfaced.common.settings import HONEYPORT
+        from manyfaced.common.config import settings
+
+        HONEYPORT = settings.HONEYPORT
+
         args = _parse_with_args(monkeypatch, ["-c"])
         assert args.client == HONEYPORT
 
     def test_server_no_port_uses_default(self, monkeypatch):
-        from manyfaced.common.settings import HIVEPORT
+        from manyfaced.common.config import settings
+
+        HIVEPORT = settings.HIVEPORT
+
         args = _parse_with_args(monkeypatch, ["-s"])
         assert args.server == HIVEPORT
-
 
 
 # ===================================================================
@@ -242,7 +235,6 @@ class TestParsePortMode:
             _parse_with_args(monkeypatch, ["--port-mode", "invalid"])
 
 
-
 class TestParseTopPorts:
     """--top-ports flag tests."""
 
@@ -259,22 +251,41 @@ class TestParseTopPorts:
         assert args.top_ports == "80, 443, 8080"
 
 
-
 class TestParsePortModeCombined:
     """Combined port mode and top-ports flags."""
 
     def test_port_mode_top_with_top_ports(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--port-mode", "top", "--top-ports", "80,443"])
+        args = _parse_with_args(
+            monkeypatch, ["--port-mode", "top", "--top-ports", "80,443"]
+        )
         assert args.port_mode == "top"
         assert args.top_ports == "80,443"
 
     def test_port_mode_all_with_top_ports_ignored(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--port-mode", "all", "--top-ports", "80"])
+        args = _parse_with_args(
+            monkeypatch, ["--port-mode", "all", "--top-ports", "80"]
+        )
         assert args.port_mode == "all"
         assert args.top_ports == "80"  # still stored, but not used when mode=all
 
     def test_all_flags_with_port_mode(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-c", "80", "-s", "666", "-u", "-v", "-p", "--generate-config", "--port-mode", "top", "--top-ports", "80,443"])
+        args = _parse_with_args(
+            monkeypatch,
+            [
+                "-c",
+                "80",
+                "-s",
+                "666",
+                "-u",
+                "-v",
+                "-p",
+                "--generate-config",
+                "--port-mode",
+                "top",
+                "--top-ports",
+                "80,443",
+            ],
+        )
         assert args.client == 80
         assert args.server == 666
         assert args.updater is True
@@ -288,5 +299,3 @@ class TestParsePortModeCombined:
 # ===================================================================
 # Additional edge-case tests
 # ===================================================================
-
-

@@ -22,7 +22,9 @@ from manyfaced.common.logging_setup import (
 class TestColouredFormatter:
     """Tests for ColouredFormatter."""
 
-    def _make_record(self, levelname: str, message: str = "test message") -> logging.LogRecord:
+    def _make_record(
+        self, levelname: str, message: str = "test message"
+    ) -> logging.LogRecord:
         """Create a LogRecord at the given level."""
         return logging.LogRecord(
             name="test",
@@ -110,7 +112,9 @@ class TestColouredFormatter:
 class TestJsonFormatter:
     """Tests for JsonFormatter."""
 
-    def _make_record(self, levelname: str, message: str = "test message") -> logging.LogRecord:
+    def _make_record(
+        self, levelname: str, message: str = "test message"
+    ) -> logging.LogRecord:
         return logging.LogRecord(
             name="my.logger",
             level=getattr(logging, levelname),
@@ -127,7 +131,14 @@ class TestJsonFormatter:
         record = self._make_record("INFO", "hello world")
         result = formatter.format(record)
         data = json.loads(result)
-        expected_keys = {"timestamp", "level", "logger", "process", "processName", "message"}
+        expected_keys = {
+            "timestamp",
+            "level",
+            "logger",
+            "process",
+            "processName",
+            "message",
+        }
         assert expected_keys.issubset(data.keys())
 
     def test_json_level_correct(self):
@@ -222,7 +233,9 @@ class TestSetupLogging:
         setup_logging(level="DEBUG", log_file=log_file, enable_file=True)
         root = logging.getLogger()
         file_handlers = [
-            h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+            h
+            for h in root.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
         assert len(file_handlers) >= 1
 
@@ -248,7 +261,9 @@ class TestSetupLogging:
         setup_logging(level="INFO", log_file=log_file, enable_file=False)
         root = logging.getLogger()
         file_handlers = [
-            h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+            h
+            for h in root.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
         assert len(file_handlers) == 0
 
@@ -272,7 +287,9 @@ class TestSetupLogging:
         setup_logging(level="INFO", log_file=log_file, enable_file=True)
         root = logging.getLogger()
         file_handlers = [
-            h for h in root.handlers if isinstance(h, logging.handlers.RotatingFileHandler)
+            h
+            for h in root.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
         assert len(file_handlers) >= 1
         formatter = file_handlers[0].formatter

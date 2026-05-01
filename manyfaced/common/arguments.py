@@ -1,6 +1,6 @@
 import argparse
 
-from manyfaced.common.settings import HONEYPORT, HIVEPORT
+from manyfaced.common.config import settings
 
 """
 usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-u] [-v]
@@ -27,7 +27,7 @@ def parse():
 
     parser.add_argument(
         "-c",
-        const=HONEYPORT,
+        const=settings.HONEYPORT,
         dest="client",
         help="port to start a CLIENT on",
         metavar="PORT",
@@ -37,7 +37,7 @@ def parse():
 
     parser.add_argument(
         "-s",
-        const=HIVEPORT,
+        const=settings.HIVEPORT,
         dest="server",
         help="port to start a SERVER on",
         metavar="PORT",
@@ -73,7 +73,7 @@ def parse():
         default=False,
         help="generate a config.toml file at ~/.config/manyfaced/config.toml and exit",
     )
-    
+
     # Port mode flags (for CLIENT mode)
     parser.add_argument(
         "--port-mode",
@@ -88,6 +88,36 @@ def parse():
         default="",
         dest="top_ports",
         help="Comma-separated list of ports to listen on when port-mode=top. Example: '80,443,8080,3306'",
+    )
+
+    # AI responder flags (for CLIENT mode)
+    parser.add_argument(
+        "--ai-responder",
+        action="store_true",
+        dest="ai_responder",
+        default=False,
+        help="Enable AI-powered interactive response generation for bot probes",
+    )
+    parser.add_argument(
+        "--ai-endpoint",
+        type=str,
+        default="",
+        dest="ai_endpoint",
+        help="LLM API endpoint URL (OpenAI-compatible). Example: 'http://127.0.0.1:8080/v1'",
+    )
+    parser.add_argument(
+        "--ai-model",
+        type=str,
+        default="",
+        dest="ai_model",
+        help="LLM model name. Example: 'llama-3.1-8b-instruct'",
+    )
+    parser.add_argument(
+        "--ai-max-tokens",
+        type=int,
+        default=0,
+        dest="ai_max_tokens",
+        help="Maximum tokens in AI-generated response (default: 500)",
     )
 
     return parser.parse_args()
