@@ -90,10 +90,20 @@ def create_server(args, update_event: Event, port: int):
         args: CLI arguments namespace
         update_event: Event to signal shutdown
         port: Port number to listen on
+
+    Returns:
+        True if server started successfully, False otherwise.
     """
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    server_socket.bind(("", port))
+    try:
+        server_socket.bind(("", port))
+    except PermissionError:
+        logger.warning("Permission denied binding to port %d (try running as root or use a higher port)", port)
+        return False
+    except OSError as e:
+        logger.warning("Failed to bind to port %d: %s", port, e)
+        return False
     server_socket.listen(1)
     logger.info("Client honeypot listening on port %d", port)
     if args.verbose:
@@ -118,7 +128,8 @@ def create_server(args, update_event: Event, port: int):
             output_data = handler.handle_request(message, bot_ip=bot_ip)
             try:
                 logger.debug("Sending response of length %d", len(output_data))
-                connection_socket.sendall(output_data.encode("iso-8859-1"))
+                # output_data is already bytes from HTTPHandler
+                connection_socket.sendall(output_data if isinstance(output_data, bytes) else output_data.encode("iso-8859-1"))
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
@@ -132,6 +143,7 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
     """Create a multi-port honeypot server that listens on multiple ports simultaneously.
 
     Each port runs in its own thread. All threads share the same update_event for shutdown.
+    Failed port bindings are logged but don't prevent other ports from starting.
 
     Args:
         args: CLI arguments namespace
@@ -139,11 +151,21 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
         ports: List of port numbers to listen on
     """
     threads: list[threading.Thread] = []
+    successful_ports: list[int] = []
+    failed_ports: list[tuple[int, str]] = []
+
+    def _port_worker(port: int) -> None:
+        """Wrapper that tracks success/failure for each port."""
+        result = create_server(args, update_event, port)
+        if result:
+            successful_ports.append(port)
+        else:
+            failed_ports.append((port, "bind failed"))
 
     for port in ports:
         t = threading.Thread(
-            target=create_server,
-            args=(args, update_event, port),
+            target=_port_worker,
+            args=(port,),
             name=f"honeyport-{port}",
             daemon=True,
         )
@@ -153,11 +175,20 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
     for t in threads:
         t.start()
 
-    # Log all ports
-    port_list_str = ", ".join(str(p) for p in ports)
-    logger.info("Client honeypot listening on %d ports: %s", len(ports), port_list_str)
-    if args.verbose:
-        print(f"Serving honey on {len(ports)} ports: {port_list_str}")
+    # Wait for all port threads to finish starting
+    for t in threads:
+        t.join(timeout=5)
+
+    # Log summary
+    if successful_ports:
+        port_list_str = ", ".join(str(p) for p in successful_ports)
+        logger.info("Client honeypot listening on %d ports: %s", len(successful_ports), port_list_str)
+        if args.verbose:
+            print(f"Serving honey on {len(successful_ports)} ports: {port_list_str}")
+
+    if failed_ports:
+        failed_str = ", ".join(f"{p}" for p, _ in failed_ports)
+        logger.warning("Failed to bind on %d ports (skipped): %s", len(failed_ports), failed_str)
 
     # Wait for shutdown signal
     try:

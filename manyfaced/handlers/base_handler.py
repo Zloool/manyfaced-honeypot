@@ -537,13 +537,13 @@ class HTTPHandlerBase(abc.ABC):
         # Normalize field names: strip trailing '=' so we can append it once
         # This fixes the bug where fields like "log=" became "log=="
         username_fields = [
-            "log", "user", "username", "login", "user_login",
+            "log", "user", "username", "login", "user_login", "USER_LOGIN",
             "j_username", "uid", "email",
             "pma_username", "server[0][user]",
         ]
         password_fields = [
             "pwd", "pass", "password", "login_password",
-            "j_password", "passwort", "user_pass",
+            "j_password", "passwort", "user_pass", "USER_PASSWORD",
             "pma_password", "server[0][password]",
         ]
 

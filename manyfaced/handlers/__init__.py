@@ -19,6 +19,9 @@ Two handler hierarchies exist:
     - TomcatHandler: Apache Tomcat responses
     - DrupalHandler: Drupal CMS responses
     - CPanelHandler: cPanel/WHM responses
+    - BitrixHandler: 1C-Bitrix CMS responses
+    - WebDAVHandler: WebDAV responses
+    - ConfigDisclosureHandler: Fake config file disclosures
     - GenericHandler: Default handler for unknown paths (monster page)
 """
 
@@ -37,6 +40,9 @@ from manyfaced.handlers.jenkins_handler import JenkinsHandler
 from manyfaced.handlers.tomcat_handler import TomcatHandler
 from manyfaced.handlers.drupal_handler import DrupalHandler
 from manyfaced.handlers.cpanel_handler import CPanelHandler
+from manyfaced.handlers.bitrix_handler import BitrixHandler
+from manyfaced.handlers.webdav_handler import WebDAVHandler
+from manyfaced.handlers.config_disclosure_handler import ConfigDisclosureHandler
 from manyfaced.handlers.generic_handler import GenericHandler
 
 __all__ = [
@@ -54,5 +60,8 @@ __all__ = [
     "TomcatHandler",
     "DrupalHandler",
     "CPanelHandler",
+    "BitrixHandler",
+    "WebDAVHandler",
+    "ConfigDisclosureHandler",
     "GenericHandler",
 ]
