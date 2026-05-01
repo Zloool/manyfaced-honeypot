@@ -187,7 +187,11 @@ class HTTPHandler:
         protocol_info = get_protocol_info(raw_bytes) if protocol else {}
 
         if protocol == "ssh":
-            logger.info("SSH probe detected from %s: %s", bot_ip, protocol_info.get("client", "unknown"))
+            logger.info(
+                "SSH probe detected from %s: %s",
+                bot_ip,
+                protocol_info.get("client", "unknown"),
+            )
             return self._handle_ssh_probe(bot_ip, protocol_info)
 
         if protocol is not None and protocol != "http":
@@ -225,7 +229,9 @@ class HTTPHandler:
 
         return self.process_request(data)
 
-    def _send_report(self, bot_ip: str, raw_request: str, parsed, detected: int, protocol: str = None):
+    def _send_report(
+        self, bot_ip: str, raw_request: str, parsed, detected: int, protocol: str = None
+    ):
         """Send a report to the server for a bot interaction.
 
         Args:
@@ -292,10 +298,14 @@ class HTTPHandler:
             headers = {}
             user_agent = client or "unknown"
 
-        self._send_report(bot_ip, banner_versions[0], _ParsedSSH(), SSH_CLIENT, protocol="ssh")
+        self._send_report(
+            bot_ip, banner_versions[0], _ParsedSSH(), SSH_CLIENT, protocol="ssh"
+        )
         return banner.encode("utf-8")
 
-    def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
+    def _handle_non_http_probe(
+        self, bot_ip: str, protocol: str, protocol_info: dict
+    ) -> bytes:
         """Handle non-HTTP protocol probes.
 
         Args:
@@ -357,7 +367,13 @@ class HTTPHandler:
                 headers = {}
                 user_agent = protocol_info.get("client", protocol)
 
-            self._send_report(bot_ip, protocol_info.get("raw", ""), _ParsedNonHTTP(), detected_id, protocol=protocol)
+            self._send_report(
+                bot_ip,
+                protocol_info.get("raw", ""),
+                _ParsedNonHTTP(),
+                detected_id,
+                protocol=protocol,
+            )
 
         return response
 
