@@ -61,6 +61,16 @@ for priv_port in "${!MAPPING[@]}"; do
         { iptables -t nat -A PREROUTING -p tcp --dport "$priv_port" -j REDIRECT --to-ports "$high_port"; log "  $priv_port → $high_port (added)"; }
 done
 
+# CRITICAL: Do NOT add OUTPUT chain rules.
+# OUTPUT rules redirect the honeypot's own outbound traffic back to itself,
+# breaking pip, curl, and any HTTPS client. Only PREROUTING is needed to
+# catch incoming attacker traffic.
+# See: https://serverfault.com/questions/iptables-prerouting-vs-output
+log ""
+log "NOTE: OUTPUT chain is intentionally left empty."
+log "  PREROUTING handles incoming attacker traffic."
+log "  OUTPUT must be clean so the honeypot can reach the internet."
+
 # Save rules
 mkdir -p /etc/iptables
 iptables-save > /etc/iptables/rules.v4
