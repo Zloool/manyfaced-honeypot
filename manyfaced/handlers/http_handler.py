@@ -12,16 +12,13 @@ handlers for each service (WordPress, phpMyAdmin, Jenkins, Tomcat, etc.).
 from __future__ import annotations
 
 import datetime
-import logging
 import os
-import socket
 from multiprocessing import Process
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.settings import HIVELOGIN, HIVEPASS
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.httphandler import HTTPRequest
-from .base_handler import HTTPHandlerBase
 from .registry import HandlerRegistry
 from .wordpress_handler import WordPressHandler
 from .phpmyadmin_handler import PhpMyAdminHandler

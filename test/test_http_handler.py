@@ -25,14 +25,8 @@ sys.modules["geoip"] = _geoip_mock
 sys.modules["geoip.geolite2"] = _geoip_mock.geolite2
 sys.modules["GeoIP"] = MagicMock()
 
-from manyfaced.common.settings import HIVEPASS, HIVELOGIN  # noqa: E402
 from manyfaced.common.httphandler import HTTPRequest  # noqa: E402
 from manyfaced.handlers.http_handler import HTTPHandler  # noqa: E402
-from manyfaced.handlers import (  # noqa: E402
-    WordPressHandler,
-    PhpMyAdminHandler,
-    GenericHandler,
-)
 
 
 # ---------------------------------------------------------------------------

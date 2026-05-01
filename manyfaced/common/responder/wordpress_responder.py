@@ -18,8 +18,6 @@ Usage:
 from __future__ import annotations
 
 import datetime
-import random
-from typing import Any
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.responder.responder_base import ResponderBase

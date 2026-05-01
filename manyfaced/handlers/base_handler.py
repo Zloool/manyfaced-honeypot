@@ -32,7 +32,6 @@ import datetime
 import hashlib
 import json
 import logging
-import re
 import threading
 from abc import abstractmethod
 from typing import Any

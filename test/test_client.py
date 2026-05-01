@@ -295,7 +295,7 @@ class TestBitrixHandler(unittest.TestCase):
         self.assertIn(b"Bitrix", response)
         self.assertIn(b"Installation Wizard", response)
 
- def test_login_post_captures_credentials(self):
+    def test_login_post_captures_credentials(self):
         profile = MagicMock()
         self.handler.bot_profiles = {"1.2.3.4": profile}
         response, _ = self.handler.generate_response(
