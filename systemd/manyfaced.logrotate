@@ -1,0 +1,24 @@
+# Logrotate configuration for manyfaced honeypot
+# Install to /etc/logrotate.d/manyfaced
+#
+# Usage:
+#   sudo cp systemd/manyfaced.logrotate /etc/logrotate.d/manyfaced
+#   sudo logrotate -s /var/lib/logrotate/manyfaced /etc/logrotate.d/manyfaced
+#
+# This rotates the honeypot log file daily, keeping 30 days of logs.
+# The app uses RotatingFileHandler internally (10 MB, 5 backups),
+# but this logrotate config provides a separate rotation layer for
+# the main honeypot.log file.
+
+/opt/manyfaced/bots/honeypot.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 honeypot honeypot
+    dateext
+    dateformat -%Y%m%d
+}

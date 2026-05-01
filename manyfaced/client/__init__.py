@@ -1,15 +1,4 @@
-"""manyfaced client package."""
+"""manyfaced client package.
 
-from manyfaced.client.client import (
-    compile_banner,
-    faces,
-    get_honey_http,
-    honey_generic,
-)
-
-__all__ = [
-    "compile_banner",
-    "faces",
-    "get_honey_http",
-    "honey_generic",
-]
+Serves fake web services to scanning bots and sends encrypted reports to the server.
+"""
