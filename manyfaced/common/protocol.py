@@ -17,7 +17,7 @@ _PROTOCOL_SIGNATURES = [
     ("ftp", re.compile(rb"^220\s", re.IGNORECASE), b"220 (vsFTPd)"),
     ("telnet", re.compile(rb"^\x00\x00\x00", re.IGNORECASE), b"\x00\x00\x00"),
     ("smtp", re.compile(rb"^220\s", re.IGNORECASE), b"220 mail.example.com"),
-    ("pop3", re.compile(rb"^+OK\s", re.IGNORECASE), b"+OK mailserver"),
+    ("pop3", re.compile(rb"^\+OK\s", re.IGNORECASE), b"+OK mailserver"),
     ("imap", re.compile(rb"^\* OK\s", re.IGNORECASE), b"* OK IMAP4"),
     ("rdp", re.compile(rb"^\x03\x00", re.IGNORECASE), b"\x03\x00"),
     ("vnc", re.compile(rb"^(RFB \d\.\d)", re.IGNORECASE), b"RFB 003.003"),
