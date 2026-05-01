@@ -616,33 +616,3 @@ class TestCLIArgsAI:
 # ---------------------------------------------------------------------------
 # Backward Compatibility Tests
 # ---------------------------------------------------------------------------
-
-
-class TestBackwardCompat:
-    """Tests for backward compatibility of AI settings."""
-
-    def test_settings_reexports_ai(self):
-        """settings.py should re-export AI_* names."""
-        from manyfaced.common.settings import (
-            AI_ENABLED,
-            AI_ENDPOINT,
-            AI_MODEL,
-            AI_MAX_TOKENS,
-            AI_TIMEOUT,
-        )
-
-        assert isinstance(AI_ENABLED, bool)
-        assert isinstance(AI_ENDPOINT, str)
-        assert isinstance(AI_MODEL, str)
-        assert isinstance(AI_MAX_TOKENS, int)
-        assert isinstance(AI_TIMEOUT, (int, float))
-
-    def test_config_all_in_all(self):
-        """AI_* should be in settings.__all__."""
-        from manyfaced.common.settings import __all__
-
-        assert "AI_ENABLED" in __all__
-        assert "AI_ENDPOINT" in __all__
-        assert "AI_MODEL" in __all__
-        assert "AI_MAX_TOKENS" in __all__
-        assert "AI_TIMEOUT" in __all__

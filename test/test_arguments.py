@@ -190,13 +190,17 @@ class TestParseClientNoPort:
     """-c without port → client=HONEYPORT default."""
 
     def test_client_no_port_uses_default(self, monkeypatch):
-        from manyfaced.common.settings import HONEYPORT
+        from manyfaced.common.config import settings
+
+        HONEYPORT = settings.HONEYPORT
 
         args = _parse_with_args(monkeypatch, ["-c"])
         assert args.client == HONEYPORT
 
     def test_server_no_port_uses_default(self, monkeypatch):
-        from manyfaced.common.settings import HIVEPORT
+        from manyfaced.common.config import settings
+
+        HIVEPORT = settings.HIVEPORT
 
         args = _parse_with_args(monkeypatch, ["-s"])
         assert args.server == HIVEPORT

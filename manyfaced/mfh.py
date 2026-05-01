@@ -53,14 +53,13 @@ def run() -> None:
     from manyfaced.common.arguments import parse
     from manyfaced.client import client
     from manyfaced.server import server
-    from manyfaced.common import settings
 
     args = parse()
 
     # Auto-detect: if neither -c nor -s specified, start both based on config
     if args.client is None and args.server is None:
-        args.client = settings.HONEYPORT
-        args.server = settings.HIVEPORT
+        args.client = int(os.environ.get("HONEY_PORT", 80))
+        args.server = int(os.environ.get("HONEY_HIVEPORT", 8080))
         logger.info(
             "No CLI args specified — starting client on port %d, server on port %d",
             args.client,

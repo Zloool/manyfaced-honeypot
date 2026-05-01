@@ -11,7 +11,7 @@ from socket import (
 )
 
 from manyfaced.common.logging_setup import get_logger
-from manyfaced.common.settings import AUTHORISEDBEARS
+from manyfaced.common.config import settings
 from manyfaced.common.utils import dump_file, receive_timeout
 from manyfaced.db.dbconnect import Insert, BearRequests
 from manyfaced.handlers.base_handler import BaseHandler
@@ -28,13 +28,13 @@ class ServerHandler(BaseHandler):
 
         Falls back to HIVEPASS if identifier is not in AUTHORISEDBEARS.
         """
-        key = AUTHORISEDBEARS.get(identifier)
+        key = settings.AUTHORISEDBEARS.get(identifier)
         if key is None:
             # Use HIVEPASS as default key for unknown identifiers
             # This matches the key used by CLIENT's send_report()
-            from manyfaced.common.settings import HIVEPASS
+            # HIVEPASS accessed via settings from config.py
 
-            return HIVEPASS
+            return settings.HIVEPASS
         return key
 
     def process_request(self, data):
