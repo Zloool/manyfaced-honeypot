@@ -6,9 +6,12 @@ import os
 import signal
 import sys
 import time
+import logging
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 def run() -> None:
@@ -39,6 +42,7 @@ def run() -> None:
     from manyfaced.common.arguments import parse
     from manyfaced.client import client
     from manyfaced.server import server
+    from manyfaced.common import settings
 
     args = parse()
 
