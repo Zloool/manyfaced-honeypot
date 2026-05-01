@@ -97,3 +97,7 @@ temp.db
 .idea/
 .aider*
 .hermes
+*.deploy_config
+
+# Local analysis/dev artifacts
+deployment-analysis/
