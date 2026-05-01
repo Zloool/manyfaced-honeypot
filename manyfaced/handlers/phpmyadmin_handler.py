@@ -22,11 +22,21 @@ class PhpMyAdminHandler(HTTPHandlerBase):
 
     domain = "phpmyadmin"
     PATH_PATTERNS = [
-        "/phpmyadmin", "/phpmyadmin/", "/phpmyadmin/index.php",
-        "/pma", "/pma/", "/pma/index.php",
-        "/mysql", "/mysql/", "/mysql/index.php",
-        "/db", "/db/", "/db/index.php",
-        "/database", "/database/", "/database/index.php",
+        "/phpmyadmin",
+        "/phpmyadmin/",
+        "/phpmyadmin/index.php",
+        "/pma",
+        "/pma/",
+        "/pma/index.php",
+        "/mysql",
+        "/mysql/",
+        "/mysql/index.php",
+        "/db",
+        "/db/",
+        "/db/index.php",
+        "/database",
+        "/database/",
+        "/database/index.php",
     ]
     DETECTED_ID = 1
 
@@ -59,7 +69,9 @@ class PhpMyAdminHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and ("index.php" in path_lower or path_lower.endswith("/")):
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 # Fake "access denied" response (encourages more attempts)
                 response = self._login_denied_response()
@@ -241,7 +253,9 @@ class PhpMyAdminHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
 

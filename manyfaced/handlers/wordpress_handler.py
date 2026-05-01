@@ -24,13 +24,19 @@ class WordPressHandler(HTTPHandlerBase):
 
     domain = "wordpress"
     PATH_PATTERNS = [
-        "/wp-login", "/wp-login.php",
-        "/wp-admin", "/wp-admin/",
-        "/wp-content", "/wp-content/",
-        "/wp-includes", "/wp-includes/",
+        "/wp-login",
+        "/wp-login.php",
+        "/wp-admin",
+        "/wp-admin/",
+        "/wp-content",
+        "/wp-content/",
+        "/wp-includes",
+        "/wp-includes/",
         "/xmlrpc.php",
-        "/wordpress", "/wordpress/",
-        "/blog", "/blog/",
+        "/wordpress",
+        "/wordpress/",
+        "/blog",
+        "/blog/",
     ]
     DETECTED_ID = 1
 
@@ -64,7 +70,9 @@ class WordPressHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and "wp-login" in path_lower:
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 # Fake "login failed" response (encourages brute force)
                 response = self._login_failed_response()
@@ -281,7 +289,9 @@ class WordPressHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
         content_type = "text/html; charset=UTF-8"
@@ -292,7 +302,7 @@ class WordPressHandler(HTTPHandlerBase):
             f"HTTP/1.1 {status}\r\n"
             f"Server: Apache/2.4.57 (Ubuntu)\r\n"
             f"X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n"
-            f"Link: <https://{path.split('/')[1] if '/' in path else 'localhost'}>; rel=\"https://api.w.org/\"\r\n"
+            f'Link: <https://{path.split("/")[1] if "/" in path else "localhost"}>; rel="https://api.w.org/"\r\n'
             f"Date: {now}\r\n"
             f"Content-Type: {content_type}\r\n"
             f"Connection: close\r\n"

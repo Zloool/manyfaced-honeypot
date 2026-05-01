@@ -23,13 +23,22 @@ class TomcatHandler(HTTPHandlerBase):
 
     domain = "tomcat"
     PATH_PATTERNS = [
-        "/manager", "/manager/", "/manager/html",
-        "/host-manager", "/host-manager/", "/host-manager/html",
-        "/tomcat", "/tomcat/",
-        "/server-status", "/server-info",
-        "/jmxproxy", "/jmxproxy/",
-        "/examples", "/examples/",
-        "/ROOT", "/ROOT/",
+        "/manager",
+        "/manager/",
+        "/manager/html",
+        "/host-manager",
+        "/host-manager/",
+        "/host-manager/html",
+        "/tomcat",
+        "/tomcat/",
+        "/server-status",
+        "/server-info",
+        "/jmxproxy",
+        "/jmxproxy/",
+        "/examples",
+        "/examples/",
+        "/ROOT",
+        "/ROOT/",
     ]
     DETECTED_ID = 1
 
@@ -62,7 +71,9 @@ class TomcatHandler(HTTPHandlerBase):
 
         # Handle login POST requests
         if method == "POST" and "j_security_check" in path_lower:
-            credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers or {})
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
             if credentials:
                 response = self._login_failed_response()
                 return response, detected
@@ -363,7 +374,9 @@ class TomcatHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str, path: str, status: str = "200 OK") -> bytes:
+    def _build_http_response(
+        self, body: str, path: str, status: str = "200 OK"
+    ) -> bytes:
         """Build a complete HTTP response."""
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
 

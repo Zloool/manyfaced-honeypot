@@ -37,6 +37,7 @@ from manyfaced.common.config import Config, _load_toml, _resolve, _env_prefix
 # Helper utilities
 # ===================================================================
 
+
 class _TempDB:
     """Context manager that patches dump_file to use a temp file."""
 
@@ -79,7 +80,6 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 # utils.py  –  dump_file / receive_timeout
 # ===================================================================
-
 
 
 def _write_toml(tmp_path, content):
@@ -138,7 +138,6 @@ class TestConfigDefaults:
         assert cfg.AUTHORISEDBEARS == {}
 
 
-
 class TestConfigToml:
     """Config with TOML file overrides, verify TOML values take precedence over defaults."""
 
@@ -194,7 +193,6 @@ authorised_bears = ""
         assert cfg.DB_PG_PASSWORD == "dbpass"
 
 
-
 class TestConfigEnvVars:
     """Config with env vars override TOML and defaults."""
 
@@ -223,7 +221,6 @@ hiveport = 9999
         assert cfg.HONEYFOLDER == "env_folder"
         assert cfg.HIVEPORT == 3000
         assert cfg.HIVEHOST == "10.0.0.1"
-
 
 
 class TestConfigEnvVarPrecedence:
@@ -302,7 +299,6 @@ authorised_bears = ""
         assert cfg.DB_PG_PASSWORD == "***"
 
 
-
 class TestConfigGenerateConfigFile:
     """generate_config_file creates file at expected path with correct TOML content."""
 
@@ -335,7 +331,7 @@ class TestConfigGenerateConfigFile:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
 
         path = cfg.generate_config_file()
@@ -386,7 +382,7 @@ class TestConfigGenerateConfigFile:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -395,7 +391,6 @@ class TestConfigGenerateConfigFile:
         assert path == custom_path
         assert path.exists()
         assert "honeyport = 80" in path.read_text()
-
 
 
 class TestConfigLoadCustomPath:
@@ -427,7 +422,6 @@ honeyport = 7777
         assert cfg.HONEYPORT == 7777
 
 
-
 class TestConfigAuthorisedBears:
     """Parse semicolon-separated authorised_bears from env var."""
 
@@ -439,7 +433,11 @@ class TestConfigAuthorisedBears:
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {"bear1": "key1", "bear2": "key2", "bear3": "key3"}
+        assert cfg.AUTHORISEDBEARS == {
+            "bear1": "key1",
+            "bear2": "key2",
+            "bear3": "key3",
+        }
 
     def test_authorised_bears_empty_env(self, monkeypatch):
         """Empty HONEY_AUTHORISED_BEARS env var returns default empty dict."""
@@ -541,7 +539,9 @@ class TestResolve:
 
     def test_resolve_tuple_from_env(self, monkeypatch):
         monkeypatch.setenv("HONEY_BACKENDS", "sqlite;postgresql")
-        result = _resolve("backends", ("sqlite", "postgresql"), "database", None, "HONEY_")
+        result = _resolve(
+            "backends", ("sqlite", "postgresql"), "database", None, "HONEY_"
+        )
         assert result == ["sqlite", "postgresql"]
 
     def test_env_overrides_toml(self, monkeypatch):
@@ -556,13 +556,11 @@ class TestResolve:
         assert result == 443
 
 
-
 class TestEnvPrefix:
     """Tests for _env_prefix."""
 
     def test_default_prefix(self):
         assert _env_prefix() == "HONEY_"
-
 
 
 class TestLoadToml:
@@ -587,7 +585,6 @@ hiveport = 9999
         toml_path = tmp_path / "nonexistent.toml"
         with pytest.raises(FileNotFoundError):
             _load_toml(toml_path)
-
 
 
 # ===================================================================
@@ -630,7 +627,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         assert cfg.resolve_ports() == [80]
 
@@ -659,7 +656,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         assert cfg.resolve_ports() == [443]
 
@@ -688,7 +685,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -721,7 +718,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -751,7 +748,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -781,7 +778,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -813,7 +810,7 @@ class TestConfigResolvePorts:
             AI_MODEL="llama-3.1-8b-instruct",
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
-            DEFAULT_KEY="default_beehive_key"
+            DEFAULT_KEY="default_beehive_key",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -829,4 +826,3 @@ class TestConfigResolvePorts:
         assert cfg.HONEY_TOP_PORTS == "8080,9090"
         ports = cfg.resolve_ports()
         assert ports == [8080, 9090]
-

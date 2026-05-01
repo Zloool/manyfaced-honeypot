@@ -45,5 +45,7 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
 
     raw = b"".join(total_data)
     result = raw.decode("utf-8", errors="replace")
-    logger.debug("receive_timeout: received %d bytes, repr=%r", len(raw), repr(result[:200]))
+    logger.debug(
+        "receive_timeout: received %d bytes, repr=%r", len(raw), repr(result[:200])
+    )
     return result

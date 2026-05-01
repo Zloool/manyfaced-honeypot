@@ -19,6 +19,7 @@ sys.modules["GeoIP"] = MagicMock()
 
 from manyfaced.common.httphandler import HTTPRequest
 
+
 class TestHTTPRequestParse:
     """Tests for HTTPRequest parsing of simple GET requests."""
 

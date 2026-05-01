@@ -324,5 +324,12 @@ class TestInsertFunction:
             Insert(bear)
 
         record = mock_storage.insert.call_args[0][0]
-        expected_keys = {"ip", "raw_request", "timestamp", "parsed_request", "is_detected", "HIVELOGIN"}
+        expected_keys = {
+            "ip",
+            "raw_request",
+            "timestamp",
+            "parsed_request",
+            "is_detected",
+            "HIVELOGIN",
+        }
         assert set(record.keys()) == expected_keys

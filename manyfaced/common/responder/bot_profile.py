@@ -22,17 +22,20 @@ from typing import Any
 
 # ── Escalation levels ────────────────────────────────────────────────────────
 
+
 class EscalationLevel:
     """Defines the stages of bot interaction depth."""
-    IDLE = 0           # First contact, basic probe
-    SCANNING = 1       # Enumerating paths/services
-    PROBE = 2          # Testing specific vulnerabilities
+
+    IDLE = 0  # First contact, basic probe
+    SCANNING = 1  # Enumerating paths/services
+    PROBE = 2  # Testing specific vulnerabilities
     EXPLOIT_ATTEMPT = 3  # Active exploitation attempts
-    COMPROMISE = 4     # Bot believes it has found something
-    DEEP_EXPLOIT = 5   # Deep exploitation, post-exploitation
+    COMPROMISE = 4  # Bot believes it has found something
+    DEEP_EXPLOIT = 5  # Deep exploitation, post-exploitation
 
 
 # ── BotProfile ────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class BotProfile:
@@ -60,7 +63,9 @@ class BotProfile:
     personalized_knowledge: dict[str, Any] = field(default_factory=dict)
     response_history: list[dict[str, Any]] = field(default_factory=list)
     session_id: str = field(default_factory=lambda: _generate_session_id())
-    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
+    _lock: threading.RLock = field(
+        default_factory=threading.RLock, repr=False, compare=False
+    )
 
     def record_request(self, request: dict[str, Any]) -> None:
         """Record a request made by this bot.
@@ -86,28 +91,62 @@ class BotProfile:
         raw = request.get("raw", "").lower()
 
         # Detect SQL injection patterns
-        sqli_patterns = ["union", "select", "drop", "insert", "delete", "update",
-                         "or 1=1", "and 1=1", "' or '", "sleep(", "benchmark(",
-                         "or+1=1", "and+1=1", "or%201=1", "and%201=1",
-                         "admin'--", "1=1--", "' or '1'='1"]
+        sqli_patterns = [
+            "union",
+            "select",
+            "drop",
+            "insert",
+            "delete",
+            "update",
+            "or 1=1",
+            "and 1=1",
+            "' or '",
+            "sleep(",
+            "benchmark(",
+            "or+1=1",
+            "and+1=1",
+            "or%201=1",
+            "and%201=1",
+            "admin'--",
+            "1=1--",
+            "' or '1'='1",
+        ]
         for pattern in sqli_patterns:
             if pattern in path or pattern in raw:
                 self.detected_behaviors.add("sql_injection")
                 break
 
         # Detect LFI/RFI patterns
-        lfi_patterns = ["../", "..\\", "/etc/passwd", "/etc/shadow",
-                        "php://", "expect://", "data://"]
+        lfi_patterns = [
+            "../",
+            "..\\",
+            "/etc/passwd",
+            "/etc/shadow",
+            "php://",
+            "expect://",
+            "data://",
+        ]
         for pattern in lfi_patterns:
             if pattern in path or pattern in raw:
                 self.detected_behaviors.add("lfi_rfi")
                 break
 
         # Detect RCE patterns
-        rce_patterns = ["; ls", "| cat", "&& wget", "$(curl",
-                        "`nc`", "eval(", "exec(",
-                        "| cat ", "; cat ", "&& cat ",
-                        "cat /etc", "wget http", "curl http"]
+        rce_patterns = [
+            "; ls",
+            "| cat",
+            "&& wget",
+            "$(curl",
+            "`nc`",
+            "eval(",
+            "exec(",
+            "| cat ",
+            "; cat ",
+            "&& cat ",
+            "cat /etc",
+            "wget http",
+            "curl http",
+        ]
         for pattern in rce_patterns:
             if pattern in raw:
                 self.detected_behaviors.add("rce")
@@ -122,8 +161,16 @@ class BotProfile:
             self.detected_behaviors.add("credential_stuffing")
 
         # Detect enumeration
-        enum_paths = ["/admin", "/wp-admin", "/phpmyadmin", "/server-status",
-                      "/.git", "/.env", "/config", "/backup"]
+        enum_paths = [
+            "/admin",
+            "/wp-admin",
+            "/phpmyadmin",
+            "/server-status",
+            "/.git",
+            "/.env",
+            "/config",
+            "/backup",
+        ]
         if any(path.startswith(p) for p in enum_paths):
             self.detected_behaviors.add("enumeration")
 
@@ -133,13 +180,21 @@ class BotProfile:
     def _update_escalation(self) -> None:
         """Update escalation level based on detected behaviors."""
         if "rce" in self.detected_behaviors:
-            self.escalation_level = max(self.escalation_level, EscalationLevel.DEEP_EXPLOIT)
+            self.escalation_level = max(
+                self.escalation_level, EscalationLevel.DEEP_EXPLOIT
+            )
         elif "sql_injection" in self.detected_behaviors:
-            self.escalation_level = max(self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT)
+            self.escalation_level = max(
+                self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT
+            )
         elif "lfi_rfi" in self.detected_behaviors:
-            self.escalation_level = max(self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT)
+            self.escalation_level = max(
+                self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT
+            )
         elif "credential_stuffing" in self.detected_behaviors:
-            self.escalation_level = max(self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT)
+            self.escalation_level = max(
+                self.escalation_level, EscalationLevel.EXPLOIT_ATTEMPT
+            )
         elif "directory_traversal" in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, EscalationLevel.PROBE)
         elif "enumeration" in self.detected_behaviors:
@@ -169,7 +224,9 @@ class BotProfile:
                 "escalation_label": self._escalation_label(),
                 "detected_behaviors": list(self.detected_behaviors),
                 "request_count": len(self.request_history),
-                "last_request": self.request_history[-1] if self.request_history else None,
+                "last_request": self.request_history[-1]
+                if self.request_history
+                else None,
                 "known_services": self.personalized_knowledge.get("known_services", []),
                 "explored_paths": [r.get("path", "") for r in self.request_history],
                 "bot_personality": self._derive_bot_personality(),
@@ -259,4 +316,5 @@ def _generate_session_id() -> str:
     """Generate a unique session ID."""
     import hashlib
     import secrets
+
     return hashlib.sha256(secrets.token_bytes(16)).hexdigest()[:16]

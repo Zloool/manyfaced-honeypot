@@ -72,37 +72,45 @@ def _collect_handler_keywords() -> list[dict[str, Any]]:
             )
             handler_class = getattr(module, class_name)
             handler = handler_class()
-            patterns = handler.PATH_PATTERNS if hasattr(handler, "PATH_PATTERNS") else []
+            patterns = (
+                handler.PATH_PATTERNS if hasattr(handler, "PATH_PATTERNS") else []
+            )
 
             # Determine login paths (paths containing "login", "admin", "manage", etc.)
             login_keywords = ["login", "admin", "manage", "console", "dashboard"]
-            login_paths = [p for p in patterns if any(kw in p.lower() for kw in login_keywords)]
+            login_paths = [
+                p for p in patterns if any(kw in p.lower() for kw in login_keywords)
+            ]
 
             # Get service info
             info = _SERVICE_INFO.get(domain, (domain, "unknown", "Unknown"))
             display_name, version, status = info
 
-            keywords.append({
-                "domain": domain,
-                "name": display_name,
-                "version": version,
-                "status": status,
-                "patterns": patterns,
-                "login_paths": login_paths,
-            })
+            keywords.append(
+                {
+                    "domain": domain,
+                    "name": display_name,
+                    "version": version,
+                    "status": status,
+                    "patterns": patterns,
+                    "login_paths": login_paths,
+                }
+            )
         except (ImportError, AttributeError) as e:
             logger.debug("Could not load handler for domain '%s': %s", domain, e)
             # Still add a placeholder entry
             info = _SERVICE_INFO.get(domain, (domain, "unknown", "Unknown"))
             display_name, version, status = info
-            keywords.append({
-                "domain": domain,
-                "name": display_name,
-                "version": version,
-                "status": status,
-                "patterns": [],
-                "login_paths": [],
-            })
+            keywords.append(
+                {
+                    "domain": domain,
+                    "name": display_name,
+                    "version": version,
+                    "status": status,
+                    "patterns": [],
+                    "login_paths": [],
+                }
+            )
 
     return keywords
 
@@ -288,14 +296,18 @@ class GenericHandler(HTTPHandlerBase):
             # Path traversal / inclusion attempt
             body = _TRAVERSAL_ERROR.format(path=path)
             response = self._build_http_response(body, path, "403 Forbidden")
-        elif method == "POST" and any(kw in path_lower for kw in ["login", "admin", "auth"]):
+        elif method == "POST" and any(
+            kw in path_lower for kw in ["login", "admin", "auth"]
+        ):
             # POST to a login-like path
             credentials = self._extract_credentials(raw_request, headers or {})
             if credentials:
                 profile.capture_credentials(credentials)
                 # Redirect to a plausible admin page
                 response = self._build_http_response(
-                    "<html><body>Redirecting...</body></html>", path, "302 Found",
+                    "<html><body>Redirecting...</body></html>",
+                    path,
+                    "302 Found",
                     extra_headers={"Location": "/admin/"},
                 )
             else:
@@ -304,7 +316,9 @@ class GenericHandler(HTTPHandlerBase):
             # Default: serve the monster page
             response = self._build_http_response(_MONSTER_PAGE, path)
 
-        profile._response_count = profile._response_count + 1 if hasattr(profile, '_response_count') else 1
+        profile._response_count = (
+            profile._response_count + 1 if hasattr(profile, "_response_count") else 1
+        )
         self._response_count += 1
 
         return response, self.DETECTED_ID

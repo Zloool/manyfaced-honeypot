@@ -19,6 +19,7 @@ from manyfaced.common.bearstorage import BearStorage  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class MockParsedRequest:
     """Minimal mock that mimics a parsed HTTP request object."""
 
@@ -333,7 +334,9 @@ class TestBearStorageEdgeCases:
             ip="10.0.0.1",
             raw_request="full request",
             timestamp="now",
-            parsed_request=MockParsedRequest(path="/p", command="GET", request_version="HTTP/1.1"),
+            parsed_request=MockParsedRequest(
+                path="/p", command="GET", request_version="HTTP/1.1"
+            ),
             is_detected=1,
             hostname="myhost",
         )

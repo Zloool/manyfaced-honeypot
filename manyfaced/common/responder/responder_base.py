@@ -259,10 +259,11 @@ class ResponderBase(abc.ABC):
                 "active_profiles": len(self.bot_profiles),
                 "total_responses": self._response_count,
                 "profiles": {
-                    ip: profile.to_dict()
-                    for ip, profile in self.bot_profiles.items()
+                    ip: profile.to_dict() for ip, profile in self.bot_profiles.items()
                 },
             }
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(domain={self.domain!r}, enabled={self.enabled})"
+        return (
+            f"{self.__class__.__name__}(domain={self.domain!r}, enabled={self.enabled})"
+        )

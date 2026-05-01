@@ -45,7 +45,9 @@ class TestResolveDbPath:
         assert result == "/tmp/custom.db"
 
     def test_env_path_with_subdirs(self):
-        with patch.dict(os.environ, {"HONEY_DB_PATH": "data/nested/honeypot.db"}, clear=True):
+        with patch.dict(
+            os.environ, {"HONEY_DB_PATH": "data/nested/honeypot.db"}, clear=True
+        ):
             result = _resolve_db_path()
         assert result == "data/nested/honeypot.db"
 
@@ -104,6 +106,7 @@ class TestStorageBackend:
 
     def test_subclass_without_abstract_methods_cannot_be_instantiated(self):
         """A subclass that doesn't implement insert/close cannot be instantiated."""
+
         class IncompleteBackend(StorageBackend):
             pass
 
@@ -112,6 +115,7 @@ class TestStorageBackend:
 
     def test_subclass_with_all_abstract_methods_can_be_instantiated(self):
         """A subclass implementing insert and close can be instantiated."""
+
         class CompleteBackend(StorageBackend):
             def insert(self, record: dict) -> None:
                 pass
@@ -147,7 +151,9 @@ class TestSQLiteStorageInit:
 
     def test_init_uses_default_path_when_no_db_path(self, tmp_path):
         """SQLiteStorage should use _resolve_db_path() when db_path is None."""
-        with patch.dict(os.environ, {"HONEY_DB_PATH": str(tmp_path / "default.sqlite")}, clear=True):
+        with patch.dict(
+            os.environ, {"HONEY_DB_PATH": str(tmp_path / "default.sqlite")}, clear=True
+        ):
             storage = SQLiteStorage()
         assert storage._db_path == str(tmp_path / "default.sqlite")
         storage.close()
@@ -171,7 +177,9 @@ class TestSQLiteStorageInit:
         db_path = str(tmp_path / "table.db")
         storage = SQLiteStorage(db_path=db_path)
         cursor = storage._conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='honeypot_bears'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='honeypot_bears'"
+        )
         result = cursor.fetchone()
         assert result is not None
         assert result[0] == "honeypot_bears"
@@ -379,7 +387,9 @@ class TestSQLiteStorageInsert:
         storage._conn.commit()
 
         cursor = storage._conn.cursor()
-        cursor.execute("SELECT request_path, request_command, bot_user_agent, hive_id, login FROM honeypot_bears")
+        cursor.execute(
+            "SELECT request_path, request_command, bot_user_agent, hive_id, login FROM honeypot_bears"
+        )
         row = cursor.fetchone()
         assert row is not None
         assert row[0] == "/path"  # request_path from record
@@ -448,7 +458,9 @@ class TestSQLiteStorageInsert:
             "ip": "10.0.0.1",
             "hostname": "test",
             "timestamp": "2024-01-01 00:00:00",
-            "parsed_request": {"version": "HTTP/2.0"},  # version in parsed, not request_version
+            "parsed_request": {
+                "version": "HTTP/2.0"
+            },  # version in parsed, not request_version
             "raw_request": "GET / HTTP/2.0",
             "request_version": "HTTP/1.1",
             "is_detected": 0,
@@ -563,25 +575,29 @@ class TestSQLiteStorageMultipleInserts:
         storage = SQLiteStorage(db_path=db_path)
 
         # Full record
-        storage.insert({
-            "ip": "10.0.0.1",
-            "hostname": "host1",
-            "timestamp": "2024-01-01 00:00:01",
-            "parsed_request": {"path": "/full"},
-            "raw_request": "GET /full HTTP/1.1",
-            "is_detected": 1,
-            "hive_id": 1,
-            "login": "admin",
-        })
+        storage.insert(
+            {
+                "ip": "10.0.0.1",
+                "hostname": "host1",
+                "timestamp": "2024-01-01 00:00:01",
+                "parsed_request": {"path": "/full"},
+                "raw_request": "GET /full HTTP/1.1",
+                "is_detected": 1,
+                "hive_id": 1,
+                "login": "admin",
+            }
+        )
 
         # Minimal record
-        storage.insert({
-            "ip": "10.0.0.2",
-            "raw_request": "GET /min HTTP/1.1",
-            "timestamp": "2024-01-01 00:00:02",
-            "parsed_request": {},
-            "is_detected": 0,
-        })
+        storage.insert(
+            {
+                "ip": "10.0.0.2",
+                "raw_request": "GET /min HTTP/1.1",
+                "timestamp": "2024-01-01 00:00:02",
+                "parsed_request": {},
+                "is_detected": 0,
+            }
+        )
 
         storage._conn.commit()
 
@@ -614,13 +630,17 @@ class TestPostgreSQLStorageInit:
         mock_conn = MagicMock()
         mock_psycopg2.connect.return_value = mock_conn
 
-        with patch.dict(os.environ, {
-            "HONEY_PG_HOST": "pg.example.com",
-            "HONEY_PG_PORT": "5433",
-            "HONEY_PG_DB": "mydb",
-            "HONEY_PG_USER": "myuser",
-            "HONEY_PG_PASSWORD": "mypass",
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "HONEY_PG_HOST": "pg.example.com",
+                "HONEY_PG_PORT": "5433",
+                "HONEY_PG_DB": "mydb",
+                "HONEY_PG_USER": "myuser",
+                "HONEY_PG_PASSWORD": "mypass",
+            },
+            clear=True,
+        ):
             storage = PostgreSQLStorage()
 
         assert storage._host == "pg.example.com"
@@ -635,7 +655,9 @@ class TestPostgreSQLStorageInit:
         mock_psycopg2.connect.return_value = mock_conn
 
         with patch.dict(os.environ, {"HONEY_PG_HOST": "env.host"}, clear=True):
-            storage = PostgreSQLStorage(host="explicit.host", port=9999, database="db", user="u", password="p")
+            storage = PostgreSQLStorage(
+                host="explicit.host", port=9999, database="db", user="u", password="p"
+            )
 
         assert storage._host == "explicit.host"
         assert storage._port == 9999
@@ -680,7 +702,9 @@ class TestPostgreSQLStorageInitDb:
     def test_init_db_raises_import_error_when_module_missing(self):
         """_init_db should raise ImportError when psycopg2 module is absent."""
         # Ensure psycopg2 is not in sys.modules
-        with patch.dict("sys.modules", {k: v for k, v in sys.modules.items() if k != "psycopg2"}):
+        with patch.dict(
+            "sys.modules", {k: v for k, v in sys.modules.items() if k != "psycopg2"}
+        ):
             with patch.dict(os.environ, {}, clear=True):
                 with pytest.raises(ImportError, match="psycopg2 is required"):
                     PostgreSQLStorage()
@@ -692,7 +716,10 @@ class TestPostgreSQLStorageInitDb:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
 
-        with patch("sys.modules", {"psycopg2": MagicMock(connect=MagicMock(return_value=mock_conn))}):
+        with patch(
+            "sys.modules",
+            {"psycopg2": MagicMock(connect=MagicMock(return_value=mock_conn))},
+        ):
             with patch.dict(os.environ, {}, clear=True):
                 storage = PostgreSQLStorage()
 

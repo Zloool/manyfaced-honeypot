@@ -151,8 +151,8 @@ class HandlerRegistry:
                 all_bodies.append(response_bytes)
                 detected = max(detected, detected_flag)
             else:
-                header_part = response_bytes[:header_end + 4]
-                body_part = response_bytes[header_end + 4:]
+                header_part = response_bytes[: header_end + 4]
+                body_part = response_bytes[header_end + 4 :]
 
                 if not first_headers:
                     first_headers = header_part
@@ -207,12 +207,13 @@ class HandlerRegistry:
                 results.append((response_bytes, detected_flag))
                 logger.debug(
                     "Handler %s generated response for %s (detected=%d, size=%d)",
-                    handler.domain, path, detected_flag, len(response_bytes),
+                    handler.domain,
+                    path,
+                    detected_flag,
+                    len(response_bytes),
                 )
             except Exception as e:
-                logger.warning(
-                    "Handler %s failed for %s: %s", handler.domain, path, e
-                )
+                logger.warning("Handler %s failed for %s: %s", handler.domain, path, e)
 
         if not results:
             return None

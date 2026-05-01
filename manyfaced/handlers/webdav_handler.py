@@ -25,16 +25,26 @@ class WebDAVHandler(HTTPHandlerBase):
 
     domain = "webdav"
     PATH_PATTERNS = [
-        "/webdav/", "/webdav",
-        "/dav/", "/dav",
-        "/files/", "/files",
-        "/uploads/", "/uploads",
-        "/share/", "/share",
-        "/public/", "/public",
-        "/remote/", "/remote",
-        "/remote.php/", "/remote.php",
-        "/caldav/", "/caldav",
-        "/carddav/", "/carddav",
+        "/webdav/",
+        "/webdav",
+        "/dav/",
+        "/dav",
+        "/files/",
+        "/files",
+        "/uploads/",
+        "/uploads",
+        "/share/",
+        "/share",
+        "/public/",
+        "/public",
+        "/remote/",
+        "/remote",
+        "/remote.php/",
+        "/remote.php",
+        "/caldav/",
+        "/caldav",
+        "/carddav/",
+        "/carddav",
         "/.well-known/webdav",
         "/webdav/server.php",
         "/webdav/index.php",
@@ -100,21 +110,31 @@ class WebDAVHandler(HTTPHandlerBase):
         auth_header = headers_dict.get("Authorization", "")
         if auth_header.startswith("Basic "):
             import base64
+
             try:
-                decoded = base64.b64decode(auth_header[6:]).decode("utf-8", errors="replace")
+                decoded = base64.b64decode(auth_header[6:]).decode(
+                    "utf-8", errors="replace"
+                )
                 if ":" in decoded:
                     username, password = decoded.split(":", 1)
-                    profile.capture_credentials({"username": username, "password": password})
+                    profile.capture_credentials(
+                        {"username": username, "password": password}
+                    )
             except Exception:
                 pass
 
         # Handle PROPFIND requests (WebDAV directory listing)
         if method == "PROPFIND":
             body = self._propfind_response(path)
-            return self._build_http_response(body, 207, "Multi-Status", {
-                "Content-Type": "application/xml; charset=utf-8",
-                "DAV": "1, 2",
-            }), self.DETECTED_ID
+            return self._build_http_response(
+                body,
+                207,
+                "Multi-Status",
+                {
+                    "Content-Type": "application/xml; charset=utf-8",
+                    "DAV": "1, 2",
+                },
+            ), self.DETECTED_ID
 
         # Handle OPTIONS requests (WebDAV capabilities probe)
         if method == "OPTIONS":
@@ -130,16 +150,21 @@ class WebDAVHandler(HTTPHandlerBase):
 
         # Handle PUT requests (file upload attempt)
         if method == "PUT":
-            profile.record_request({
-                "path": path,
-                "method": method,
-                "headers": headers_dict,
-                "raw": raw_request[:5000] + (" [truncated]" if len(raw_request) > 5000 else ""),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            })
+            profile.record_request(
+                {
+                    "path": path,
+                    "method": method,
+                    "headers": headers_dict,
+                    "raw": raw_request[:5000]
+                    + (" [truncated]" if len(raw_request) > 5000 else ""),
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+            )
             profile.escalation_label = "file_upload_attempt"
             return self._build_http_response(
-                b"", 201, "Created",
+                b"",
+                201,
+                "Created",
                 {"Content-Type": "text/html; charset=utf-8"},
             ), self.DETECTED_ID
 
@@ -147,22 +172,32 @@ class WebDAVHandler(HTTPHandlerBase):
         if method == "POST":
             # Check for login POST
             if "login" in path_lower or "auth" in path_lower:
-                credentials, response, detected = self.handle_login(path, raw_request, bot_ip, headers_dict)
+                credentials, response, detected = self.handle_login(
+                    path, raw_request, bot_ip, headers_dict
+                )
                 if credentials:
                     return self._login_failed_response()
             # Check for file upload POST
             content_type = headers_dict.get("Content-Type", "")
-            if "multipart/form-data" in content_type or "application/octet-stream" in content_type:
-                profile.record_request({
-                    "path": path,
-                    "method": method,
-                    "headers": headers_dict,
-                    "raw": raw_request[:5000] + (" [truncated]" if len(raw_request) > 5000 else ""),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                })
+            if (
+                "multipart/form-data" in content_type
+                or "application/octet-stream" in content_type
+            ):
+                profile.record_request(
+                    {
+                        "path": path,
+                        "method": method,
+                        "headers": headers_dict,
+                        "raw": raw_request[:5000]
+                        + (" [truncated]" if len(raw_request) > 5000 else ""),
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                    }
+                )
                 profile.escalation_label = "file_upload_attempt"
                 return self._build_http_response(
-                    b"", 201, "Created",
+                    b"",
+                    201,
+                    "Created",
                     {"Content-Type": "text/html; charset=utf-8"},
                 ), self.DETECTED_ID
 
@@ -174,15 +209,24 @@ class WebDAVHandler(HTTPHandlerBase):
                 return self._forbidden_response()
             elif "/config.php" in path_lower or "/setup.php" in path_lower:
                 return self._forbidden_response()
-            elif "/admin/" in path_lower or "/login/" in path_lower or "/auth/" in path_lower:
+            elif (
+                "/admin/" in path_lower
+                or "/login/" in path_lower
+                or "/auth/" in path_lower
+            ):
                 body = self._webdav_login_page()
             else:
                 body = self._directory_listing(path)
 
-            return self._build_http_response(body, 200, "OK", {
-                "Content-Type": "text/html; charset=utf-8",
-                "DAV": "1, 2",
-            }), self.DETECTED_ID
+            return self._build_http_response(
+                body,
+                200,
+                "OK",
+                {
+                    "Content-Type": "text/html; charset=utf-8",
+                    "DAV": "1, 2",
+                },
+            ), self.DETECTED_ID
 
         # Handle other methods (HEAD, PATCH, COPY, MOVE, LOCK, UNLOCK)
         if method in ("HEAD", "PATCH", "COPY", "MOVE", "LOCK", "UNLOCK"):
@@ -190,9 +234,14 @@ class WebDAVHandler(HTTPHandlerBase):
             return self._build_http_response(b"", 200, "OK"), self.DETECTED_ID
 
         # Default: 405 Method Not Allowed
-        return self._build_http_response(b"", 405, "Method Not Allowed", {
-            "Allow": "GET, HEAD, POST, OPTIONS, PROPFIND, MKCOL, PUT, DELETE, MOVE, COPY",
-        }), self.DETECTED_ID
+        return self._build_http_response(
+            b"",
+            405,
+            "Method Not Allowed",
+            {
+                "Allow": "GET, HEAD, POST, OPTIONS, PROPFIND, MKCOL, PUT, DELETE, MOVE, COPY",
+            },
+        ), self.DETECTED_ID
 
     def _directory_listing(self, path: str) -> str:
         """Generate a WebDAV directory listing page."""
@@ -335,7 +384,9 @@ class WebDAVHandler(HTTPHandlerBase):
     def _options_response(self) -> bytes:
         """Generate WebDAV OPTIONS response (capabilities probe)."""
         return self._build_http_response(
-            b"", 200, "OK",
+            b"",
+            200,
+            "OK",
             {
                 "DAV": "1, 2",
                 "MS-Author-Via": "DAV",
@@ -433,15 +484,21 @@ class WebDAVHandler(HTTPHandlerBase):
             return parts[0].upper()
         return "GET"
 
-    def _build_http_response(self, body: str | bytes, status_code: int = 200, status_text: str = "OK", headers: dict | None = None) -> bytes:
+    def _build_http_response(
+        self,
+        body: str | bytes,
+        status_code: int = 200,
+        status_text: str = "OK",
+        headers: dict | None = None,
+    ) -> bytes:
         """Build a complete HTTP response."""
         if isinstance(body, str):
             body_bytes = body.encode("utf-8")
         else:
             body_bytes = body
-        
+
         now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
-        
+
         resp_headers = {
             "Server": "Apache/2.4.57 (Ubuntu)",
             "Date": now,
@@ -449,17 +506,18 @@ class WebDAVHandler(HTTPHandlerBase):
         }
         if headers:
             resp_headers.update(headers)
-        
+
         header_lines = []
         for key, value in resp_headers.items():
             header_lines.append(f"{key}: {value}")
-        
+
         response = (
             f"HTTP/1.1 {status_code} {status_text}\r\n"
-            + "\r\n".join(header_lines) + "\r\n"
+            + "\r\n".join(header_lines)
+            + "\r\n"
             + "\r\n"
         )
-        
+
         return response.encode("iso-8859-1") + body_bytes
 
     def __repr__(self) -> str:
