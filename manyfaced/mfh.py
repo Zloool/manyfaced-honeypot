@@ -16,7 +16,8 @@ from manyfaced.common.config import settings, Config
 logger = logging.getLogger(__name__)
 
 # Lockfile path for preventing multiple instances
-LOCKFILE = "/run/manyfaced/lockfile"
+# Must be in a ReadWritePaths directory ( ProtectSystem=strict blocks other paths)
+LOCKFILE = "/opt/manyfaced/bots/lockfile"
 
 _lock_fd = None
 
