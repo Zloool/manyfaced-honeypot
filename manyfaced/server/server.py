@@ -1,6 +1,5 @@
 import json
 import signal
-from multiprocessing import Process
 from socket import (
     socket,
     AF_INET,
@@ -38,10 +37,12 @@ class ServerHandler(BaseHandler):
         return key
 
     def process_request(self, data):
-        Process(
-            args=(data, self.args), name="data_saving", target=self.save_data
-        ).start()
-        logger.debug("Spawned data_saving process for %s", data.get("ip", "unknown"))
+        """Process an incoming encrypted message from the client.
+
+        Saves data synchronously instead of spawning a subprocess.
+        SQLite writes are fast enough that async is unnecessary overhead.
+        """
+        self.save_data(data, self.args)
         return True
 
     def save_data(self, data, args):
