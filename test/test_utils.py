@@ -171,43 +171,32 @@ class TestDumpFile:
 class TestReceiveTimeout:
     """Tests for receive_timeout(the_socket, timeout): uses settimeout() for reliable data reception.
 
-    Note: receive_timeout uses b"".join(total_data) which expects bytes data.
+    The current implementation uses socket.settimeout() and catches socket.timeout.
     Socket recv() returns bytes, so we mock it to return bytes.
     """
 
-    @pytest.fixture
-    def _mock_sleep(self, monkeypatch):
-        """Monkey-patch time.sleep to be a no-op."""
-        monkeypatch.setattr("time.sleep", lambda *a: None)
-
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_assembles_multiple_receives(self, monkeypatch, _mock_sleep):
+    def test_assembles_multiple_receives(self, monkeypatch):
         """receive_timeout assembles data from multiple recv calls until timeout."""
+        from socket import timeout as socket_timeout
+
         mock_socket = MagicMock()
-        # With 0.1s increments and timeout=1.0:
-        # After receiving data, begin resets. Empty responses keep looping
-        # until elapsed > timeout (1.0s).
-        # 4 data chunks + 11 empty = 15 recv calls total
         data_chunks = [
-            "HTTP/1.1 200 OK\r\n",
-            "Content-Type: text/html\r\n",
-            "\r\n",
-            "<!DOCTYPE html>",
-        ] + [""] * 11
+            b"HTTP/1.1 200 OK\r\n",
+            b"Content-Type: text/html\r\n",
+            b"\r\n",
+            b"<!DOCTYPE html>",
+        ]
 
         recv_count = [0]
 
         def side_effect(*args):
             idx = recv_count[0]
             recv_count[0] += 1
-            return data_chunks[idx]
+            if idx < len(data_chunks):
+                return data_chunks[idx]
+            raise socket_timeout("timed out")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
@@ -215,198 +204,151 @@ class TestReceiveTimeout:
             result
             == "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>"
         )
-        assert mock_socket.setblocking.called
-        assert mock_socket.recv.call_count == 15  # 4 data + 11 empty
+        mock_socket.settimeout.assert_any_call(1.0)  # set timeout
+        mock_socket.settimeout.assert_any_call(None)  # reset in finally
+        assert mock_socket.recv.call_count == len(data_chunks) + 1  # +1 for timeout
 
-    def test_returns_empty_on_immediate_empty(self, monkeypatch, _mock_sleep):
-        """receive_timeout returns empty string after timeout*2 when no data."""
+    def test_returns_empty_on_immediate_empty(self, monkeypatch):
+        """receive_timeout returns empty string when peer closes connection immediately."""
         mock_socket = MagicMock()
-        # With 0.1s increments and timeout=1.0:
-        # timeout*2 = 2.0, so after 20 calls elapsed=2.1 > 2.0 → break
-        mock_socket.recv = MagicMock(return_value="")
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
+        mock_socket.recv = MagicMock(return_value=b"")
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == ""
+        mock_socket.settimeout.assert_any_call(1.0)
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_timeout_breaks_after_data_received(self, monkeypatch, _mock_sleep):
+    def test_timeout_breaks_after_data_received(self, monkeypatch):
         """receive_timeout breaks out of loop after timeout once data has been received."""
+        from socket import timeout as socket_timeout
+
         mock_socket = MagicMock()
-        # With 0.1s increments and timeout=0.5:
-        # 5 data chunks + 3 empty = 8 recv calls total
-        data_chunks = ["data1", "data2", "data3", "data4", "data5"] + [""] * 3
+        data_chunks = [b"data1", b"data2", b"data3", b"data4", b"data5"]
 
         recv_count = [0]
 
         def side_effect(*args):
             idx = recv_count[0]
             recv_count[0] += 1
-            return data_chunks[idx]
+            if idx < len(data_chunks):
+                return data_chunks[idx]
+            raise socket_timeout("timed out")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
         assert result == "data1data2data3data4data5"
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_timeout_without_data(self, monkeypatch, _mock_sleep):
-        """receive_timeout returns empty after timeout*2 even with no data."""
-        mock_socket = MagicMock()
-        # With 0.1s increments and timeout=0.5:
-        # timeout*2 = 1.0, so after 10 calls elapsed=1.1 > 1.0 → break
-        mock_socket.recv = MagicMock(return_value="")
+    def test_timeout_without_data(self, monkeypatch):
+        """receive_timeout returns empty after timeout even with no data."""
+        from socket import timeout as socket_timeout
 
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
+        mock_socket = MagicMock()
+
+        recv_count = [0]
+
+        def side_effect(*args):
+            recv_count[0] += 1
+            raise socket_timeout("timed out")
+
+        mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
         assert result == ""
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_refreshes_begin_on_data(self, monkeypatch, _mock_sleep):
-        """receive_timeout resets begin time when new data arrives, extending the window."""
+    def test_refreshes_begin_on_data(self, monkeypatch):
+        """receive_timeout collects all data until timeout."""
+        from socket import timeout as socket_timeout
+
         mock_socket = MagicMock()
-        # With 0.5s increments and timeout=1.0:
-        # Call 1: t=1000.5, recv="a", begin=1000.5
-        # Call 2: t=1001.0, elapsed=0.5, recv="b", begin=1001.0
-        # Call 3: t=1001.5, elapsed=0.5, recv="c", begin=1001.5
-        # Call 4: t=1002.0, elapsed=0.5, recv="", total_data non-empty, 0.5 NOT > 1.0
-        # Call 5: t=1002.5, elapsed=1.0, 1.0 NOT > 1.0
-        # Call 6: t=1003.0, elapsed=1.5, 1.5 > 1.0 → break
-        data_chunks = ["a", "b", "c", "", "", ""]
+        data_chunks = [b"a", b"b", b"c"]
 
         recv_count = [0]
 
         def side_effect(*args):
             idx = recv_count[0]
             recv_count[0] += 1
-            return data_chunks[idx]
+            if idx < len(data_chunks):
+                return data_chunks[idx]
+            raise socket_timeout("timed out")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-
-        # time advances by 0.5 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.5))
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == "abc"
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_socket_error_handled(self, monkeypatch, _mock_sleep):
-        """receive_timeout handles socket.error (would block) gracefully."""
-        from socket import error as socket_error
+    def test_socket_error_handled(self, monkeypatch):
+        """receive_timeout catches socket.error and returns collected data."""
+        from socket import error as socket_error, timeout as socket_timeout
 
         mock_socket = MagicMock()
 
-        # With 0.1s increments and timeout=0.5:
-        # Calls 1-3: raise socket_error
-        # Call 4: recv="got data", begin reset
-        # Calls 5-9: recv empty (elapsed < 0.5)
-        # Call 10: recv empty, elapsed=0.6 > 0.5 → break
         recv_count = [0]
 
         def side_effect(*args):
             recv_count[0] += 1
-            if recv_count[0] <= 3:
-                raise socket_error("would block")
-            return "got data"
+            if recv_count[0] == 1:
+                return b"partial"
+            raise socket_error("would block")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-        mock_socket.setblocking = MagicMock()
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == "got data"
+        # socket_error is caught; returns data collected before the error
+        assert result == "partial"
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_single_chunk(self, monkeypatch, _mock_sleep):
-        """receive_timeout handles a single recv call with data then empty."""
+    def test_single_chunk(self, monkeypatch):
+        """receive_timeout handles a single recv call with data then timeout."""
+        from socket import timeout as socket_timeout
+
         mock_socket = MagicMock()
-        # With 0.1s increments and timeout=1.0:
-        # Call 1: recv="hello", begin=1000.1
-        # Calls 2-11: recv empty (elapsed < 1.0)
-        # Call 12: recv empty, elapsed=1.1 > 1.0 → break
-        data_chunks = ["hello"] + [""] * 11
 
         recv_count = [0]
 
         def side_effect(*args):
-            idx = recv_count[0]
             recv_count[0] += 1
-            return data_chunks[idx]
+            if recv_count[0] == 1:
+                return b"hello"
+            raise socket_timeout("timed out")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == "hello"
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_timeout_exactly_at_timeout2(self, monkeypatch, _mock_sleep):
-        """receive_timeout breaks when elapsed time reaches timeout*2 with no data."""
-        mock_socket = MagicMock()
-        # With 0.1s increments and timeout=1.0:
-        # timeout*2 = 2.0, so after 20 calls elapsed=2.1 > 2.0 → break
-        mock_socket.recv = MagicMock(return_value="")
+    def test_timeout_exactly_at_timeout2(self, monkeypatch):
+        """receive_timeout breaks on socket.timeout with no data."""
+        from socket import timeout as socket_timeout
 
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
+        mock_socket = MagicMock()
+        mock_socket.recv = MagicMock(side_effect=socket_timeout("timed out"))
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
         assert result == ""
 
-    @pytest.mark.skip(
-        reason="Tests written for older receive_timeout with begin logic; need rewrite for current settimeout() implementation"
-    )
-    def test_data_then_timeout(self, monkeypatch, _mock_sleep):
+    def test_data_then_timeout(self, monkeypatch):
         """receive_timeout collects data, then times out after receiving data."""
+        from socket import timeout as socket_timeout
+
         mock_socket = MagicMock()
-        # With 0.1s increments and timeout=0.5:
-        # Call 1: recv="hello", begin=1000.1
-        # Call 2: recv=" world", begin=1000.2
-        # Calls 3-7: recv empty (elapsed < 0.5 from begin=1000.2)
-        # Call 8: recv empty, elapsed=0.6 > 0.5 → break
-        data_chunks = ["hello", " world"] + [""] * 6
 
         recv_count = [0]
 
         def side_effect(*args):
-            idx = recv_count[0]
             recv_count[0] += 1
-            return data_chunks[idx]
+            if recv_count[0] == 1:
+                return b"hello"
+            if recv_count[0] == 2:
+                return b" world"
+            raise socket_timeout("timed out")
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
-
-        # time advances by 0.1 each call
-        monkeypatch.setattr("time.time", _make_time_counter(increment=0.1))
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
