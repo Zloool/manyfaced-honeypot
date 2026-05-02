@@ -39,21 +39,35 @@ if os.path.exists(args_file):
     with open(args_file, "r") as f:
         args_content = f.read()
 
-    # Extract --flag patterns
+    # Extract --flag patterns, skip --help (auto-generated)
     flags = re.findall(r"--([\w-]+)", args_content)
+    flags = [f for f in flags if f != "help"]
 
     with open("README.md", "r") as f:
         readme_content = f.read()
 
     for flag in flags:
+        # Check if the full flag is documented
         if f"--{flag}" not in readme_content:
-            errors.append(f"CLI flag --{flag} in arguments.py not documented in README")
+            # Also check if the short form is documented
+            short_form = f"-{flag[0]}"
+            if short_form not in readme_content:
+                errors.append(
+                    f"CLI flag --{flag} in arguments.py not documented in README"
+                )
 
 # Check 4: File paths mentioned in README exist
-# Use a simpler pattern that avoids quote escaping issues
-readme_paths_to_check = re.findall(
-    r"(manyfaced/\S+|test/\S+|\.github/\S+)", readme_content
-)
+# Match paths that look like actual file references
+readme_paths_to_check = set()
+for match in re.finditer(
+    r"(?:^|[\s`'\",;])((?:manyfaced|test|\.github)/[\w./-]+?)(?:[\s`'\",;]|$)",
+    readme_content,
+):
+    path = match.group(1)
+    # Clean up trailing punctuation
+    path = path.rstrip("`,;'\"")
+    readme_paths_to_check.add(path)
+
 for path in readme_paths_to_check:
     if not os.path.exists(path):
         errors.append(f"README references {path} but it doesn't exist")
