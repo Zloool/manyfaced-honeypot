@@ -424,6 +424,7 @@ class TestConfigGenerateConfigFile:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
 
         path = cfg.generate_config_file()
@@ -477,6 +478,7 @@ class TestConfigGenerateConfigFile:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
 
         custom_path = tmp_path / "custom" / "config.toml"
@@ -724,6 +726,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         assert cfg.resolve_ports() == [80]
 
@@ -755,6 +758,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         assert cfg.resolve_ports() == [443]
 
@@ -786,6 +790,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -821,6 +826,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -853,6 +859,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -885,6 +892,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -919,6 +927,7 @@ class TestConfigResolvePorts:
             DEFAULT_KEY="default_beehive_key",
             DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
+            LOCKFILE="/run/manyfaced/lockfile",
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50

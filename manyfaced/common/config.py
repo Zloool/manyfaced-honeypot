@@ -151,6 +151,9 @@ _DEFAULT_LOG_FILE = os.path.join(
     os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
 )
 _DEFAULT_DUMP_FILE = "/var/lib/manyfaced/dump.jsonl"
+_DEFAULT_LOCKFILE = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR", "/run"), "manyfaced", "lockfile"
+)
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -286,6 +289,9 @@ class Config:
     # Dump file (fallback for failed DB writes)
     DUMP_FILE: str  # path to the JSONL dump file
 
+    # Lockfile (prevents multiple instances)
+    LOCKFILE: str  # path to the lockfile for instance management
+
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
         """Build a Config resolving defaults → TOML → env var."""
@@ -368,6 +374,9 @@ class Config:
             DUMP_FILE=str(
                 _resolve("dump_file", _DEFAULT_DUMP_FILE, "dump", toml, prefix)
             ),
+            LOCKFILE=str(
+                _resolve("lockfile", _DEFAULT_LOCKFILE, "lockfile", toml, prefix)
+            ),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -424,6 +433,10 @@ class Config:
             "[dump]",
             "  # Path to the JSONL dump file (fallback for failed DB writes)",
             f'  dump_file = "{self.DUMP_FILE}"',
+            "",
+            "[lockfile]",
+            "  # Path to the lockfile (prevents multiple instances)",
+            f'  lockfile = "{self.LOCKFILE}"',
             "",
         ]
         path.write_text("\n".join(lines))

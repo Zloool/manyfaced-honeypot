@@ -15,10 +15,7 @@ from manyfaced.common.config import settings, Config
 
 logger = logging.getLogger(__name__)
 
-# Lockfile path for preventing multiple instances
-# Must be in a ReadWritePaths directory (ProtectSystem=strict blocks other paths).
-# /opt/manyfaced/bots is writable per systemd ReadWritePaths.
-LOCKFILE = "/opt/manyfaced/bots/lockfile"
+logger = logging.getLogger(__name__)
 
 _lock_fd = None
 
@@ -31,8 +28,8 @@ def _acquire_lockfile():
     """
     global _lock_fd
     try:
-        os.makedirs(os.path.dirname(LOCKFILE), exist_ok=True)
-        _lock_fd = open(LOCKFILE, "w")
+        os.makedirs(os.path.dirname(settings.LOCKFILE), exist_ok=True)
+        _lock_fd = open(settings.LOCKFILE, "w")
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_fd.write(str(os.getpid()))
         _lock_fd.flush()
