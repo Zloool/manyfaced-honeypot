@@ -25,15 +25,19 @@ class ServerHandler(BaseHandler):
     def get_key(self, identifier):
         """Get the AES key for a given identifier.
 
-        Falls back to HIVEPASS if identifier is not in AUTHORISEDBEARS.
+        Rejects unknown identifiers – only explicitly configured
+        AUTHORISEDBEARS entries are accepted.
         """
         key = settings.AUTHORISEDBEARS.get(identifier)
         if key is None:
-            # Use HIVEPASS as default key for unknown identifiers
-            # This matches the key used by CLIENT's send_report()
-            # HIVEPASS accessed via settings from config.py
-
-            return settings.HIVEPASS
+            logger.warning(
+                "Rejected connection from unknown identifier '%s' – "
+                "not in AUTHORISEDBEARS. Connection dropped.",
+                identifier,
+            )
+            raise ValueError(
+                f"Unknown identifier '{identifier}' – not authorized"
+            )
         return key
 
     def process_request(self, data):
