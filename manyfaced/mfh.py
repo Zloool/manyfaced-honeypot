@@ -76,7 +76,7 @@ def run() -> None:
     )
     if not os.path.isfile(xdg_config):
         example = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "common", "config.toml.example"
+            os.path.dirname(os.path.abspath(__file__)), "settings.toml.example"
         )
         if os.path.isfile(example):
             import shutil
