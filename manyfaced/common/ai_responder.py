@@ -345,7 +345,9 @@ class AIResponder:
             logger.warning("AI response body truncated to %d bytes", MAX_BODY)
         # Sanity check: reject absurdly large bodies
         if len(sanitized.encode("utf-8")) > MAX_BODY:
-            sanitized = sanitized.encode("utf-8")[:MAX_BODY].decode("utf-8", errors="replace")
+            sanitized = sanitized.encode("utf-8")[:MAX_BODY].decode(
+                "utf-8", errors="replace"
+            )
 
         # Determine content type based on face type
         if known_face and known_face.endswith(".xml"):

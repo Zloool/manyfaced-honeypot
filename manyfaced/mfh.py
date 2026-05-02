@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Lockfile path for preventing multiple instances
 # Must be in a ReadWritePaths directory ( ProtectSystem=strict blocks other paths)
-LOCKFILE = settings.LOCKFILE if hasattr(settings, "LOCKFILE") else "/run/manyfaced/lockfile"
+LOCKFILE = (
+    settings.LOCKFILE if hasattr(settings, "LOCKFILE") else "/run/manyfaced/lockfile"
+)
 
 _lock_fd = None
 

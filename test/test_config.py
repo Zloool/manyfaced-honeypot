@@ -94,7 +94,7 @@ class TestConfigDefaults:
 
     def test_defaults_no_toml_no_env(self, tmp_path, monkeypatch):
         """All values should be defaults when no TOML and no env vars.
-        
+
         Note: HIVEPASS and DEFAULT_KEY must be explicitly configured in production.
         Tests that load Config without these values will see None, which triggers
         a fatal error at module-level validation. We set them in the TOML to
@@ -308,6 +308,7 @@ default_key = "default_beehive_key"
         """Config.load() with no HIVEPASS raises SystemExit(1) at module level."""
         import subprocess
         import sys
+
         toml_content = "[honeypot]\nhoneyport = 80\n"
         toml_path = tmp_path / "config.toml"
         toml_path.write_text(toml_content)
@@ -341,16 +342,18 @@ except SystemExit as e:
     sys.exit(e.code)
 """)
         result = subprocess.run(
-            [sys.executable, str(script)],
-            capture_output=True, text=True, timeout=10
+            [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
-        assert result.returncode == 1, f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+        assert result.returncode == 1, (
+            f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+        )
 
     def test_default_key_required_raises_systemexit(self, tmp_path, monkeypatch):
         """Config.load() with no DEFAULT_KEY raises SystemExit(1) at module level."""
         import subprocess
         import sys
-        toml_content = "[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = \"testpass\"\n"
+
+        toml_content = '[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = "testpass"\n'
         toml_path = tmp_path / "config.toml"
         toml_path.write_text(toml_content)
 
@@ -379,10 +382,11 @@ except SystemExit as e:
     sys.exit(e.code)
 """)
         result = subprocess.run(
-            [sys.executable, str(script)],
-            capture_output=True, text=True, timeout=10
+            [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
-        assert result.returncode == 1, f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+        assert result.returncode == 1, (
+            f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+        )
 
 
 class TestConfigGenerateConfigFile:
