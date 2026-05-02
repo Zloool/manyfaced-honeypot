@@ -35,9 +35,7 @@ class ServerHandler(BaseHandler):
                 "not in AUTHORISEDBEARS. Connection dropped.",
                 identifier,
             )
-            raise ValueError(
-                f"Unknown identifier '{identifier}' – not authorized"
-            )
+            raise ValueError(f"Unknown identifier '{identifier}' – not authorized")
         return key
 
     def process_request(self, data):
