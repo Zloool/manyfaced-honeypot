@@ -47,7 +47,7 @@ def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | No
     """
     try:
         # Set a longer timeout for SSH credential capture
-        connection_socket.settimeout(10)
+        connection_socket.settimeout(30)
         all_data = b""
         while True:
             try:
@@ -56,7 +56,7 @@ def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | No
                     break
                 all_data += data
                 # Check if we have enough data to parse
-                if len(all_data) > 100:
+                if len(all_data) > 500:
                     break
             except socket.timeout:
                 break
