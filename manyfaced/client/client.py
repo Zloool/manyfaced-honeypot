@@ -251,7 +251,7 @@ def send_report(data, client, password, server_host, server_port):
         "HIVELOGIN": data.hostname,
     }
     message = (client + ":").encode()
-    message += cypher.encrypt(json.dumps(data_dict).encode())
+    message += cypher.encrypt(json.dumps(data_dict).encode()).encode()
 
     # Retry with exponential backoff to handle server restarts
     delay = REPORT_SEND_RETRY_DELAY
