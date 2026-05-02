@@ -77,7 +77,7 @@ class TestLockfile(unittest.TestCase):
             lockfile_path = tmp.name
 
         try:
-            with patch("manyfaced.mfh.LOCKFILE", lockfile_path):
+            with patch("manyfaced.mfh.settings.LOCKFILE", lockfile_path):
                 with patch("manyfaced.mfh.os.makedirs"):
                     _acquire_lockfile()
                     from manyfaced.mfh import _lock_fd
@@ -87,7 +87,7 @@ class TestLockfile(unittest.TestCase):
                     self.assertEqual(int(tmp_content), os.getpid())
         finally:
             try:
-                with patch("manyfaced.mfh.LOCKFILE", lockfile_path):
+                with patch("manyfaced.mfh.settings.LOCKFILE", lockfile_path):
                     _release_lockfile()
             except Exception:
                 pass
