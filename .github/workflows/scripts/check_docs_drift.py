@@ -47,7 +47,8 @@ if os.path.exists(args_file):
             errors.append(f"CLI flag --{flag} in arguments.py not documented in README")
 
 # Check 4: File paths mentioned in README exist
-readme_paths_to_check = re.findall(r'(manyfaced/[^\s'"]+|test/[^\s'"]+|\.github/[^\s'"]+)', readme_content)
+# Use a simpler pattern that avoids quote escaping issues
+readme_paths_to_check = re.findall(r'(manyfaced/\S+|test/\S+|\.github/\S+)', readme_content)
 for path in readme_paths_to_check:
     if not os.path.exists(path):
         errors.append(f"README references {path} but it doesn't exist")

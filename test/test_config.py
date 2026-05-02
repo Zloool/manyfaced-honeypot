@@ -82,25 +82,6 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-    """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
-    toml_path.write_text(content)
-    return toml_path
-
-
-    """Create a time.time() side_effect that increments by `increment` each call."""
-    counter = [0]
-
-    def side_effect():
-        counter[0] += 1
-        return start + counter[0] * increment
-
-    return side_effect
-
-
-# ===================================================================
-# utils.py  –  dump_file / receive_timeout
-# ===================================================================
 class TestConfigDefaults:
     """Config with no TOML file, no env vars → returns defaults."""
 
@@ -325,7 +306,8 @@ default_key = "default_beehive_key"
 
     def test_hivepass_required_raises_systemexit(self, tmp_path, monkeypatch):
         """Config.load() with no HIVEPASS raises SystemExit(1) at module level."""
-        import subprocess, sys
+        import subprocess
+        import sys
         toml_content = "[honeypot]\nhoneyport = 80\n"
         toml_path = tmp_path / "config.toml"
         toml_path.write_text(toml_content)
@@ -366,7 +348,8 @@ except SystemExit as e:
 
     def test_default_key_required_raises_systemexit(self, tmp_path, monkeypatch):
         """Config.load() with no DEFAULT_KEY raises SystemExit(1) at module level."""
-        import subprocess, sys
+        import subprocess
+        import sys
         toml_content = "[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = \"testpass\"\n"
         toml_path = tmp_path / "config.toml"
         toml_path.write_text(toml_content)
