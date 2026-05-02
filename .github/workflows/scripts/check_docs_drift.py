@@ -5,8 +5,6 @@ import os
 import re
 import sys
 
-os.chdir("/home/zlol/manyfaced-honeypot")
-
 errors = []
 
 # Check 1: README's directory tree matches reality
