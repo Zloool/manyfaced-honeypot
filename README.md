@@ -43,9 +43,6 @@ python3 mfh.py -c 80 -s 666
 
 # 6. Verbose mode (logs bot interactions)
 python3 mfh.py -c 80 -s 666 -v
-
-# 7. Enable self-updating client
-python3 mfh.py -c 80 -s 666 -u
 ```
 
 ## Architecture Overview
@@ -59,9 +56,9 @@ python3 mfh.py -c 80 -s 666 -u
               ┌────────────────┼────────────────┐
               ▼                ▼                 ▼
          ┌─────────┐     ┌──────────┐    ┌──────────┐
-         │ CLIENT  │     │ SERVER   │    │ UPDATER  │
-         │ (port   │     │ (port    │    │ (optional│
-         │ -c PORT)│     │ -s PORT) │    │  -u      │
+         │ CLIENT  │     │ SERVER   │    │ (deployed │
+         │ (port   │     │ (port    │    │ via GitHub│
+         │ -c PORT)│     │ -s PORT) │    │ Actions)  │
          └─────────┘     └──────────┘    └──────────┘
               │                │
               ▼                ▼
@@ -77,9 +74,9 @@ The honeypot runs two independent processes:
 
 - **CLIENT** (`-c PORT`): Listens on a port and impersonates well-known vulnerable services. When a bot requests paths like `/wp-login.php` or `/phpmyadmin`, the client responds with fake but realistic content from specialized handlers (WordPress, phpMyAdmin, WebDAV, etc.). After serving the fake response, the client **reports back** the bot's IP, raw request, and metadata to the SERVER via an encrypted TCP connection.
 
-- **SERVER** (`-s PORT`): Listens on a separate port for encrypted bot reports from clients (or from external clients). It decrypts the report using a shared AES key, parses the data, and stores it in the database via `Process` (spawns a background subprocess for the insertion).
+- **SERVER** (`-s PORT`): Listens on a separate port for encrypted bot reports from clients (or from external clients). It decrypts the report using a shared AES key, parses the data, and stores it in the database.
 
-- **UPDATER** (`-u`): Optional process that sleeps 1 hour, pulls latest code, installs deps, and auto-restarts the honeypot.
+Deployment is handled via GitHub Actions (`.github/workflows/deploy.yml`), which rsyncs code to the production droplet and restarts the systemd service.
 
 ### Data Flow
 
@@ -99,7 +96,6 @@ Client internal:
 |------|---------|-------------|
 | `-c [PORT]` | disabled | Start CLIENT on PORT (impersonates web services) |
 | `-s [PORT]` | disabled | Start SERVER on PORT (receives encrypted reports) |
-| `-u` | false | Enable auto-update (pulls from git every hour) |
 | `-v` | false | Verbose logging mode |
 | `-p` | false | Proxy mode (sets X-Forwarded-For handling) |
 | `--port-mode` | `single` | Port listening mode: `single`, `top`, or `all` |
@@ -295,28 +291,32 @@ manyfaced-honeypot/
 ├── manyfaced/
 │   ├── __init__.py                 # Package init
 │   ├── common/
-│   │   ├── config.py               # Modern Config (TOML + env + defaults)
+│   │   ├── ai_responder.py         # AI-powered response generation
 │   │   ├── arguments.py            # CLI argument parser
-│   │   ├── httphandler.py          # HTTPRequest wrapper class
-│   │   ├── myenc.py                # AESCipher (AES-256-CBC encrypt/decrypt)
 │   │   ├── bearstorage.py          # BearStorage data container
+│   │   ├── config.py               # Modern Config (TOML + env + defaults)
+│   │   ├── httphandler.py          # HTTPRequest wrapper class
+│   │   ├── logging_setup.py        # Logging configuration
+│   │   ├── myenc.py                # AESCipher (AES-256-CBC encrypt/decrypt)
+│   │   ├── protocol.py             # Protocol detection utilities
+│   │   ├── responder/              # AI response generators (modular)
 │   │   ├── status.py               # Constants (timeouts, detection IDs)
-│   │   ├── update.py               # Auto-update logic
 │   │   └── utils.py                # Socket helpers, dump_file
 │   ├── server/
 │   │   └── server.py               # ServerHandler + TCP listener
 │   ├── client/
 │   │   └── client.py               # create_server(), send_report()
 │   ├── handlers/
-│   │   ├── base_handler.py         # BaseHandler ABC, HTTPHandlerBase, BotProfile
+│   │   ├── base_handler.py         # BaseHandler ABC, BotProfile
 │   │   ├── http_handler.py         # HTTPHandler (CLIENT-side request processing)
 │   │   ├── registry.py             # HandlerRegistry (routes requests)
 │   │   └── *.py                    # Service handlers (WordPress, phpMyAdmin, etc.)
-│   └── db/
-│       ├── dbconnect.py            # BearRequests dataclass + Insert()
-│       ├── storage.py              # SQLiteStorage, PostgreSQLStorage, get_storage()
-│       ├── dbscript.sql            # Legacy ClickHouse schema
-│       └── README.md               # Database backend docs
+│   ├── db/
+│   │   ├── dbconnect.py            # BearRequests dataclass + Insert()
+│   │   └── storage.py              # SQLiteStorage, PostgreSQLStorage
+│   ├── mfh.py                      # Main entry point
+│   ├── settings.toml.example       # Example TOML config
+│   └── systemd/                    # Systemd service files
 ├── test/
 │   ├── conftest.py                 # Test utilities
 │   ├── test_integration.py         # Full pipeline integration tests
@@ -324,7 +324,9 @@ manyfaced-honeypot/
 │   └── test_*.py                   # Other test modules
 ├── requirements.txt                # Legacy manual deps
 ├── pytest.ini                      # pytest config
-└── .gitignore
+└── .github/workflows/              # CI/CD pipelines
+    ├── ci.yml                      # Test suite + coverage gates
+    └── deploy.yml                  # Production deployment via rsync
 ```
 
 ## Running Tests
