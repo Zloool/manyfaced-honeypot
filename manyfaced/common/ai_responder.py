@@ -150,8 +150,13 @@ class AIResponder:
             # This allows flexibility – the endpoint could be llama.cpp server,
             # Ollama, vLLM, or any OpenAI-compatible API
             self._initialized = True
-            self._available = True
-            logger.info("AI responder initialized successfully")
+            # Verify endpoint is actually reachable
+            if self._ping_endpoint():
+                self._available = True
+                logger.info("AI responder initialized successfully")
+            else:
+                self._available = False
+                logger.warning("AI responder endpoint not reachable at %s", self.endpoint)
         except ImportError:
             logger.warning(
                 "openai package not installed – AI responder disabled. "
@@ -173,6 +178,26 @@ class AIResponder:
         if not self._initialized:
             return False
         return self._available
+
+    def _ping_endpoint(self) -> bool:
+        """Test connectivity to the LLM endpoint.
+
+        Returns:
+            True if the endpoint responds to a minimal request.
+        """
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(
+                api_key="not-needed",
+                base_url=self.endpoint,
+                timeout=self.timeout,
+            )
+            # Try to list models – a minimal request that verifies connectivity
+            client.models.list()
+            return True
+        except Exception:
+            return False
 
     def _classify_request(self, request_path: str, raw_request: str) -> str:
         """Classify the request into a response category.
