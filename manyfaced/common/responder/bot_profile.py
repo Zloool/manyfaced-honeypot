@@ -14,7 +14,7 @@ adapt to the bot's behavior and encourage deeper exploitation.
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -55,8 +55,8 @@ class BotProfile:
     """
 
     bot_ip: str
-    created_at: datetime.datetime = field(default_factory=datetime.datetime.utcnow)
-    last_updated: datetime.datetime = field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     request_history: list[dict[str, Any]] = field(default_factory=list)
     detected_behaviors: set[str] = field(default_factory=set)
     escalation_level: int = field(default=EscalationLevel.IDLE)
@@ -75,7 +75,7 @@ class BotProfile:
         """
         with self._lock:
             self.request_history.append(request)
-            self.last_updated = datetime.datetime.utcnow()
+            self.last_updated = datetime.now(timezone.utc)
             # Analyze request for behavior detection
             self._analyze_request(request)
 
@@ -208,7 +208,7 @@ class BotProfile:
         """
         with self._lock:
             self.response_history.append(response)
-            self.last_updated = datetime.datetime.utcnow()
+            self.last_updated = datetime.now(timezone.utc)
 
     def get_personalization_context(self) -> dict[str, Any]:
         """Get context for personalized response generation.

@@ -82,14 +82,12 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-def _write_toml(tmp_path, content):
     """Write a TOML file and return its Path."""
     toml_path = tmp_path / "config.toml"
     toml_path.write_text(content)
     return toml_path
 
 
-def _make_time_counter(start=1000.0, increment=0.1):
     """Create a time.time() side_effect that increments by `increment` each call."""
     counter = [0]
 
@@ -114,8 +112,21 @@ class TestConfigDefaults:
                 monkeypatch.delenv(key, raising=False)
 
     def test_defaults_no_toml_no_env(self, tmp_path, monkeypatch):
-        """All values should be defaults when no TOML and no env vars."""
-        config_path = _write_toml(tmp_path, "")  # empty TOML = no overrides
+        """All values should be defaults when no TOML and no env vars.
+        
+        Note: HIVEPASS and DEFAULT_KEY must be explicitly configured in production.
+        Tests that load Config without these values will see None, which triggers
+        a fatal error at module-level validation. We set them in the TOML to
+        simulate a properly configured deployment.
+        """
+        toml_content = """
+[hive]
+hivepass = "beehive123"
+
+[security]
+default_key = "default_beehive_key"
+"""
+        config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
             m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
@@ -136,6 +147,7 @@ class TestConfigDefaults:
         assert cfg.DB_PG_USER == "postgres"
         assert cfg.DB_PG_PASSWORD == "***"
         assert cfg.AUTHORISEDBEARS == {}
+        assert cfg.DEFAULT_KEY == "default_beehive_key"
 
 
 class TestConfigToml:
@@ -275,12 +287,24 @@ authorised_bears = ""
         assert cfg.DB_PG_PASSWORD == "toml_pass"
 
     def test_defaults_when_no_toml_no_env(self, tmp_path, monkeypatch):
-        """When no TOML and no env, all defaults apply."""
+        """When no TOML and no env, all defaults apply EXCEPT HIVEPASS/DEFAULT_KEY.
+
+        After the security fix, HIVEPASS and DEFAULT_KEY have no defaults —
+        they must be explicitly configured. Tests that load Config without
+        these values will hit a fatal SystemExit at module level.
+        We set them in the TOML to simulate a properly configured deployment.
+        """
+        toml_content = """
+[hive]
+hivepass = "beehive123"
+
+[security]
+default_key = "default_beehive_key"
+"""
+        config_path = _write_toml(tmp_path, toml_content)
+
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            for key in list(os.environ.keys()):
-                if key.startswith("HONEY_"):
-                    m.delenv(key, raising=False)
+            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
 
             cfg = Config.load()
 
@@ -297,6 +321,85 @@ authorised_bears = ""
         assert cfg.DB_PG_DB == "honeypot"
         assert cfg.DB_PG_USER == "postgres"
         assert cfg.DB_PG_PASSWORD == "***"
+        assert cfg.DEFAULT_KEY == "default_beehive_key"
+
+    def test_hivepass_required_raises_systemexit(self, tmp_path, monkeypatch):
+        """Config.load() with no HIVEPASS raises SystemExit(1) at module level."""
+        import subprocess, sys
+        toml_content = "[honeypot]\nhoneyport = 80\n"
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(toml_content)
+
+        # Use a fresh Python process with a clean sys.modules
+        script = tmp_path / "test_import.py"
+        script.write_text(f"""
+import sys, os, importlib, importlib.util, types
+
+# Clear any cached manyfaced modules
+mods_to_remove = [k for k in sys.modules if k.startswith('manyfaced')]
+for m in mods_to_remove:
+    del sys.modules[m]
+
+os.environ['XDG_CONFIG_HOME'] = '{tmp_path}'
+# Remove any existing config
+import pathlib
+for p in pathlib.Path.home().glob('.config/manyfaced/config.toml'):
+    p.unlink()
+
+# Now import fresh
+spec = importlib.util.spec_from_file_location(
+    'config',
+    '/home/zlol/manyfaced-honeypot/manyfaced/common/config.py'
+)
+mod = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+    sys.exit(0)  # Should not reach here
+except SystemExit as e:
+    sys.exit(e.code)
+""")
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == 1, f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+
+    def test_default_key_required_raises_systemexit(self, tmp_path, monkeypatch):
+        """Config.load() with no DEFAULT_KEY raises SystemExit(1) at module level."""
+        import subprocess, sys
+        toml_content = "[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = \"testpass\"\n"
+        toml_path = tmp_path / "config.toml"
+        toml_path.write_text(toml_content)
+
+        script = tmp_path / "test_import2.py"
+        script.write_text(f"""
+import sys, os, importlib, importlib.util
+
+mods_to_remove = [k for k in sys.modules if k.startswith('manyfaced')]
+for m in mods_to_remove:
+    del sys.modules[m]
+
+os.environ['XDG_CONFIG_HOME'] = '{tmp_path}'
+import pathlib
+for p in pathlib.Path.home().glob('.config/manyfaced/config.toml'):
+    p.unlink()
+
+spec = importlib.util.spec_from_file_location(
+    'config',
+    '/home/zlol/manyfaced-honeypot/manyfaced/common/config.py'
+)
+mod = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(mod)
+    sys.exit(0)
+except SystemExit as e:
+    sys.exit(e.code)
+""")
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == 1, f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
 
 
 class TestConfigGenerateConfigFile:
@@ -332,6 +435,7 @@ class TestConfigGenerateConfigFile:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
 
@@ -384,6 +488,7 @@ class TestConfigGenerateConfigFile:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
 
@@ -630,6 +735,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         assert cfg.resolve_ports() == [80]
@@ -660,6 +766,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         assert cfg.resolve_ports() == [443]
@@ -690,6 +797,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
@@ -724,6 +832,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
@@ -755,6 +864,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
@@ -786,6 +896,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()
@@ -819,6 +930,7 @@ class TestConfigResolvePorts:
             AI_MAX_TOKENS=500,
             AI_TIMEOUT=5.0,
             DEFAULT_KEY="default_beehive_key",
+            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
             LOG_FILE="~/.local/share/manyfaced/honeypot.log",
         )
         ports = cfg.resolve_ports()

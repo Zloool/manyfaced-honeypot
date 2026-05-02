@@ -11,11 +11,12 @@ handlers for each service (WordPress, phpMyAdmin, Jenkins, Tomcat, etc.).
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import os
 import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import queue as _queue
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.config import settings
@@ -38,35 +39,69 @@ logger = get_logger(__name__)
 # Singleton registry – initialized on first use
 _registry: HandlerRegistry | None = None
 
-# Thread pool for sending reports (replaces per-request subprocess spawning)
-# Using a thread pool instead of multiprocessing.Process per request prevents
-# process explosion (was spawning 1 process per bot request → 200+ processes)
-_report_executor: ThreadPoolExecutor | None = None
-_report_executor_lock = threading.Lock()
+# Bounded work queue for sending reports (replaces per-request subprocess spawning).
+# Uses a queue.Queue with maxsize for backpressure: when the queue is full,
+# put() blocks until space is available.
+# Worker threads pull from the queue and execute the send_report function.
+_report_queue: _queue.Queue | None = None
+_report_queue_lock = threading.Lock()
+_report_queue_alive: bool = False  # Public flag for aliveness tracking
+_report_workers: list[threading.Thread] = []
+_report_workers_lock = threading.Lock()
 
 MAX_REPORT_THREADS = 10
 
 
-def _get_report_executor() -> ThreadPoolExecutor:
-    """Get or create the module-level report thread pool (singleton)."""
-    global _report_executor
-    if _report_executor is None or _report_executor._shutdown:
-        with _report_executor_lock:
-            # Double-check after acquiring lock
-            if _report_executor is None or _report_executor._shutdown:
-                _report_executor = ThreadPoolExecutor(
-                    max_workers=MAX_REPORT_THREADS,
-                    thread_name_prefix="report_send",
-                )
-    return _report_executor
+def _report_worker():
+    """Worker thread that processes items from the report queue."""
+    q = _get_report_queue()
+    while _report_queue_alive:
+        try:
+            fn, args = q.get(timeout=1)
+            try:
+                fn(*args)
+            except Exception:
+                logger.exception("Report worker error")
+            finally:
+                q.task_done()
+        except _queue.Empty:
+            continue
+
+
+def _get_report_queue() -> _queue.Queue:
+    """Get or create the module-level report work queue (singleton).
+
+    Uses a bounded queue (maxsize=MAX_REPORT_THREADS*10) to provide
+    backpressure: when the queue is full, put() blocks until space is available.
+    """
+    global _report_queue, _report_queue_alive
+    if _report_queue is None:
+        with _report_queue_lock:
+            if _report_queue is None:
+                _report_queue = _queue.Queue(maxsize=MAX_REPORT_THREADS * 10)
+                _report_queue_alive = True
+                with _report_workers_lock:
+                    for _ in range(MAX_REPORT_THREADS):
+                        t = threading.Thread(
+                            target=_report_worker,
+                            daemon=True,
+                            name="report_worker",
+                        )
+                        t.start()
+                        _report_workers.append(t)
+    return _report_queue
 
 
 def shutdown_report_executor():
-    """Gracefully shut down the report thread pool."""
-    global _report_executor
-    if _report_executor is not None and not _report_executor._shutdown:
-        _report_executor.shutdown(wait=True, cancel_futures=True)
-        _report_executor = None
+    """Gracefully shut down the report work queue and workers."""
+    global _report_queue, _report_queue_alive, _report_workers
+    if _report_queue is not None and _report_queue_alive:
+        _report_queue_alive = False
+        # Wait for queue to drain
+        _report_queue.join()
+        _report_queue = None
+        with _report_workers_lock:
+            _report_workers.clear()
 
 
 def _get_registry() -> HandlerRegistry:
@@ -243,7 +278,7 @@ class HTTPHandler:
         """
         from manyfaced.client.client import send_report
 
-        request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
+        request_time = str(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"))
         server_host = getattr(self.args, "server_host", "127.0.0.1")
         server_port = getattr(self.args, "server", None)
 
@@ -259,10 +294,8 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
 
-        executor = _get_report_executor()
-        executor.submit(
-            send_report, bs, bot_ip, settings.HIVEPASS, server_host, server_port
-        )
+        q = _get_report_queue()
+        q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
 
     def _handle_ssh_probe(self, bot_ip: str, protocol_info: dict) -> bytes:
         """Handle an SSH probe by responding with a fake SSH banner and capturing credentials.
@@ -394,7 +427,7 @@ class HTTPHandler:
         bot_ip = data["ip"]
         raw_request = data["raw_request"]
         parsed = data["parsed_request"]
-        request_time = str(datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"))
+        request_time = str(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"))
 
         logger.info("Incoming request from %s at %s", bot_ip, request_time)
 
@@ -477,14 +510,12 @@ class HTTPHandler:
         server_port = getattr(self.args, "server", None)
 
         if server_port is not None:
-            # Use thread pool instead of spawning a subprocess per request.
+            # Use bounded queue for backpressure instead of per-request subprocess spawning.
             # This prevents process explosion: the old code spawned 1 Process
             # per bot request (200+ processes logged), causing file descriptor
-            # exhaustion and crashes. ThreadPoolExecutor reuses threads.
-            executor = _get_report_executor()
-            executor.submit(
-                send_report, bs, bot_ip, settings.HIVEPASS, server_host, server_port
-            )
+            # exhaustion and crashes. Worker threads pull from the queue.
+            q = _get_report_queue()
+            q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
         else:
             logger.debug("No server port configured, skipping report for %s", bot_ip)
 
@@ -500,7 +531,7 @@ class HTTPHandler:
 
     def _fallback_response(self, path: str) -> bytes:
         """Fallback response for unmatched paths."""
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
         body = f"""<!DOCTYPE html>
 <html><head><title>Server</title></head>
 <body><h1>Welcome to zlol's manyface!</h1>

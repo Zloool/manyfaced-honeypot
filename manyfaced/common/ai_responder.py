@@ -9,7 +9,7 @@ Usage:
     from manyfaced.common.ai_responder import AIResponder
 
     responder = AIResponder(
-        endpoint="http://127.0.0.1:8080/v1",
+        endpoint="http://127.0.0.1:18080/v1",
         model="llama-3.1-8b-instruct",
     )
 
@@ -24,7 +24,7 @@ Usage:
         response_bytes, detected = get_honey_http(...)
 
 Dependencies:
-    llama-cpp-python (optional) – AI responder silently disables itself if not installed.
+    openai (optional) – AI responder silently disables itself if not installed.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ RESPONSE_TEMPLATES = {
 class AIResponder:
     """AI-powered HTTP response generator for honeypot bot interaction.
 
-    Connects to a local LLM instance (via llama-cpp-python) to generate
+    Connects to a local LLM instance (via OpenAI-compatible API) to generate
     realistic, interactive responses that encourage deeper exploitation.
 
     Integrates with the modular ResponderRegistry to delegate to domain-specific
@@ -95,13 +95,12 @@ class AIResponder:
         max_tokens: Maximum tokens in generated response
         timeout: Request timeout in seconds
         registry: Optional ResponderRegistry for modular response generation
-        _llama: llama-cpp-python LLM instance (None if not available)
         _lock: Thread lock for thread safety
     """
 
     def __init__(
         self,
-        endpoint: str = "http://127.0.0.1:8080/v1",
+        endpoint: str = "http://127.0.0.1:18080/v1",
         model: str = "llama-3.1-8b-instruct",
         persona_template: str | None = None,
         max_tokens: int = 500,
@@ -124,7 +123,6 @@ class AIResponder:
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.registry = registry
-        self._llama = None
         self._lock = threading.Lock()
         self._initialized = False
         self._available = False
@@ -132,10 +130,16 @@ class AIResponder:
         # Try to initialize llama-cpp-python
         self._try_init()
 
+        logger.info(
+            "AI responder startup: endpoint=%s model=%s",
+            self.endpoint,
+            self.model,
+        )
+
     def _try_init(self) -> None:
-        """Try to initialize llama-cpp-python. Silently fails if not available."""
+        """Try to initialize the OpenAI client. Silently fails if not available."""
         try:
-            from llama_cpp import Llama
+            from openai import OpenAI  # noqa: F401
 
             logger.info(
                 "Initializing AI responder with model %s at %s",
@@ -150,8 +154,8 @@ class AIResponder:
             logger.info("AI responder initialized successfully")
         except ImportError:
             logger.warning(
-                "llama-cpp-python not installed – AI responder disabled. "
-                "Install with: pip install llama-cpp-python"
+                "openai package not installed – AI responder disabled. "
+                "Install with: pip install openai"
             )
             self._initialized = False
             self._available = False
@@ -316,51 +320,8 @@ class AIResponder:
 
             return response.choices[0].message.content.strip()
 
-        except ImportError:
-            # openai package not installed, try llama_cpp directly
-            return self._call_llama_cpp(prompt)
         except Exception as e:
             logger.error("LLM API call failed: %s", e)
-            raise
-
-    def _call_llama_cpp(self, prompt: str) -> str:
-        """Fallback: call llama-cpp-python directly if openai package not available.
-
-        Args:
-            prompt: The formatted prompt string
-
-        Returns:
-            Generated response text
-
-        Raises:
-            RuntimeError: If llama-cpp-python is also unavailable
-        """
-        try:
-            from llama_cpp import Llama
-
-            llm = Llama(
-                model_path=self.model,
-                n_ctx=2048,
-                n_threads=4,
-                verbose=False,
-            )
-
-            output = llm.create_chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a vulnerable web server. Generate realistic HTTP responses.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=self.max_tokens,
-                temperature=0.7,
-            )
-
-            return output["choices"][0]["message"]["content"].strip()
-
-        except Exception as e:
-            logger.error("llama-cpp-python direct call failed: %s", e)
             raise
 
     def _build_http_response(self, response_text: str, known_face: str | None) -> bytes:
@@ -373,6 +334,18 @@ class AIResponder:
         Returns:
             Complete HTTP response as bytes
         """
+        # Sanitize LLM output: strip stray CR/LF, cap length
+        # Remove lone CR or LF that are not part of intentional \r\n sequences
+        sanitized = response_text.replace("\r\n", "\n")
+        sanitized = sanitized.replace("\r", "").replace("\n", "\r\n")
+        # Cap body length to prevent runaway responses
+        MAX_BODY = 65536  # 64 KiB
+        if len(sanitized) > MAX_BODY:
+            sanitized = sanitized[:MAX_BODY]
+            logger.warning("AI response body truncated to %d bytes", MAX_BODY)
+        # Sanity check: reject absurdly large bodies
+        if len(sanitized.encode("utf-8")) > MAX_BODY:
+            sanitized = sanitized.encode("utf-8")[:MAX_BODY].decode("utf-8", errors="replace")
 
         # Determine content type based on face type
         if known_face and known_face.endswith(".xml"):
@@ -380,7 +353,7 @@ class AIResponder:
         elif known_face and known_face in ("wpconfig.php",):
             content_type = "application/x-php"
         else:
-            content_type = "text/html; charset=UTF-8"
+            content_type = "text/html; charset=utf-8"
 
         # Build HTTP response
         now = datetime.datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT")
@@ -397,7 +370,7 @@ class AIResponder:
             f"{response_text}"
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode("utf-8")
 
     def __repr__(self) -> str:
         return (

@@ -41,7 +41,7 @@ class TestAIResponderInit:
 
     def test_init_without_llama_cpp(self):
         """AIResponder should initialize without llama-cpp-python installed."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder(
@@ -56,7 +56,7 @@ class TestAIResponderInit:
 
     def test_init_custom_params(self):
         """AIResponder should accept custom parameters."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder(
@@ -72,7 +72,7 @@ class TestAIResponderInit:
 
     def test_init_with_custom_persona(self):
         """AIResponder should accept a custom persona template."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             custom_template = "Custom persona for {path}"
@@ -81,7 +81,7 @@ class TestAIResponderInit:
 
     def test_repr(self):
         """AIResponder.__repr__ should return a meaningful string."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -95,7 +95,7 @@ class TestAIResponderAvailability:
 
     def test_not_available_without_llama(self):
         """is_available() should return False without llama-cpp-python."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -103,7 +103,7 @@ class TestAIResponderAvailability:
 
     def test_init_flag_set_on_import_error(self):
         """_initialized should be False when llama_cpp is not available."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -115,7 +115,7 @@ class TestAIResponderClassification:
 
     def test_classify_wordpress(self):
         """Requests to WordPress paths should be classified as 'wordpress'."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -128,7 +128,7 @@ class TestAIResponderClassification:
 
     def test_classify_phpmyadmin(self):
         """Requests to phpMyAdmin paths should be classified as 'phpmyadmin'."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -138,7 +138,7 @@ class TestAIResponderClassification:
 
     def test_classify_webdav(self):
         """Requests to WebDAV paths should be classified as 'webdav'."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -147,7 +147,7 @@ class TestAIResponderClassification:
 
     def test_classify_generic(self):
         """Unknown paths should be classified as 'generic'."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -162,7 +162,7 @@ class TestAIResponderPromptBuilding:
 
     def test_build_prompt_uses_default_template(self):
         """build_prompt() should include path, bot_ip, and face_type in prompt."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -172,7 +172,7 @@ class TestAIResponderPromptBuilding:
 
     def test_build_prompt_truncates_long_requests(self):
         """build_prompt() should truncate raw_request to 2000 chars."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -183,7 +183,7 @@ class TestAIResponderPromptBuilding:
 
     def test_build_prompt_uses_category_override(self):
         """build_prompt() should use category-specific persona override."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -197,7 +197,7 @@ class TestAIResponderGenerateResponse:
 
     def test_generate_response_raises_when_unavailable(self):
         """generate_response() should raise RuntimeError when not available."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -208,7 +208,7 @@ class TestAIResponderGenerateResponse:
         """generate_response() should return bytes when LLM is mocked."""
         from manyfaced.common.ai_responder import AIResponder
 
-        responder = AIResponder()
+        responder = AIResponder(endpoint="http://127.0.0.1:18080/v1")
         responder._initialized = True
         responder._available = True
 
@@ -225,7 +225,7 @@ class TestAIResponderGenerateResponse:
         """generate_response() should raise on LLM error."""
         from manyfaced.common.ai_responder import AIResponder
 
-        responder = AIResponder()
+        responder = AIResponder(endpoint="http://127.0.0.1:18080/v1")
         responder._initialized = True
         responder._available = True
 
@@ -239,7 +239,7 @@ class TestAIResponderHTTPResponse:
 
     def test_build_http_response_basic(self):
         """_build_http_response() should produce valid HTTP response."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -252,7 +252,7 @@ class TestAIResponderHTTPResponse:
 
     def test_build_http_response_xml_content_type(self):
         """_build_http_response() should use XML content type for .xml faces."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()
@@ -261,7 +261,7 @@ class TestAIResponderHTTPResponse:
 
     def test_build_http_response_is_bytes(self):
         """_build_http_response() should return bytes."""
-        with patch.dict("sys.modules", {"llama_cpp": None}):
+        with patch.dict("sys.modules", {"openai": None}):
             from manyfaced.common.ai_responder import AIResponder
 
             responder = AIResponder()

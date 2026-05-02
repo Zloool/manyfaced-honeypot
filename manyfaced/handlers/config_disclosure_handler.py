@@ -16,7 +16,7 @@ that could reveal database credentials, API keys, and other secrets.
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
@@ -181,7 +181,7 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
             "method": self._extract_method(raw_request),
             "headers": dict(headers) if headers else {},
             "raw": raw_request,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -1410,7 +1410,7 @@ INSERT INTO `api_keys` VALUES (2,2,'ak_test_abcdef1234567890','sk_test_fedcba098
         else:
             body_bytes = body
 
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         resp_headers = {
             "Server": "Apache/2.4.57 (Ubuntu)",

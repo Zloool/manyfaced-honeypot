@@ -35,11 +35,11 @@ from manyfaced.common.myenc import AESCipher  # noqa: E402
 
 
 def make_encrypted_message(identifier: str, data: dict, key: str) -> str:  # noqa: E402
-    """Encrypt *data* as JSON, AES-CBC with *key*, return 'identifier:b64(IV|ct)'."""
+    """Encrypt *data* as JSON, AES-GCM with *key*, return 'identifier:b64(nonce|ct|tag)'."""
     aes = AESCipher(key)
     raw = json.dumps(data).encode("utf-8")
-    encrypted = aes.encrypt(raw)
-    return f"{identifier}:{encrypted.decode()}"
+    encrypted = aes.encrypt(raw)  # returns str (base64-encoded)
+    return f"{identifier}:{encrypted}"
 
 
 # ---- Fixtures ----
@@ -199,8 +199,8 @@ class TestFullPathSocketToDatabase:
 
         aes = AESCipher(TEST_KEY)
         garbage = b"\x00\x01\x02\x03\x04\x05" * 3
-        encrypted = aes.encrypt(garbage)
-        message = f"unknown_bear:{encrypted.decode()}"
+        encrypted = aes.encrypt(garbage)  # returns str
+        message = f"unknown_bear:{encrypted}"
 
         handler = ServerHandler(MagicMock(server=(0, 6669), verbose=False), MagicMock())
         with pytest.raises(ValueError, match="Unknown identifier"):
@@ -233,8 +233,8 @@ class TestFullPathSocketToDatabase:
 
         aes = AESCipher(TEST_KEY)
         garbage = b"\x00\x01\x02\x03\x04\x05" * 3
-        encrypted = aes.encrypt(garbage)
-        message = f"{BEAR_IDENTIFIER}:{encrypted.decode()}"
+        encrypted = aes.encrypt(garbage)  # returns str
+        message = f"{BEAR_IDENTIFIER}:{encrypted}"
 
         handler = ServerHandler(MagicMock(server=(0, 6670), verbose=False), MagicMock())
         with pytest.raises(ValueError):

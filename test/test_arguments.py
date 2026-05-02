@@ -38,50 +38,6 @@ from manyfaced.common.arguments import parse
 # ===================================================================
 
 
-class _TempDB:
-    """Context manager that patches dump_file to use a temp file."""
-
-    def __init__(self, path):
-        self.path = path
-        self._mock = None
-
-    def __enter__(self):
-        self._real_open = open
-        self._mock = patch("manyfaced.common.utils.open", self._patched_open)
-        self._mock.start()
-        return self.path
-
-    def __exit__(self, *exc):
-        if self._mock:
-            self._mock.stop()
-
-    def _patched_open(self, path, mode, *args, **kwargs):
-        return self._real_open(self.path, mode, *args, **kwargs)
-
-
-def _write_toml(tmp_path, content):
-    """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
-    toml_path.write_text(content)
-    return toml_path
-
-
-def _make_time_counter(start=1000.0, increment=0.1):
-    """Create a time.time() side_effect that increments by `increment` each call."""
-    counter = [0]
-
-    def side_effect():
-        counter[0] += 1
-        return start + counter[0] * increment
-
-    return side_effect
-
-
-# ===================================================================
-# utils.py  –  dump_file / receive_timeout
-# ===================================================================
-
-
 def _parse_with_args(monkeypatch, argv):
     """Helper: set sys.argv and call parse()."""
     monkeypatch.setattr("sys.argv", ["mfh.py"] + argv)
@@ -89,7 +45,7 @@ def _parse_with_args(monkeypatch, argv):
 
 
 class TestParseDefaults:
-    """No args → client=None, server=None, updater=False, verbose=False."""
+    """No args -> client=None, server=None, verbose=False."""
 
     def test_no_args_defaults(self, monkeypatch):
         """When no arguments are given, all optional flags should be None/False."""
@@ -97,7 +53,6 @@ class TestParseDefaults:
 
         assert args.client is None
         assert args.server is None
-        assert args.updater is False
         assert args.verbose is False
         assert args.proxy is False
         assert args.generate_config is False
@@ -106,7 +61,7 @@ class TestParseDefaults:
 
 
 class TestParseClient:
-    """-c 80 → client=80."""
+    """-c 80 -> client=80."""
 
     def test_client_port(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-c", "80"])
@@ -114,7 +69,7 @@ class TestParseClient:
 
 
 class TestParseServer:
-    """-s 666 → server=666."""
+    """-s 666 -> server=666."""
 
     def test_server_port(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-s", "666"])
@@ -122,7 +77,7 @@ class TestParseServer:
 
 
 class TestParseClientServer:
-    """-c 80 -s 666 → both set."""
+    """-c 80 -s 666 -> both set."""
 
     def test_client_and_server(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-c", "80", "-s", "666"])
@@ -131,7 +86,7 @@ class TestParseClientServer:
 
 
 class TestParseVerbose:
-    """-v → verbose=True."""
+    """-v -> verbose=True."""
 
     def test_verbose_short(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-v"])
@@ -142,16 +97,8 @@ class TestParseVerbose:
         assert args.verbose is True
 
 
-class TestParseUpdater:
-    """-u → updater=True."""
-
-    def test_updater(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-u"])
-        assert args.updater is True
-
-
 class TestParseProxy:
-    """-p → proxy=True."""
+    """-p -> proxy=True."""
 
     def test_proxy_short(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["-p"])
@@ -163,7 +110,7 @@ class TestParseProxy:
 
 
 class TestParseGenerateConfig:
-    """--generate-config → generate_config=True."""
+    """--generate-config -> generate_config=True."""
 
     def test_generate_config(self, monkeypatch):
         args = _parse_with_args(monkeypatch, ["--generate-config"])
@@ -176,18 +123,17 @@ class TestParseAllFlags:
     def test_all_flags(self, monkeypatch):
         args = _parse_with_args(
             monkeypatch,
-            ["-c", "80", "-s", "666", "-u", "-v", "-p", "--generate-config"],
+            ["-c", "80", "-s", "666", "-v", "-p", "--generate-config"],
         )
         assert args.client == 80
         assert args.server == 666
-        assert args.updater is True
         assert args.verbose is True
         assert args.proxy is True
         assert args.generate_config is True
 
 
 class TestParseClientNoPort:
-    """-c without port → client=HONEYPORT default."""
+    """-c without port -> client=HONEYPORT default."""
 
     def test_client_no_port_uses_default(self, monkeypatch):
         from manyfaced.common.config import settings
@@ -276,7 +222,6 @@ class TestParsePortModeCombined:
                 "80",
                 "-s",
                 "666",
-                "-u",
                 "-v",
                 "-p",
                 "--generate-config",
@@ -288,7 +233,6 @@ class TestParsePortModeCombined:
         )
         assert args.client == 80
         assert args.server == 666
-        assert args.updater is True
         assert args.verbose is True
         assert args.proxy is True
         assert args.generate_config is True

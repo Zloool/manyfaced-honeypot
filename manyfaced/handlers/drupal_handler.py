@@ -9,7 +9,7 @@ Provides realistic Drupal responses including:
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
@@ -65,7 +65,7 @@ class DrupalHandler(HTTPHandlerBase):
             "method": self._extract_method(raw_request),
             "headers": dict(headers) if headers else {},
             "raw": raw_request,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -401,7 +401,7 @@ $databases['default']['default'] = [
         self, body: str, path: str, status: str = "200 OK"
     ) -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         response = (
             f"HTTP/1.1 {status}\r\n"
