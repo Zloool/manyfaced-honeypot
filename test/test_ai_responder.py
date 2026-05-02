@@ -109,6 +109,32 @@ class TestAIResponderAvailability:
             responder = AIResponder()
             assert responder._initialized is False
 
+    def test_ping_endpoint_unreachable(self):
+        """_ping_endpoint() should return False when endpoint is down."""
+        from manyfaced.common.ai_responder import AIResponder
+
+        responder = AIResponder(endpoint="http://127.0.0.1:19999/v1")
+        responder._initialized = True  # Pretend openai is installed
+        assert responder._ping_endpoint() is False
+
+    def test_ping_endpoint_mocked_success(self):
+        """_ping_endpoint() should return True when endpoint responds."""
+        from manyfaced.common.ai_responder import AIResponder
+
+        mock_client = MagicMock()
+        mock_client.models.list.return_value = MagicMock()
+
+        mock_openai = MagicMock()
+        mock_openai.OpenAI.return_value = mock_client
+
+        with patch.dict("sys.modules", {"openai": mock_openai}):
+            responder = AIResponder(endpoint="http://127.0.0.1:18080/v1")
+            responder._initialized = True
+            # Reset call count before testing _ping_endpoint
+            mock_client.models.list.reset_mock()
+            assert responder._ping_endpoint() is True
+            mock_client.models.list.assert_called_once()
+
 
 class TestAIResponderClassification:
     """Tests for request classification."""
