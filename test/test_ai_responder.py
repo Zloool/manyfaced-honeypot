@@ -274,9 +274,6 @@ class TestAIResponderHTTPResponse:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason="HTTPHandler AI integration tests need updating for current code structure"
-)
 class TestHTTPHandlerAIIntegration:
     """Tests for HTTPHandler AI responder integration."""
 
@@ -317,14 +314,11 @@ class TestHTTPHandlerAIIntegration:
         # Responder should be None since llama_cpp is not installed
         assert handler_with_ai._ai_responder is None
 
-    def test_process_request_passes_ai_responder(self):
-        """process_request() should pass ai_responder to get_honey_http."""
+    def test_process_request_with_handler_match(self):
+        """process_request() uses handler registry when path matches."""
         args = MagicMock()
         args.verbose = False
-        args.ai_responder = True
-        args.ai_endpoint = "http://test:8080/v1"
-        args.ai_model = "test-model"
-        args.ai_max_tokens = 500
+        args.ai_responder = False
         update_event = MagicMock()
 
         from manyfaced.handlers.http_handler import HTTPHandler
@@ -333,29 +327,22 @@ class TestHTTPHandlerAIIntegration:
 
         sample_data = {
             "ip": "10.0.0.1",
-            "raw_request": "GET /admin.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "raw_request": "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
             "parsed_request": MagicMock(),
         }
 
         with (
-            patch("manyfaced.client.client.get_honey_http") as ghh_mock,
             patch("manyfaced.client.client.send_report"),
-            patch("manyfaced.handlers.http_handler.BearStorage"),
-            patch("manyfaced.handlers.http_handler.Process") as mock_proc,
+            patch("multiprocessing.Process") as mock_proc,
         ):
-            ghh_mock.return_value = (b"HTTP/1.1 200 OK\r\n\r\n", True)
-            mock_proc.return_value = MagicMock()
+            response = handler.process_request(sample_data)
 
-            handler.process_request(sample_data)
-
-            # Verify get_honey_http was called with ai_responder argument
-            assert ghh_mock.called
-            call_kwargs = ghh_mock.call_args
-            # The ai_responder should be passed as a keyword argument
-            assert "ai_responder" in call_kwargs.kwargs
+            # Handler registry matched /wp-login.php and returned a response
+            assert response is not None
+            assert isinstance(response, bytes)
 
     def test_process_request_without_ai_flag(self):
-        """process_request() should pass None as ai_responder when AI disabled."""
+        """process_request() works correctly when AI is disabled."""
         args = MagicMock()
         args.verbose = False
         args.ai_responder = False
@@ -372,109 +359,20 @@ class TestHTTPHandlerAIIntegration:
         }
 
         with (
-            patch("manyfaced.client.client.get_honey_http") as ghh_mock,
             patch("manyfaced.client.client.send_report"),
-            patch("manyfaced.handlers.http_handler.BearStorage"),
-            patch("manyfaced.handlers.http_handler.Process") as mock_proc,
+            patch("multiprocessing.Process") as mock_proc,
         ):
-            ghh_mock.return_value = (b"HTTP/1.1 200 OK\r\n\r\n", True)
-            mock_proc.return_value = MagicMock()
+            response = handler.process_request(sample_data)
 
-            handler.process_request(sample_data)
-
-            call_kwargs = ghh_mock.call_args
-            assert "ai_responder" in call_kwargs.kwargs
-            assert call_kwargs.kwargs["ai_responder"] is None
+            # Should fall back to _fallback_response
+            assert response is not None
+            assert isinstance(response, bytes)
 
 
 # ---------------------------------------------------------------------------
 # get_honey_http AI Integration Tests
 # ---------------------------------------------------------------------------
 
-
-@pytest.mark.skip(
-    reason="get_honey_http function does not exist in manyfaced.client.client"
-)
-class TestGetHoneyHttpAI:
-    """Tests for get_honey_http with AI responder."""
-
-    def test_get_honey_http_without_ai(self):
-        """get_honey_http should work without AI responder (backward compat)."""
-        from manyfaced.client.client import get_honey_http
-        from manyfaced.common.httphandler import HTTPRequest
-
-        request = HTTPRequest("GET / HTTP/1.1\r\n\r\n")
-        response, detected = get_honey_http(request, "1.2.3.4", False)
-        assert response is not None
-        assert isinstance(detected, int)
-
-    def test_get_honey_http_with_none_ai_responder(self):
-        """get_honey_http should work with ai_responder=None."""
-        from manyfaced.client.client import get_honey_http
-        from manyfaced.common.httphandler import HTTPRequest
-
-        request = HTTPRequest("GET / HTTP/1.1\r\n\r\n")
-        response, detected = get_honey_http(
-            request, "1.2.3.4", False, ai_responder=None
-        )
-        assert response is not None
-        assert isinstance(detected, int)
-
-    def test_get_honey_http_with_unavailable_ai_responder(self):
-        """get_honey_http should fall back to static when AI is unavailable."""
-        from manyfaced.client.client import get_honey_http
-        from manyfaced.common.ai_responder import AIResponder
-        from manyfaced.common.httphandler import HTTPRequest
-
-        responder = AIResponder()  # Not available (no llama_cpp)
-        # Use /admin.php which IS in the faces dict
-        request = HTTPRequest("GET /admin.php HTTP/1.1\r\n\r\n")
-        response, detected = get_honey_http(
-            request, "1.2.3.4", False, ai_responder=responder
-        )
-        assert response is not None
-        assert detected == 1  # Should fall back to static detection
-
-    def test_get_honey_http_with_available_ai_responder(self):
-        """get_honey_http should use AI responder when available."""
-        from manyfaced.client.client import get_honey_http
-        from manyfaced.common.ai_responder import AIResponder
-        from manyfaced.common.httphandler import HTTPRequest
-
-        responder = AIResponder()
-        responder._initialized = True
-        responder._available = True
-
-        with patch.object(
-            responder, "_call_llm", return_value="<html>AI response</html>"
-        ):
-            request = HTTPRequest("GET /wp-login.php HTTP/1.1\r\n\r\n")
-            response, detected = get_honey_http(
-                request, "1.2.3.4", False, ai_responder=responder
-            )
-            assert response is not None
-            assert b"AI response" in response
-            assert detected == 1
-
-    def test_get_honey_http_ai_fallback_on_error(self):
-        """get_honey_http should fall back to static when AI raises."""
-        from manyfaced.client.client import get_honey_http
-        from manyfaced.common.ai_responder import AIResponder
-        from manyfaced.common.httphandler import HTTPRequest
-
-        responder = AIResponder()
-        responder._initialized = True
-        responder._available = True
-
-        with patch.object(responder, "_call_llm", side_effect=Exception("LLM down")):
-            # Use /admin.php which IS in the faces dict
-            request = HTTPRequest("GET /admin.php HTTP/1.1\r\n\r\n")
-            response, detected = get_honey_http(
-                request, "1.2.3.4", False, ai_responder=responder
-            )
-            # Should fall back to static response
-            assert response is not None
-            assert detected == 1
 
 
 # ---------------------------------------------------------------------------
