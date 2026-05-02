@@ -194,7 +194,7 @@ def _parse_ssh_auth_data(raw_data: str) -> str | None:
                 # Look for username patterns
                 pass
     except Exception:
-        pass
+        logger.debug("Failed to parse SSH binary protocol data")
 
     # Fallback: look for plaintext username/password in the data
     # Some SSH clients send credentials in plaintext
