@@ -48,8 +48,9 @@ jobs:
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "mkdir -p /tmp/manyfaced-deploy"
           
           # rsync code (excluding git, venv, cache, and ignored files)
+          # Host key was added by ssh-keyscan above; use it for verification.
           rsync -avz --delete \
-            -e "ssh -p ${DROPLET_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            -e "ssh -p ${DROPLET_SSH_PORT}" \
             --exclude='.git/' \
             --exclude='.venv/' \
             --exclude='__pycache__/' \
