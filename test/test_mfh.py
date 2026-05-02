@@ -30,6 +30,7 @@ sys.modules["GeoIP"] = MagicMock()
 # Frozen-settings fixture helper
 # ---------------------------------------------------------------------------
 
+
 def _make_mock_settings(**overrides):
     """Return a frozen-like settings object with the given overrides.
 
@@ -47,8 +48,10 @@ def _make_mock_settings(**overrides):
 
     class MockSettings:
         __slots__ = defaults.keys()
+
         def __setattr__(self, name, value):
             raise AttributeError(f"cannot assign to '{name}' (frozen settings)")
+
         def __getattr__(self, name):
             raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
 
@@ -78,6 +81,7 @@ class TestLockfile(unittest.TestCase):
                 with patch("manyfaced.mfh.os.makedirs"):
                     _acquire_lockfile()
                     from manyfaced.mfh import _lock_fd
+
                     self.assertIsNotNone(_lock_fd)
                     tmp_content = open(lockfile_path).read()
                     self.assertEqual(int(tmp_content), os.getpid())
@@ -126,6 +130,7 @@ class TestLockfile(unittest.TestCase):
                     _acquire_lockfile()
                     _release_lockfile()
                     from manyfaced.mfh import _lock_fd
+
                     self.assertIsNone(_lock_fd)
         finally:
             if os.path.exists(lockfile_path):
@@ -150,7 +155,9 @@ class TestRunGenerateConfig(unittest.TestCase):
                 with patch("manyfaced.mfh.setup_logging"):
                     with patch("manyfaced.mfh.os.path.isfile", return_value=True):
                         with patch("manyfaced.mfh.settings", _make_mock_settings()):
-                            with patch("manyfaced.common.arguments.parse") as mock_parse:
+                            with patch(
+                                "manyfaced.common.arguments.parse"
+                            ) as mock_parse:
                                 mock_args = MagicMock()
                                 mock_args.client = None
                                 mock_args.server = None
