@@ -22,6 +22,7 @@ if project_root not in sys.path:
 
 # Mock optional dependencies before importing manyfaced modules
 sys.modules["geoip"] = MagicMock()
+from manyfaced.common.config import settings
 sys.modules["geoip.geolite2"] = MagicMock()
 sys.modules["GeoIP"] = MagicMock()
 
@@ -77,18 +78,19 @@ class TestLockfile(unittest.TestCase):
             lockfile_path = tmp.name
 
         try:
-            with patch("manyfaced.mfh.settings.LOCKFILE", lockfile_path):
-                with patch("manyfaced.mfh.os.makedirs"):
-                    _acquire_lockfile()
-                    from manyfaced.mfh import _lock_fd
+            # Use object.__setattr__ to bypass frozen dataclass
+            object.__setattr__(settings, "LOCKFILE", lockfile_path)
+            with patch("manyfaced.mfh.os.makedirs"):
+                _acquire_lockfile()
+                from manyfaced.mfh import _lock_fd
 
-                    self.assertIsNotNone(_lock_fd)
-                    tmp_content = open(lockfile_path).read()
-                    self.assertEqual(int(tmp_content), os.getpid())
+                self.assertIsNotNone(_lock_fd)
+                tmp_content = open(lockfile_path).read()
+                self.assertEqual(int(tmp_content), os.getpid())
         finally:
             try:
-                with patch("manyfaced.mfh.settings.LOCKFILE", lockfile_path):
-                    _release_lockfile()
+                object.__setattr__(settings, "LOCKFILE", "/run/manyfaced/lockfile")
+                _release_lockfile()
             except Exception:
                 pass
             if os.path.exists(lockfile_path):
@@ -106,10 +108,10 @@ class TestLockfile(unittest.TestCase):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
             try:
-                with patch("manyfaced.mfh.LOCKFILE", lockfile_path):
-                    with patch("manyfaced.mfh.os.makedirs"):
-                        with self.assertRaises(SystemExit):
-                            _acquire_lockfile()
+                object.__setattr__(settings, "LOCKFILE", lockfile_path)
+                with patch("manyfaced.mfh.os.makedirs"):
+                    with self.assertRaises(SystemExit):
+                        _acquire_lockfile()
             finally:
                 fcntl.flock(fd, fcntl.LOCK_UN)
                 fd.close()
@@ -125,13 +127,13 @@ class TestLockfile(unittest.TestCase):
             lockfile_path = tmp.name
 
         try:
-            with patch("manyfaced.mfh.LOCKFILE", lockfile_path):
-                with patch("manyfaced.mfh.os.makedirs"):
-                    _acquire_lockfile()
-                    _release_lockfile()
-                    from manyfaced.mfh import _lock_fd
+            object.__setattr__(settings, "LOCKFILE", lockfile_path)
+            with patch("manyfaced.mfh.os.makedirs"):
+                _acquire_lockfile()
+                _release_lockfile()
+                from manyfaced.mfh import _lock_fd
 
-                    self.assertIsNone(_lock_fd)
+                self.assertIsNone(_lock_fd)
         finally:
             if os.path.exists(lockfile_path):
                 os.unlink(lockfile_path)

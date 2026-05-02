@@ -48,7 +48,7 @@ def _release_lockfile():
         try:
             fcntl.flock(_lock_fd, fcntl.LOCK_UN)
             _lock_fd.close()
-            os.unlink(LOCKFILE)
+            os.unlink(settings.LOCKFILE)
             logger.info("Lockfile released")
         except (IOError, OSError):
             pass
