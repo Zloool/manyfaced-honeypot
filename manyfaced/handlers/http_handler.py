@@ -298,7 +298,7 @@ class HTTPHandler:
         try:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:
-            pass
+            logger.debug("DNS resolution failed for %s", bot_ip)
 
         q = _get_report_queue()
         q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
@@ -443,7 +443,7 @@ class HTTPHandler:
             try:
                 headers = dict(parsed.headers)
             except Exception:
-                pass
+                logger.debug("Failed to parse request headers for %s", bot_ip)
 
         # Route through the handler registry
         handler = _get_registry()
@@ -515,7 +515,7 @@ class HTTPHandler:
         try:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:
-            pass
+            logger.debug("DNS resolution failed for %s", bot_ip)
 
         # Determine server connection info for sending reports
         server_host = getattr(self.args, "server_host", "127.0.0.1")

@@ -121,7 +121,7 @@ class WebDAVHandler(HTTPHandlerBase):
                         {"username": username, "password": password}
                     )
             except Exception:
-                pass
+                logger.debug("Failed to parse WebDAV Basic Auth header")
 
         # Handle PROPFIND requests (WebDAV directory listing)
         if method == "PROPFIND":
