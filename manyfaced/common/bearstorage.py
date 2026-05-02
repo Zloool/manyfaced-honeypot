@@ -31,7 +31,7 @@ class BearStorage:
         self.tracert = ""  # TODO
         if hasattr(parsed_request, "path"):
             self.path = parsed_request.path
-        if parsed_request.command is not None:
+        if getattr(parsed_request, "command", None) is not None:
             self.command = parsed_request.command
         if hasattr(parsed_request, "request_version"):
             self.version = parsed_request.request_version

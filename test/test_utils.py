@@ -5,8 +5,8 @@ Usage:
     /usr/bin/python3 -m pytest test/test_utils_config_args.py -v -c /home/zlol/manyfaced-honeypot/pytest.ini
 """
 
+import json
 import os
-import pickle
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -39,11 +39,11 @@ from manyfaced.common.utils import dump_file, receive_timeout
 # ===================================================================
 
 
-class _TempDB:
+class _TempDumpFile:
     """Context manager that patches dump_file to use a temp file."""
 
     def __init__(self, path):
-        self.path = path
+        self.path = str(path)
         self._mock = None
 
     def __enter__(self):
@@ -83,89 +83,89 @@ def _make_time_counter(start=1000.0, increment=0.1):
 # ===================================================================
 
 
-def _write_toml(tmp_path, content):
-    """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
-    toml_path.write_text(content)
-    return toml_path
-
-
-def _make_time_counter(start=1000.0, increment=0.1):
-    """Create a time.time() side_effect that increments by `increment` each call."""
-    counter = [0]
-
-    def side_effect():
-        counter[0] += 1
-        return start + counter[0] * increment
-
-    return side_effect
-
-
-# ===================================================================
-# utils.py  –  dump_file / receive_timeout
-# ===================================================================
-
-
 class TestDumpFile:
-    """Tests for dump_file(data): reads/writes pickle to temp.db, appends data to list."""
+    """Tests for dump_file(data): appends JSON lines to a JSONL file."""
 
     def test_creates_file_and_writes_data(self, tmp_path):
-        """dump_file creates temp.db, writes pickled list with data."""
-        db_path = tmp_path / "temp.db"
-        with _TempDB(db_path):
+        """dump_file creates the dump file, writes JSON line with data."""
+        dump_path = tmp_path / "dump.jsonl"
+        with _TempDumpFile(dump_path):
             dump_file({"key": "value"})
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == [{"key": "value"}]
+        lines = dump_path.read_text().strip().split("\n")
+        assert len(lines) == 1
+        assert json.loads(lines[0]) == {"key": "value"}
 
-    def test_appends_to_existing_list(self, tmp_path):
-        """dump_file appends data to existing list in temp.db."""
-        db_path = tmp_path / "temp.db"
-        db_path.write_bytes(pickle.dumps([{"first": 1}]))
+    def test_appends_to_existing_file(self, tmp_path):
+        """dump_file appends data as a new JSON line."""
+        dump_path = tmp_path / "dump.jsonl"
+        # Pre-seed one line
+        dump_path.write_text('{"first": 1}\n')
 
-        with _TempDB(db_path):
+        with _TempDumpFile(dump_path):
             dump_file({"second": 2})
 
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == [{"first": 1}, {"second": 2}]
+        lines = dump_path.read_text().strip().split("\n")
+        assert len(lines) == 2
+        assert json.loads(lines[0]) == {"first": 1}
+        assert json.loads(lines[1]) == {"second": 2}
 
     def test_handles_missing_file(self, tmp_path):
-        """dump_file handles missing temp.db gracefully (creates new list)."""
-        db_path = tmp_path / "temp.db"
-        assert not db_path.exists()
+        """dump_file handles missing dump file gracefully (creates new file)."""
+        dump_path = tmp_path / "dump.jsonl"
+        assert not dump_path.exists()
 
-        with _TempDB(db_path):
+        with _TempDumpFile(dump_path):
             dump_file("new_data")
 
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == ["new_data"]
+        lines = dump_path.read_text().strip().split("\n")
+        assert len(lines) == 1
+        assert json.loads(lines[0]) == "new_data"
 
     def test_multiple_appends(self, tmp_path):
         """Multiple dump_file calls accumulate data."""
-        db_path = tmp_path / "temp.db"
+        dump_path = tmp_path / "dump.jsonl"
 
-        with _TempDB(db_path):
+        with _TempDumpFile(dump_path):
             dump_file("item1")
             dump_file("item2")
             dump_file("item3")
 
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == ["item1", "item2", "item3"]
+        lines = dump_path.read_text().strip().split("\n")
+        assert len(lines) == 3
+        assert json.loads(lines[0]) == "item1"
+        assert json.loads(lines[1]) == "item2"
+        assert json.loads(lines[2]) == "item3"
 
     def test_dump_file_with_dict_data(self, tmp_path):
         """dump_file handles dict data correctly."""
-        db_path = tmp_path / "temp.db"
-        with _TempDB(db_path):
+        dump_path = tmp_path / "dump.jsonl"
+        with _TempDumpFile(dump_path):
             dump_file({"url": "http://example.com", "method": "GET"})
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == [{"url": "http://example.com", "method": "GET"}]
+        lines = dump_path.read_text().strip().split("\n")
+        assert json.loads(lines[0]) == {"url": "http://example.com", "method": "GET"}
 
     def test_dump_file_with_bytes_data(self, tmp_path):
-        """dump_file handles bytes data correctly."""
-        db_path = tmp_path / "temp.db"
-        with _TempDB(db_path):
+        """dump_file handles bytes data (converted to string via default=str)."""
+        dump_path = tmp_path / "dump.jsonl"
+        with _TempDumpFile(dump_path):
             dump_file(b"raw bytes data")
-        loaded = pickle.loads(db_path.read_bytes())
-        assert loaded == [b"raw bytes data"]
+        lines = dump_path.read_text().strip().split("\n")
+        # bytes → str via default=str → "b'raw bytes data'"
+        assert json.loads(lines[0]) == "b'raw bytes data'"
+
+    def test_dump_file_is_append_only(self, tmp_path):
+        """dump_file never truncates the file – it always appends."""
+        dump_path = tmp_path / "dump.jsonl"
+        dump_path.write_text('{"existing": true}\n{"more": 1}\n')
+
+        with _TempDumpFile(dump_path):
+            dump_file({"new": "entry"})
+
+        lines = dump_path.read_text().strip().split("\n")
+        assert len(lines) == 3
+        assert json.loads(lines[0]) == {"existing": True}
+        assert json.loads(lines[1]) == {"more": 1}
+        assert json.loads(lines[2]) == {"new": "entry"}
 
 
 class TestReceiveTimeout:

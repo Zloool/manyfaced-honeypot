@@ -29,7 +29,7 @@ For development you can also run without installing:
 pip install -r requirements.txt
 
 # 2. Generate config example
-cp manyfaced/settings.toml.example manyfaced/common/config.toml
+cp manyfaced/settings.toml.example manyfaced/common/config.toml.example.example
 # Edit config.toml with your keys and credentials
 
 # 3. Run the client only (impersonates web services)

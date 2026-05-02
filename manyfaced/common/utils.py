@@ -1,22 +1,30 @@
-import pickle
+import json
+import os
 from socket import error as socket_error, timeout as socket_timeout
 
+from manyfaced.common.config import settings
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.status import CLIENT_TIMEOUT
 
 logger = get_logger(__name__)
 
+# Default JSONL dump path – overridable via settings.DUMP_FILE or env var
+_DUMP_FILE = os.environ.get("MANYFACED_DUMP_FILE", "/var/lib/manyfaced/dump.jsonl")
+
 
 def dump_file(data):
+    """Append *data* as a single JSON line to the dump file.
+
+    Each call appends one JSON-serialisable object (dict, list, str, …).
+    The file is created with 0600 permissions if it does not exist.
+    """
+    path = getattr(settings, "DUMP_FILE", _DUMP_FILE)
     try:
-        with open("temp.db", "rb") as f:
-            string_file = f.read()
-        db = pickle.loads(string_file)
-    except (pickle.PicklingError, FileNotFoundError):
-        db = list()
-    db.append(data)
-    with open("temp.db", "wb") as f:
-        f.write(pickle.dumps(db))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError:
+        pass
+    with open(path, "a") as f:
+        f.write(json.dumps(data, default=str) + "\n")
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):

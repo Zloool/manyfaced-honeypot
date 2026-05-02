@@ -103,7 +103,7 @@ def main(args, update_event):
         except (ValueError, TypeError, KeyError, ImportError) as e:
             logger.error("Unexpected error: %s", e)
             if connection_socket:
-                connection_socket.send(f"CODE 300 ERROR: {e}".encode())
+                connection_socket.send(b"CODE 300 ERROR")
             if args.verbose:
                 print(f"Unexpected error: {e}")
         finally:

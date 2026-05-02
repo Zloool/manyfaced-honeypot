@@ -127,7 +127,7 @@ class SQLiteStorage(StorageBackend):
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
-        except Exception:
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception(
                 "Failed to initialise SQLite database at %s", self._db_path
             )
@@ -198,7 +198,7 @@ class SQLiteStorage(StorageBackend):
                 )
                 self._conn.commit()
 
-        except Exception:
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception("Error inserting record into SQLite storage")
 
     def close(self) -> None:
@@ -206,7 +206,7 @@ class SQLiteStorage(StorageBackend):
         if self._conn is not None:
             try:
                 self._conn.close()
-            except Exception:
+            except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
                 logger.exception("Error closing SQLite connection")
             finally:
                 self._conn = None
@@ -296,7 +296,7 @@ class PostgreSQLStorage(StorageBackend):
             with self._conn.cursor() as cur:
                 cur.execute(_CREATE_TABLE_PG_SQL)
             self._conn.commit()
-        except Exception:
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception("Failed to initialise PostgreSQL storage")
             self._conn = None
 
@@ -364,7 +364,7 @@ class PostgreSQLStorage(StorageBackend):
                     )
                 self._conn.commit()
 
-        except Exception:
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception("Error inserting record into PostgreSQL storage")
 
     def close(self) -> None:
@@ -372,7 +372,7 @@ class PostgreSQLStorage(StorageBackend):
         if self._conn is not None:
             try:
                 self._conn.close()
-            except Exception:
+            except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
                 logger.exception("Error closing PostgreSQL connection")
             finally:
                 self._conn = None

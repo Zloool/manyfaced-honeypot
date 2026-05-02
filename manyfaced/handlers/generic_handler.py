@@ -13,7 +13,7 @@ handlers so it always reflects the current service landscape.
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import logging
 import textwrap
 from typing import Any
@@ -284,7 +284,7 @@ class GenericHandler(HTTPHandlerBase):
             "method": self._extract_method(raw_request),
             "headers": dict(headers) if headers else {},
             "raw": raw_request,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -338,7 +338,7 @@ class GenericHandler(HTTPHandlerBase):
         extra_headers: dict[str, str] | None = None,
     ) -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
         content_type = "text/html; charset=UTF-8"
 
         if "xml" in path or "xmlrpc" in path:
