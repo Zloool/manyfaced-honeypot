@@ -467,6 +467,7 @@ settings: Config = Config.load()
 # can encrypt forged reports and submit them under any identifier.
 if not settings.HIVEPASS:
     import logging
+
     logging.getLogger().critical(
         "HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. "
         "The honeypot cannot start without a secret encryption key. "
@@ -476,6 +477,7 @@ if not settings.HIVEPASS:
 
 if not settings.DEFAULT_KEY:
     import logging
+
     logging.getLogger().critical(
         "security.default_key is not set and no [security]default_key was found in "
         "config.toml. The honeypot cannot start without a default encryption key. "

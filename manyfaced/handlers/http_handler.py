@@ -515,7 +515,9 @@ class HTTPHandler:
             # per bot request (200+ processes logged), causing file descriptor
             # exhaustion and crashes. Worker threads pull from the queue.
             q = _get_report_queue()
-            q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
+            q.put(
+                (send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port))
+            )
         else:
             logger.debug("No server port configured, skipping report for %s", bot_ip)
 

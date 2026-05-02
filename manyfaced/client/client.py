@@ -36,11 +36,56 @@ logger = get_logger(__name__)
 
 # Default top 50 ports for --top-ports mode (extracted to avoid duplication)
 _DEFAULT_TOP_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445,
-    993, 995, 1433, 1521, 2049, 3306, 3389, 5432, 5900, 5901,
-    6379, 8080, 8443, 9200, 11211, 27017, 5672, 15672, 4369,
-    2181, 9090, 8888, 7001, 7002, 11300, 11301, 11302, 11303,
-    11304, 11305, 11306, 11307, 11308, 11309, 11310, 11311, 5000,
+    21,
+    22,
+    23,
+    25,
+    53,
+    80,
+    110,
+    111,
+    135,
+    139,
+    143,
+    443,
+    445,
+    993,
+    995,
+    1433,
+    1521,
+    2049,
+    3306,
+    3389,
+    5432,
+    5900,
+    5901,
+    6379,
+    8080,
+    8443,
+    9200,
+    11211,
+    27017,
+    5672,
+    15672,
+    4369,
+    2181,
+    9090,
+    8888,
+    7001,
+    7002,
+    11300,
+    11301,
+    11302,
+    11303,
+    11304,
+    11305,
+    11306,
+    11307,
+    11308,
+    11309,
+    11310,
+    11311,
+    5000,
 ]
 
 
@@ -432,6 +477,7 @@ def main(args, update_event):
                 # Invalid --top-ports value: error out instead of silently falling back
                 # This helps users catch typos (e.g., "80,443,xyz")
                 import argparse
+
                 # Note: This will raise SystemExit if called from argparse, otherwise log error
                 logger.error(
                     "Invalid --top-ports value: %s. Must be comma-separated integers.",
