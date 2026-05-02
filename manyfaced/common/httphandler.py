@@ -38,6 +38,8 @@ class HTTPRequest(BaseHTTPRequestHandler):
         self.error_code = self.error_message = None
         self.parse_request()
         self.data = request_text
+        if self.error_code is not None:
+            raise ValueError(self.error_message or f"HTTP parse error: {self.error_code}")
 
     def send_error(self, code, message):
         self.error_code = code

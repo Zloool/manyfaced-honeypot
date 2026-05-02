@@ -227,9 +227,9 @@ class TestHTTPRequest:
         assert req.path is not None
 
     def test_parse_fallback_on_error(self):
-        req = HTTPRequest("INVALID")
-        # Malformed request – path may not be set
-        assert getattr(req, "path", None) is None or req.path == "/"
+        """HTTPRequest should raise ValueError on malformed input."""
+        with pytest.raises(ValueError):
+            HTTPRequest("INVALID")
 
 
 class TestHandlerRouting:
