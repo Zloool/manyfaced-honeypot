@@ -294,6 +294,12 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
 
+        # Resolve reverse-DNS off the hot path (with short timeout)
+        try:
+            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+        except Exception:
+            pass
+
         q = _get_report_queue()
         q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
 
@@ -504,6 +510,12 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
         logger.debug("BearStorage created for %s", bot_ip)
+
+        # Resolve reverse-DNS off the hot path (with short timeout)
+        try:
+            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+        except Exception:
+            pass
 
         # Determine server connection info for sending reports
         server_host = getattr(self.args, "server_host", "127.0.0.1")

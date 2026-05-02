@@ -41,10 +41,21 @@ class BearStorage:
                 self.ua = parsed_request.headers["user-agent"]
         self.isDetected = is_detected
         self.hostname = hostname
+        # Reverse-DNS moved to async context (see resolve_dns_name) to avoid
+        # blocking the response thread on slow/unresponsive DNS servers.
+
+    def resolve_dns_name(self, ip: str, timeout: float = 1.0) -> str:
+        """Resolve reverse-DNS for *ip* with a short timeout.
+
+        Returns the hostname on success, empty string on failure or timeout.
+        """
         try:
-            self.dns_name = socket.gethostbyaddr(ip)[0]
-        except socket.herror:
-            pass
+            socket.setdefaulttimeout(timeout)
+            return socket.gethostbyaddr(ip)[0]
+        except (socket.herror, socket.timeout, socket.gaierror, OSError):
+            return ""
+        finally:
+            socket.setdefaulttimeout(None)
 
     def __str__(self) -> str:
         if self.path != "":

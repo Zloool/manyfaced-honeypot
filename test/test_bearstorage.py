@@ -181,7 +181,7 @@ class TestBearStorageInit:
 
     @patch("manyfaced.common.bearstorage.socket.gethostbyaddr")
     def test_dns_lookup_success(self, mock_gethostbyaddr):
-        """DNS lookup populates dns_name on success."""
+        """DNS lookup populates dns_name via resolve_dns_name."""
         mock_gethostbyaddr.return_value = ("example.com", [], [])
         bs = BearStorage(
             ip="8.8.8.8",
@@ -191,6 +191,9 @@ class TestBearStorageInit:
             is_detected=0,
             hostname="h",
         )
+        assert bs.dns_name == ""  # Not resolved in __init__ anymore
+        # Now resolve it
+        bs.dns_name = bs.resolve_dns_name("8.8.8.8", timeout=1.0)
         assert bs.dns_name == "example.com"
 
     @patch("manyfaced.common.bearstorage.socket.gethostbyaddr")
@@ -207,6 +210,9 @@ class TestBearStorageInit:
             is_detected=0,
             hostname="h",
         )
+        assert bs.dns_name == ""
+        # Resolve it — should stay empty on failure
+        bs.dns_name = bs.resolve_dns_name("1.2.3.4", timeout=1.0)
         assert bs.dns_name == ""
 
 
