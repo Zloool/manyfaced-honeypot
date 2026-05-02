@@ -3,7 +3,7 @@ import argparse
 from manyfaced.common.config import settings
 
 """
-usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-u] [-v]
+usage: mfh.py [-h] [-c [PORT]] [-s [PORT]] [-v]
 
 Serve some sweet honey to the ubiquitous bots!
 
@@ -11,7 +11,6 @@ optional arguments:
   -h, --help     show this help message and exit
   -c [PORT]      port to start a CLIENT on
   -s [PORT]      port to start a SERVER on
-  -u             enable self updating
   -v, --verbose  increase output verbosity
 
 And that`s how you`d detect a sneaky bot.
@@ -43,13 +42,6 @@ def parse():
         metavar="PORT",
         nargs="?",
         type=int,
-    )
-
-    parser.add_argument(
-        "-u",
-        action="store_true",
-        dest="updater",
-        help="enable self updating",
     )
 
     parser.add_argument(

@@ -2,53 +2,36 @@ import base64
 import hashlib
 import os
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class AESCipher(object):
-    """
-    Code from
-    http://stackoverflow.com/questions/12524994/encrypt-decrypt-using-pycrypto-aes-256
+    """AES-256-GCM encrypt/decrypt.
+
+    Wire format (after base64 encoding):
+        nonce(12 bytes) || ciphertext || tag(16 bytes)
+
+    Key derivation: SHA-256(password) → 32 bytes
     """
 
-    BLOCK_SIZE = 16
+    NONCE_LEN = 12
+    TAG_LEN = 16
 
-    def __init__(self, key):
-        self.bs = 32
+    def __init__(self, key: str):
         self.key = hashlib.sha256(key.encode()).digest()
 
-    def encrypt(self, raw):
-        raw = self._pad(raw)
-        iv = os.urandom(self.BLOCK_SIZE)
-        cipher = Cipher(
-            algorithms.AES(self.key),
-            modes.CBC(iv),
-            backend=default_backend(),
-        )
-        encryptor = cipher.encryptor()
-        ct = encryptor.update(raw) + encryptor.finalize()
-        return base64.b64encode(iv + ct)
+    def encrypt(self, raw: bytes) -> str:
+        """Encrypt *raw* bytes. Returns base64(nonce || ciphertext || tag)."""
+        nonce = os.urandom(self.NONCE_LEN)
+        aesgcm = AESGCM(self.key)
+        # AAD is empty; ciphertext includes the 16-byte GCM tag appended
+        ct_with_tag = aesgcm.encrypt(nonce, raw, None)
+        return base64.b64encode(nonce + ct_with_tag).decode("ascii")
 
-    def decrypt(self, enc):
-        enc = base64.b64decode(enc)
-        iv = enc[: self.BLOCK_SIZE]
-        cipher = Cipher(
-            algorithms.AES(self.key),
-            modes.CBC(iv),
-            backend=default_backend(),
-        )
-        decryptor = cipher.decryptor()
-        pt = decryptor.update(enc[self.BLOCK_SIZE :]) + decryptor.finalize()
-        return self._unpad(pt)
-
-    def _pad(self, s):
-        if isinstance(s, str):
-            s = s.encode("utf-8")
-        pad_len = self.bs - len(s) % self.bs
-        return s + bytes([pad_len] * pad_len)
-
-    @staticmethod
-    def _unpad(s):
-        pad_len = s[-1]
-        return s[:-pad_len]
+    def decrypt(self, enc: str) -> bytes:
+        """Decrypt a base64-encoded GCM message. Returns plaintext bytes."""
+        raw = base64.b64decode(enc)
+        nonce = raw[: self.NONCE_LEN]
+        ct_with_tag = raw[self.NONCE_LEN :]
+        aesgcm = AESGCM(self.key)
+        return aesgcm.decrypt(nonce, ct_with_tag, None)

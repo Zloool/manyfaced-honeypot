@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Lockfile path for preventing multiple instances
 # Must be in a ReadWritePaths directory ( ProtectSystem=strict blocks other paths)
-LOCKFILE = "/opt/manyfaced/bots/lockfile"
+LOCKFILE = settings.LOCKFILE if hasattr(settings, "LOCKFILE") else "/run/manyfaced/lockfile"
 
 _lock_fd = None
 
@@ -130,7 +130,6 @@ def run() -> None:
     procs: dict[str, Process | None] = {
         "client_proc": None,
         "server_proc": None,
-        "terminate_proc": None,
     }
 
     def _terminate(proc: Process | None) -> None:
@@ -153,18 +152,6 @@ def run() -> None:
             target=server.main,
         )
         procs["server_proc"].start()
-
-    if args.updater:
-        from manyfaced.common.update import pull, trigger
-
-        procs["terminate_proc"] = Process(
-            args=(update_event,), name="trigger", target=trigger
-        )
-        procs["terminate_proc"].start()
-        procs["terminate_proc"].join()
-        pull("origin", "master")
-        sys.stdout.flush()
-        os.execl(sys.executable, sys.executable, *sys.argv)
 
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 

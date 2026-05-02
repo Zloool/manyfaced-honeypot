@@ -28,7 +28,7 @@ Usage – client side::
 from __future__ import annotations
 
 import abc
-import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
@@ -155,9 +155,9 @@ class BotProfile:
     def __init__(self, bot_ip: str) -> None:
         self.bot_ip = bot_ip
         self.session_id = hashlib.sha256(
-            f"{bot_ip}:{datetime.datetime.utcnow().isoformat()}:{id(self)}".encode()
+            f"{bot_ip}:{datetime.now(timezone.utc).isoformat()}:{id(self)}".encode()
         ).hexdigest()[:16]
-        self.created_at = datetime.datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
         self.last_updated = self.created_at
         self.request_history: list[dict[str, Any]] = []
         self.detected_behaviors: set[str] = set()
@@ -174,7 +174,7 @@ class BotProfile:
         """Record a request made by this bot."""
         with self._lock:
             self.request_history.append(request)
-            self.last_updated = datetime.datetime.utcnow()
+            self.last_updated = datetime.now(timezone.utc)
             self._analyze_request(request)
             # Extract metadata from first request
             if not self.metadata and request.get("raw"):
@@ -219,7 +219,7 @@ class BotProfile:
 
             dialogue_entry = {
                 "sequence": len(self.dialogue) + 1,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "request": {
                     "path": request.get("path", ""),
                     "method": request.get("method", ""),
@@ -419,7 +419,7 @@ class BotProfile:
     def capture_credentials(self, credentials: dict[str, str]) -> None:
         """Capture login credentials from a bot."""
         with self._lock:
-            credentials["captured_at"] = datetime.datetime.utcnow().isoformat()
+            credentials["captured_at"] = datetime.now(timezone.utc).isoformat()
             credentials["session_id"] = self.session_id
             self.captured_credentials.append(credentials)
             self.detected_behaviors.add("credential_stuffing")

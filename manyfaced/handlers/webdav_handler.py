@@ -12,7 +12,7 @@ for file upload exploits and credential harvesting.
 
 from __future__ import annotations
 
-import datetime
+from datetime import datetime, timezone
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
@@ -98,7 +98,7 @@ class WebDAVHandler(HTTPHandlerBase):
             "method": self._extract_method(raw_request),
             "headers": dict(headers) if headers else {},
             "raw": raw_request,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -157,7 +157,7 @@ class WebDAVHandler(HTTPHandlerBase):
                     "headers": headers_dict,
                     "raw": raw_request[:5000]
                     + (" [truncated]" if len(raw_request) > 5000 else ""),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             )
             profile.escalation_label = "file_upload_attempt"
@@ -190,7 +190,7 @@ class WebDAVHandler(HTTPHandlerBase):
                         "headers": headers_dict,
                         "raw": raw_request[:5000]
                         + (" [truncated]" if len(raw_request) > 5000 else ""),
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 )
                 profile.escalation_label = "file_upload_attempt"
@@ -247,7 +247,7 @@ class WebDAVHandler(HTTPHandlerBase):
         """Generate a WebDAV directory listing page."""
         # Extract the directory name from the path
         dir_name = path.rstrip("/").split("/")[-1] or "webdav"
-        now = datetime.datetime.utcnow().strftime("%d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M:%S GMT")
 
         return f"""<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <html>
@@ -279,7 +279,7 @@ class WebDAVHandler(HTTPHandlerBase):
     def _propfind_response(self, path: str) -> str:
         """Generate a WebDAV PROPFIND XML response."""
         dir_name = path.rstrip("/").split("/")[-1] or "webdav"
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         return f"""<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:" xmlns:ns0="http://apache.org/dav/props/" xmlns:ns1="DAV:">
@@ -288,7 +288,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
         <d:displayname>webdav</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -324,7 +324,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
         <d:displayname>documents</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -339,7 +339,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
         <d:displayname>uploads</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -354,7 +354,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
         <d:displayname>shared</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -369,7 +369,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
         <d:displayname>config</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -497,7 +497,7 @@ class WebDAVHandler(HTTPHandlerBase):
         else:
             body_bytes = body
 
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
         resp_headers = {
             "Server": "Apache/2.4.57 (Ubuntu)",

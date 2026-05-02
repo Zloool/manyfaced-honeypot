@@ -65,7 +65,7 @@ _DEFAULT_HONEYFOLDER = "bots"
 _DEFAULT_HIVEHOST = "127.0.0.1"
 _DEFAULT_HIVEPORT = 8080
 _DEFAULT_HIVELOGIN = "honeybee"
-_DEFAULT_HIVEPASS = "beehive123"
+_DEFAULT_HIVEPASS = None
 _DEFAULT_DB_BACKEND = "sqlite"
 _DEFAULT_DB_BACKENDS = ("sqlite", "postgresql")
 _DEFAULT_DB_PATH = "bots/honeypot.db"
@@ -146,10 +146,11 @@ _DEFAULT_AI_ENDPOINT = "http://127.0.0.1:8080/v1"
 _DEFAULT_AI_MODEL = "llama-3.1-8b-instruct"
 _DEFAULT_AI_MAX_TOKENS = 500
 _DEFAULT_AI_TIMEOUT = 5.0
-_DEFAULT_DEFAULT_KEY = "default_beehive_key"
+_DEFAULT_DEFAULT_KEY = None
 _DEFAULT_LOG_FILE = os.path.join(
     os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
 )
+_DEFAULT_DUMP_FILE = "/var/lib/manyfaced/dump.jsonl"
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -282,6 +283,9 @@ class Config:
     # Logging
     LOG_FILE: str  # path to the JSON log file
 
+    # Dump file (fallback for failed DB writes)
+    DUMP_FILE: str  # path to the JSONL dump file
+
     @staticmethod
     def load(config_path: Path | None = None) -> Config:
         """Build a Config resolving defaults → TOML → env var."""
@@ -361,6 +365,9 @@ class Config:
                 _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
             ),
             LOG_FILE=str(_resolve("file", _DEFAULT_LOG_FILE, "logging", toml, prefix)),
+            DUMP_FILE=str(
+                _resolve("dump_file", _DEFAULT_DUMP_FILE, "dump", toml, prefix)
+            ),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -414,6 +421,10 @@ class Config:
             "  # Path to the JSON log file",
             f'  file = "{self.LOG_FILE}"',
             "",
+            "[dump]",
+            "  # Path to the JSONL dump file (fallback for failed DB writes)",
+            f'  dump_file = "{self.DUMP_FILE}"',
+            "",
         ]
         path.write_text("\n".join(lines))
         return path
@@ -449,3 +460,25 @@ class Config:
 # ── global settings instance ─────────────────────────────────────────────────
 
 settings: Config = Config.load()
+
+# ── Validate required secrets ────────────────────────────────────────────────
+# HIVEPASS and DEFAULT_KEY must be explicitly configured.
+# Shipping a default secret is a security risk — anyone who reads the README
+# can encrypt forged reports and submit them under any identifier.
+if not settings.HIVEPASS:
+    import logging
+    logging.getLogger().critical(
+        "HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. "
+        "The honeypot cannot start without a secret encryption key. "
+        "Set it via the HONEY_HIVEPASS environment variable or in config.toml."
+    )
+    raise SystemExit(1)
+
+if not settings.DEFAULT_KEY:
+    import logging
+    logging.getLogger().critical(
+        "security.default_key is not set and no [security]default_key was found in "
+        "config.toml. The honeypot cannot start without a default encryption key. "
+        "Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml."
+    )
+    raise SystemExit(1)
