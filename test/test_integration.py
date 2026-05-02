@@ -60,10 +60,8 @@ def _clean_env_and_db():
 def _patch_bears_dict():
     """Ensure AUTHORISEDBEARS has our test bear.
 
-    Uses setattr which works whether the module has the attr in __dict__
-    or gets it via __getattr__.  We mutate in-place because server.py
-    did 'from ... import AUTHORISEDBEARS' at load time and holds a
-    reference to the original dict object.
+    Mutates the dict in-place because server.py holds a reference to
+    the original dict object (from 'from ... import settings' at load time).
     """
     import sys
     import manyfaced.common.config as config_mod
@@ -71,18 +69,13 @@ def _patch_bears_dict():
     mod = sys.modules["manyfaced.common.config"]
     cfg = mod.settings
 
-    # Read current value (cfg is a frozen dataclass, but the dict is mutable)
-    original_dict = dict(cfg.AUTHORISEDBEARS)
-
-    # Add our test bear in-place (dict mutation works even on frozen dataclass)
-    original_dict["testbear"] = TEST_KEY
+    # Mutate the original dict in-place (not a copy!)
+    cfg.AUTHORISEDBEARS["testbear"] = TEST_KEY
     try:
         yield cfg
     finally:
         # Clean up just the test entry
-        original_dict.pop("testbear", None)
-        # Restore original dict object via object.__setattr__ (bypasses frozen)
-        object.__setattr__(cfg, "AUTHORISEDBEARS", original_dict)
+        cfg.AUTHORISEDBEARS.pop("testbear", None)
 
 
 def _verify_record(db_path, ip=None, path=None, detected=None, field=None, value=None):
@@ -200,15 +193,31 @@ class TestFullPathSocketToDatabase:
             value="PROPFIND",
         )
 
-    @pytest.mark.skip(
-        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
-    )
-    @pytest.mark.skip(
-        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
-    )
     def test_incorrect_identifier_fails_gracefully(self):
         """An unknown identifier should raise ValueError and not save."""
-        pass
+        from manyfaced.server.server import ServerHandler
+
+        aes = AESCipher(TEST_KEY)
+        garbage = b"\x00\x01\x02\x03\x04\x05" * 3
+        encrypted = aes.encrypt(garbage)
+        message = f"unknown_bear:{encrypted.decode()}"
+
+        handler = ServerHandler(MagicMock(server=(0, 6669), verbose=False), MagicMock())
+        with pytest.raises(ValueError, match="Unknown identifier"):
+            handler.handle_request(message)
+
+        # Verify nothing was saved to the DB
+        import sqlite3
+
+        conn = sqlite3.connect("bots/honeypot.sqlite")
+        # Table may not exist if no valid request was processed yet
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='honeypot_bears'"
+        ).fetchall()
+        if tables:
+            count = conn.execute("SELECT COUNT(*) FROM honeypot_bears").fetchone()[0]
+            assert count == 0
+        conn.close()
 
     def test_invalid_format_raises_valueerror(self):
         """A message without ':' delimiter should raise ValueError."""
@@ -399,18 +408,13 @@ class TestServerHandlerKeyLookup:
         key = handler.get_key("testbear")
         assert key == TEST_KEY
 
-    @pytest.mark.skip(
-        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
-    )
-    @pytest.mark.skip(
-        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
-    )
-    @pytest.mark.skip(
-        reason="ServerHandler.get_key() now falls back to HIVEPASS for unknown identifiers"
-    )
-    def test_get_key_returns_none_for_unknown_bear(self):
-        """Skip: get_key falls back to HIVEPASS for unknown identifiers."""
-        pass
+    def test_get_key_raises_for_unknown_bear(self):
+        """get_key should raise ValueError for unknown identifiers."""
+        from manyfaced.server.server import ServerHandler
+
+        handler = ServerHandler(MagicMock(server=(0, 6677), verbose=False), MagicMock())
+        with pytest.raises(ValueError, match="Unknown identifier"):
+            handler.get_key("completely_unknown_bear")
 
 
 class TestSQLiteStorageDirect:
