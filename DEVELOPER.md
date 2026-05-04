@@ -264,7 +264,6 @@ test/
 ├── test_http_handler.py      # HTTPHandler tests
 ├── test_config.py            # Config system tests
 ├── test_storage.py           # Storage backend tests
-├── test_ai_responder.py      # AI responder tests
 └── test_*.py                 # Other test modules
 ```
 

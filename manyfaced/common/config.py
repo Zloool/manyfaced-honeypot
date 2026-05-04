@@ -57,7 +57,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # ── defaults (layer 1 – code) ──────────────────────────────────────────────
 
 _DEFAULT_HONEYPORT = 80
@@ -137,15 +136,8 @@ _TOP_50_PORTS = [
 
 _PORT_MODES = ("single", "top", "all")
 
-# ── AI responder configuration ──────────────────────────────────────────────
-# AI responder provides LLM-powered, interactive HTTP responses to probe bots.
-# Disabled by default (AI_ENABLED=false).
+# ── Security defaults ───────────────────────────────────────────────────────
 
-_DEFAULT_AI_ENABLED = False
-_DEFAULT_AI_ENDPOINT = "http://127.0.0.1:8080/v1"
-_DEFAULT_AI_MODEL = "llama-3.1-8b-instruct"
-_DEFAULT_AI_MAX_TOKENS = 500
-_DEFAULT_AI_TIMEOUT = 5.0
 _DEFAULT_DEFAULT_KEY = None
 _DEFAULT_LOG_FILE = os.path.join(
     os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
@@ -273,13 +265,6 @@ class Config:
         str  # comma-separated port list (used when mode="top" and user customizes)
     )
 
-    # AI responder configuration
-    AI_ENABLED: bool  # enable AI-powered response generation
-    AI_ENDPOINT: str  # LLM API endpoint (OpenAI-compatible)
-    AI_MODEL: str  # LLM model name
-    AI_MAX_TOKENS: int  # maximum tokens in generated response
-    AI_TIMEOUT: float  # request timeout in seconds
-
     # Security
     DEFAULT_KEY: str  # default encryption key for unknown identifiers
 
@@ -354,19 +339,6 @@ class Config:
                 _resolve("port_mode", "single", "honeypot", toml, prefix)
             ),
             HONEY_TOP_PORTS=str(_resolve("top_ports", "", "honeypot", toml, prefix)),
-            AI_ENABLED=bool(
-                _resolve("ai_enabled", _DEFAULT_AI_ENABLED, "ai", toml, prefix)
-            ),
-            AI_ENDPOINT=str(
-                _resolve("ai_endpoint", _DEFAULT_AI_ENDPOINT, "ai", toml, prefix)
-            ),
-            AI_MODEL=str(_resolve("ai_model", _DEFAULT_AI_MODEL, "ai", toml, prefix)),
-            AI_MAX_TOKENS=int(
-                _resolve("ai_max_tokens", _DEFAULT_AI_MAX_TOKENS, "ai", toml, prefix)
-            ),
-            AI_TIMEOUT=float(
-                _resolve("ai_timeout", _DEFAULT_AI_TIMEOUT, "ai", toml, prefix)
-            ),
             DEFAULT_KEY=str(
                 _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
             ),
@@ -417,14 +389,6 @@ class Config:
             "[security]",
             '  # semicolon-separated bearid:key pairs; e.g. "bear1:key1;bear2:key2"',
             '  authorised_bears = ""',
-            "",
-            "[ai]",
-            "  # AI responder for interactive bot engagement",
-            f"  enabled = {self.AI_ENABLED}",
-            f'  endpoint = "{self.AI_ENDPOINT}"',
-            f'  model = "{self.AI_MODEL}"',
-            f"  max_tokens = {self.AI_MAX_TOKENS}",
-            f"  timeout = {self.AI_TIMEOUT}",
             "",
             "[logging]",
             "  # Path to the JSON log file",

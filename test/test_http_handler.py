@@ -28,7 +28,6 @@ sys.modules["GeoIP"] = MagicMock()
 from manyfaced.common.httphandler import HTTPRequest  # noqa: E402
 from manyfaced.handlers.http_handler import HTTPHandler  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # HTTPHandler Tests
 # ---------------------------------------------------------------------------
@@ -168,27 +167,6 @@ class TestHTTPHandlerProcessRequest:
             result = handler.process_request(sample_data)
             # Should still return a response (report sending is skipped)
             assert result is not None
-
-    def test_process_request_with_ai_responder(self):
-        """process_request() should use AI responder if enabled and available."""
-        args = MagicMock()
-        args.verbose = False
-        args.server = None
-        args.ai_responder = True
-        args.ai_endpoint = "http://localhost:8080/v1"
-        args.ai_model = "test-model"
-        args.ai_max_tokens = 100
-        update_event = MagicMock()
-        handler = HTTPHandler(args, update_event)
-
-        sample_data = {
-            "ip": "10.0.0.1",
-            "raw_request": "GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n",
-            "parsed_request": MagicMock(),
-        }
-
-        # AI responder should be None if endpoint unreachable
-        assert handler._ai_responder is None or hasattr(handler, "_ai_responder")
 
 
 class TestHTTPRequest:
