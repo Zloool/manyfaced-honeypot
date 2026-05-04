@@ -11,27 +11,28 @@ handlers for each service (WordPress, phpMyAdmin, Jenkins, Tomcat, etc.).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import os
+import queue as _queue
 import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
-import queue as _queue
+from datetime import datetime, timezone
 
-from manyfaced.common.logging_setup import get_logger
-from manyfaced.common.config import settings
 from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.config import settings
 from manyfaced.common.httphandler import HTTPRequest
+from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
 from manyfaced.common.status import SSH_CLIENT, UNKNOWN_NON_HTTP
-from .registry import HandlerRegistry
-from .wordpress_handler import WordPressHandler
-from .phpmyadmin_handler import PhpMyAdminHandler
-from .jenkins_handler import JenkinsHandler
-from .tomcat_handler import TomcatHandler
-from .drupal_handler import DrupalHandler
+
 from .cpanel_handler import CPanelHandler
+from .drupal_handler import DrupalHandler
 from .generic_handler import GenericHandler
+from .jenkins_handler import JenkinsHandler
+from .phpmyadmin_handler import PhpMyAdminHandler
+from .registry import HandlerRegistry
+from .tomcat_handler import TomcatHandler
+from .wordpress_handler import WordPressHandler
 
 logger = get_logger(__name__)
 
@@ -143,65 +144,6 @@ class HTTPHandler:
         """
         self.args = args
         self.update_event = update_event
-        # Initialize AI responder if enabled
-        self._ai_enabled = getattr(args, "ai_responder", False)
-        self._ai_responder = None
-        if self._ai_enabled:
-            self._init_ai_responder(args)
-
-    def _init_ai_responder(self, args):
-        """Initialize the AI responder and ResponderRegistry."""
-        try:
-            from manyfaced.common.ai_responder import AIResponder
-            from manyfaced.common.responder import (
-                PhpMyAdminResponder,
-                ResponderRegistry,
-                WordPressResponder,
-                WebDAVResponder,
-            )
-
-            ai_endpoint = getattr(args, "ai_endpoint", "")
-            ai_model = getattr(args, "ai_model", "")
-            ai_max_tokens = getattr(args, "ai_max_tokens", 0)
-
-            if not ai_endpoint:
-                ai_endpoint = os.environ.get(
-                    "HONEY_AI_ENDPOINT", "http://127.0.0.1:8080/v1"
-                )
-            if not ai_model:
-                ai_model = os.environ.get("HONEY_AI_MODEL", "llama-3.1-8b-instruct")
-            if ai_max_tokens == 0:
-                ai_max_tokens = int(os.environ.get("HONEY_AI_MAX_TOKENS", "500"))
-
-            self._registry = ResponderRegistry()
-            self._registry.register(PhpMyAdminResponder())
-            self._registry.register(WordPressResponder())
-            self._registry.register(WebDAVResponder())
-
-            self._ai_responder = AIResponder(
-                endpoint=ai_endpoint,
-                model=ai_model,
-                max_tokens=ai_max_tokens,
-                registry=self._registry,
-            )
-
-            if self._ai_responder.is_available():
-                logger.info(
-                    "AI responder enabled for interactive bot engagement "
-                    "(model=%s, endpoint=%s, registry=%s)",
-                    ai_model,
-                    ai_endpoint,
-                    self._registry,
-                )
-            else:
-                logger.warning(
-                    "AI responder enabled but unavailable – "
-                    "llama-cpp-python not installed or endpoint unreachable"
-                )
-                self._ai_responder = None
-        except Exception as e:
-            logger.warning("Failed to initialize AI responder: %s", e)
-            self._ai_responder = None
 
     def handle_request(self, message: str, bot_ip: str = "127.0.0.1"):
         """Handle a raw HTTP request from a bot.
@@ -477,20 +419,7 @@ class HTTPHandler:
                 profile = h.get_or_create_profile(bot_ip)
                 profile.record_interaction(request_data, output_data, detected)
         else:
-            # Fallback to AI responder if enabled
-            if self._ai_responder and self._ai_responder.is_available():
-                try:
-                    response_bytes, detected = self._ai_responder.generate_response(
-                        request_path=path,
-                        raw_request=raw_request,
-                        bot_ip=bot_ip,
-                    )
-                    output_data = response_bytes
-                except Exception as e:
-                    logger.warning("AI response failed for %s %s: %s", bot_ip, path, e)
-                    output_data, detected = self._fallback_response(path), 1
-            else:
-                output_data, detected = self._fallback_response(path), 1
+            output_data, detected = self._fallback_response(path), 1
 
         logger.debug(
             "Generated response for %s, detected=%s, size=%d",
