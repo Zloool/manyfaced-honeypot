@@ -291,7 +291,6 @@ manyfaced-honeypot/
 ├── manyfaced/
 │   ├── __init__.py                 # Package init
 │   ├── common/
-│   │   ├── ai_responder.py         # AI-powered response generation
 │   │   ├── arguments.py            # CLI argument parser
 │   │   ├── bearstorage.py          # BearStorage data container
 │   │   ├── config.py               # Modern Config (TOML + env + defaults)
@@ -299,7 +298,6 @@ manyfaced-honeypot/
 │   │   ├── logging_setup.py        # Logging configuration
 │   │   ├── myenc.py                # AESCipher (AES-256-CBC encrypt/decrypt)
 │   │   ├── protocol.py             # Protocol detection utilities
-│   │   ├── responder/              # AI response generators (modular)
 │   │   ├── status.py               # Constants (timeouts, detection IDs)
 │   │   └── utils.py                # Socket helpers, dump_file
 │   ├── server/

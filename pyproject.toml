@@ -19,7 +19,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ai = ["openai>=1.0"]
 postgres = ["psycopg2-binary>=2.9"]
 geoip = ["geoip2>=4.0"]
 dev = ["pytest>=7.0", "ruff>=0.1", "pytest-cov>=4.0"]
