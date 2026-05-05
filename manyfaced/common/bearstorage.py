@@ -43,10 +43,14 @@ class BearStorage:
             # HTTPMessage supports case-insensitive lookups via .get()
             ua_val = None
             if isinstance(parsed_request.headers, dict):
-                ua_val = parsed_request.headers.get("user-agent") or parsed_request.headers.get("User-Agent", "")
+                ua_val = parsed_request.headers.get(
+                    "user-agent"
+                ) or parsed_request.headers.get("User-Agent", "")
             else:
                 # http.client.HTTPMessage — use get() for case-insensitive lookup
-                ua_val = parsed_request.headers.get("user-agent") or parsed_request.headers.get("User-Agent", "")
+                ua_val = parsed_request.headers.get(
+                    "user-agent"
+                ) or parsed_request.headers.get("User-Agent", "")
             if ua_val:
                 self.ua = ua_val
         self.isDetected = is_detected
@@ -81,6 +85,7 @@ class BearStorage:
         """
         try:
             from manyfaced.common.geolocate import lookup_ip_geolocation
+
             country, continent = lookup_ip_geolocation(ip, timeout=timeout)
             self.country = country
             self.continent = continent
