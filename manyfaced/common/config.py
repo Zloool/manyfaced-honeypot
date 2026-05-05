@@ -143,9 +143,7 @@ _DEFAULT_LOG_FILE = os.path.join(
     os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
 )
 _DEFAULT_DUMP_FILE = "/var/lib/manyfaced/dump.jsonl"
-_DEFAULT_LOCKFILE = os.path.join(
-    os.environ.get("XDG_RUNTIME_DIR", "/run"), "manyfaced", "lockfile"
-)
+_DEFAULT_LOCKFILE = os.path.join("/opt/manyfaced/bots", "lockfile")
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
