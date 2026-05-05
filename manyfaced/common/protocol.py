@@ -6,7 +6,6 @@ before the HTTP parser attempts to parse them.
 
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ _HTTP_METHOD_RE = re.compile(
 )
 
 
-def detect_protocol(raw_data: bytes) -> Optional[str]:
+def detect_protocol(raw_data: bytes) -> str | None:
     """Detect the protocol from raw connection data.
 
     Args:
