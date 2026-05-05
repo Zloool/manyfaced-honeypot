@@ -240,7 +240,11 @@ def send_report(data, client, password, server_host, server_port):
         ua = data.ua or ""
     elif hasattr(parsed, "headers") and parsed.headers:
         # Try direct attribute first, then case-insensitive lookup
-        ua = getattr(parsed, "user_agent", "") or parsed.headers.get("User-Agent", "") or parsed.headers.get("user-agent", "")
+        ua = (
+            getattr(parsed, "user_agent", "")
+            or parsed.headers.get("User-Agent", "")
+            or parsed.headers.get("user-agent", "")
+        )
 
     data_dict = {
         "ip": data.ip,

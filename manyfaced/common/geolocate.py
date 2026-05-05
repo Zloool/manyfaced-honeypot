@@ -77,7 +77,9 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
     return ("", "")
 
 
-def batch_lookup_geolocation(ips: list[str], max_concurrent: int = 5) -> dict[str, tuple[str, str]]:
+def batch_lookup_geolocation(
+    ips: list[str], max_concurrent: int = 5
+) -> dict[str, tuple[str, str]]:
     """Look up geolocation for multiple IPs.
 
     Useful for post-processing or analysis scripts.

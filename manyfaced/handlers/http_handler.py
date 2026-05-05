@@ -199,8 +199,10 @@ class HTTPHandler:
 
         # Build the data dict that process_request expects
         # Use original message as raw_request; if empty, use fallback to ensure capture
-        raw_for_report = message if message else (
-            "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
+        raw_for_report = (
+            message
+            if message
+            else ("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n")
         )
         data = {
             "ip": bot_ip,
@@ -290,7 +292,11 @@ class HTTPHandler:
             request_version = version or "SSH-2.0"
 
         self._send_report(
-            bot_ip, protocol_info.get("raw", "SSH-2.0-PUTTY"), _ParsedSSH(), SSH_CLIENT, protocol="ssh"
+            bot_ip,
+            protocol_info.get("raw", "SSH-2.0-PUTTY"),
+            _ParsedSSH(),
+            SSH_CLIENT,
+            protocol="ssh",
         )
         return banner.encode("utf-8")
 
