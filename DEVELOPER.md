@@ -286,6 +286,46 @@ test/
 
 5. **Subprocess git pull** — The `update.py:pull()` runs `git pull` and `pip install -r requirements.txt` in a subprocess. This is a security risk in production — consider pinning versions.
 
+## Handler Coverage Analysis
+
+### Current Handlers (11 total)
+
+| Handler | Domain | Purpose |
+|---------|--------|---------|
+| WordPressHandler | wordpress | WordPress CMS emulation |
+| DrupalHandler | drupal | Drupal CMS emulation |
+| PhpMyAdminHandler | phpmyadmin | phpMyAdmin database admin |
+| CPanelHandler | cpanel | cPanel/WHM control panel |
+| JenkinsHandler | jenkins | Jenkins CI/CD server |
+| TomcatHandler | tomcat | Apache Tomcat servlet container |
+| WebDAVHandler | webdav | WebDAV file sharing |
+| BitrixHandler | bitrix | Bitrix CMS emulation |
+| ConfigDisclosureHandler | config_disclosure | Sensitive file disclosure (config files, backups) |
+| GenericHandler | generic | Fallback for unmatched paths + "monster page" |
+
+### Known Coverage Gaps
+
+Production data shows **97% of bot traffic hits the root path `/`** which currently falls to GenericHandler. See `docs/production-analysis-handler-coverage.md` for a complete analysis.
+
+**High-priority gaps:**
+- Root path `/` — 17,033 hits (needs targeted responses by User-Agent)
+- Favicon `/favicon.ico` — 36 hits (bot fingerprinting trigger)
+- Login paths `/login`, `/j_spring_security_check` — Spring Security emulation needed
+- Environment files `/.env` — ConfigDisclosureHandler expansion
+- API endpoints `/api/*`, `/v*/api-docs`, Swagger — New API handler needed
+- Next.js paths `/_next/*` — New NextJS handler needed
+- PHP eval RCE `eval-stdin.php` patterns — New EvalStdin handler needed
+
+### Adding a New Handler
+
+1. Create `manyfaced/handlers/<name>_handler.py` extending `HTTPHandlerBase`
+2. Define `domain`, `PATH_PATTERNS`, and `generate_response()` method
+3. Register in `handlers/__init__.py` (add to `_HANDLER_CLASSES`)
+4. Add service info to `generic_handler._SERVICE_INFO` for monster page inclusion
+5. Write tests in `test/test_<name>_handler.py`
+
+See existing handlers for patterns — `wordpress_handler.py` is a good reference for a complete implementation.
+
 ## Debugging Tips
 
 - `-v` (verbose) mode prints every bot interaction
