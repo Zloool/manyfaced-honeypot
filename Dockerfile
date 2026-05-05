@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 LABEL maintainer="zhavoronkov.p@gmail.com"
 LABEL description="Multi-faced honeypot - detects and logs bot activity"
