@@ -198,9 +198,15 @@ class HTTPHandler:
             parsed = HTTPRequest(fallback)
 
         # Build the data dict that process_request expects
+        # Use original message as raw_request; if empty, use fallback to ensure capture
+        raw_for_report = (
+            message
+            if message
+            else ("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n")
+        )
         data = {
             "ip": bot_ip,
-            "raw_request": message,
+            "raw_request": raw_for_report,
             "parsed_request": parsed,
         }
 
@@ -242,6 +248,12 @@ class HTTPHandler:
         except Exception:
             logger.debug("DNS resolution failed for %s", bot_ip)
 
+        # Resolve geolocation off the hot path (with short timeout)
+        try:
+            bs.resolve_geo(bot_ip, timeout=2.0)
+        except Exception:
+            logger.debug("Geo resolution failed for %s", bot_ip)
+
         q = _get_report_queue()
         q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
 
@@ -280,7 +292,11 @@ class HTTPHandler:
             request_version = version or "SSH-2.0"
 
         self._send_report(
-            bot_ip, version or "SSH-2.0-PUTTY", _ParsedSSH(), SSH_CLIENT, protocol="ssh"
+            bot_ip,
+            protocol_info.get("raw", "SSH-2.0-PUTTY"),
+            _ParsedSSH(),
+            SSH_CLIENT,
+            protocol="ssh",
         )
         return banner.encode("utf-8")
 
@@ -445,6 +461,12 @@ class HTTPHandler:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:
             logger.debug("DNS resolution failed for %s", bot_ip)
+
+        # Resolve geolocation off the hot path (with short timeout)
+        try:
+            bs.resolve_geo(bot_ip, timeout=2.0)
+        except Exception:
+            logger.debug("Geo resolution failed for %s", bot_ip)
 
         # Determine server connection info for sending reports
         server_host = getattr(self.args, "server_host", "127.0.0.1")
