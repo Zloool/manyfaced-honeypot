@@ -1,7 +1,10 @@
+import logging
 import socket
 
 # type placeholders for type checkers
 ipinfo_dummy = None  # placeholder if ipinfo is used in future
+
+logger = logging.getLogger(__name__)
 
 
 class BearStorage:
@@ -37,12 +40,18 @@ class BearStorage:
             self.version = parsed_request.request_version
         if hasattr(parsed_request, "headers"):
             self.headers = parsed_request.headers
-            if "user-agent" in parsed_request.headers:
-                self.ua = parsed_request.headers["user-agent"]
+            # HTTPMessage supports case-insensitive lookups via .get()
+            ua_val = None
+            if isinstance(parsed_request.headers, dict):
+                ua_val = parsed_request.headers.get("user-agent") or parsed_request.headers.get("User-Agent", "")
+            else:
+                # http.client.HTTPMessage — use get() for case-insensitive lookup
+                ua_val = parsed_request.headers.get("user-agent") or parsed_request.headers.get("User-Agent", "")
+            if ua_val:
+                self.ua = ua_val
         self.isDetected = is_detected
         self.hostname = hostname
-        # Reverse-DNS moved to async context (see resolve_dns_name) to avoid
-        # blocking the response thread on slow/unresponsive DNS servers.
+        # Reverse-DNS and geolocation moved to async context (see resolve_dns_name, resolve_geo)
 
     def resolve_dns_name(self, ip: str, timeout: float = 1.0) -> str:
         """Resolve reverse-DNS for *ip* with a short timeout.
@@ -56,6 +65,29 @@ class BearStorage:
             return ""
         finally:
             socket.setdefaulttimeout(None)
+
+    def resolve_geo(self, ip: str, timeout: float = 2.0) -> tuple[str, str]:
+        """Look up country and continent for *ip* via ip-api.com.
+
+        Non-blocking: catches all exceptions and returns ("", "").
+        Results are cached internally to respect rate limits.
+
+        Args:
+            ip: IP address string.
+            timeout: HTTP request timeout in seconds.
+
+        Returns:
+            Tuple of (country_name, continent_code), e.g. ("United States", "NA").
+        """
+        try:
+            from manyfaced.common.geolocate import lookup_ip_geolocation
+            country, continent = lookup_ip_geolocation(ip, timeout=timeout)
+            self.country = country
+            self.continent = continent
+            return (country, continent)
+        except Exception as e:
+            logger.debug("Geo resolution failed for %s: %s", ip, e)
+            return ("", "")
 
     def __str__(self) -> str:
         if self.path != "":

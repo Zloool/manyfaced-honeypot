@@ -233,6 +233,15 @@ def send_report(data, client, password, server_host, server_port):
     """
     cypher = AESCipher(password)
     parsed = data.parsed_request if hasattr(data, "parsed_request") else None
+
+    # Extract user-agent from headers (case-insensitive lookup on HTTPMessage)
+    ua = ""
+    if hasattr(data, "ua"):
+        ua = data.ua or ""
+    elif hasattr(parsed, "headers") and parsed.headers:
+        # Try direct attribute first, then case-insensitive lookup
+        ua = getattr(parsed, "user_agent", "") or parsed.headers.get("User-Agent", "") or parsed.headers.get("user-agent", "")
+
     data_dict = {
         "ip": data.ip,
         "raw_request": data.raw_request,
@@ -249,6 +258,11 @@ def send_report(data, client, password, server_host, server_port):
         if hasattr(data, "isDetected")
         else data.is_detected,
         "HIVELOGIN": data.hostname,
+        # Additional fields for better data quality
+        "ua": ua,
+        "dns_name": getattr(data, "dns_name", "") or "",
+        "country": getattr(data, "country", "") or "",
+        "continent": getattr(data, "continent", "") or "",
     }
     message = (client + ":").encode()
     message += cypher.encrypt(json.dumps(data_dict).encode()).encode()
