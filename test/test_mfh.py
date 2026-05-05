@@ -23,6 +23,7 @@ if project_root not in sys.path:
 # Mock optional dependencies before importing manyfaced modules
 sys.modules["geoip"] = MagicMock()
 from manyfaced.common.config import settings
+
 sys.modules["geoip.geolite2"] = MagicMock()
 sys.modules["GeoIP"] = MagicMock()
 
