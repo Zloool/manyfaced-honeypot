@@ -5,7 +5,7 @@ BearRequests is now a dataclass and Insert() delegates to the configured backend
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from .storage import get_storage
 
@@ -17,7 +17,7 @@ class BearRequests:
     ip: str
     raw_request: str
     timestamp: str
-    parsed_request: Dict[str, Any]
+    parsed_request: dict[str, Any]
     is_detected: int
     HIVELOGIN: str
 
@@ -25,7 +25,7 @@ class BearRequests:
 def Insert(bear: BearRequests) -> None:
     """Insert bear data into the configured storage backend."""
     storage = get_storage()
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "ip": bear.ip,
         "raw_request": bear.raw_request,
         "timestamp": bear.timestamp,
