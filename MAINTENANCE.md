@@ -23,8 +23,12 @@ ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "journalctl -u manyfaced --no-page
 # Check DB
 ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "sqlite3 /opt/manyfaced/bots/honeypot.sqlite 'SELECT COUNT(*) FROM honeypot_bears'"
 
-# Backup
-rsync -avz -e "ssh -p 22222 -i ~/.ssh/dohp" root@68.183.114.1:/opt/manyfaced/bots/honeypot.sqlite prod-backup/
+# Backup DB locally
+mkdir -p deployment-analysis/latest && \
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cp /opt/manyfaced/bots/honeypot.sqlite /tmp/hp-latest.sqlite && cat /tmp/hp-latest.sqlite" > deployment-analysis/latest/honeypot.db
+
+# Analyze production data
+cd deployment-analysis/latest && python3 ../analyze_production.py .
 
 # Deploy (push to master triggers auto-deploy)
 git push origin master

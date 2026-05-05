@@ -1,0 +1,253 @@
+---
+name: prod-analysis
+description: Production honeypot analysis workflow — SSH data pull, log/DB parsing, attack pattern detection, data quality audit, and structured report generation. Includes reusable Python analyzer script.
+---
+
+# Production Honeypot Analysis Skill
+
+Analyze production honeypot data (logs + SQLite DB) to detect attack patterns, identify bugs, assess data quality, and generate structured reports.
+
+## Prerequisites
+
+- SSH access to production droplet (`~/.ssh/dohp`, port 22222)
+- `.deploy_config` file with connection details
+- Python 3.10+ with sqlite3 (stdlib)
+- `analyze_production.py` script in `deployment-analysis/`
+
+## Quick Start
+
+```bash
+# 1. Pull fresh data from production
+mkdir -p deployment-analysis/latest
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cat /opt/manyfaced/bots/honeypot.log" > deployment-analysis/latest/honeypot.log
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cp /opt/manyfaced/bots/honeypot.sqlite /tmp/hp-latest.sqlite && cat /tmp/hp-latest.sqlite" > deployment-analysis/latest/honeypot.db
+rm -f /tmp/hp-latest.sqlite
+
+# 2. Run analysis script
+cd deployment-analysis/latest
+python3 ../analyze_production.py .
+
+# 3. Generate report (see Report Generation section below)
+```
+
+## Data Sources
+
+### 1. Log File (`honeypot.log`)
+- JSON lines format, one entry per line
+- Fields: `timestamp`, `level`, `logger`/`module`, `processName`/`process`, `message`
+- Contains bot interactions, errors, warnings, service health info
+- **Note:** May not exist on server if logging was redirected to journalctl only
+
+### 2. SQLite Database (`honeypot.sqlite`)
+- Table: `honeypot_bears` — all captured bot records
+- Schema: `id`, `bot_ip`, `hostname`, `timestamp`, `request_path`, `request_command`, `request_version`, `request_raw`, `bot_user_agent`, `bot_country`, `bot_continent`, `bot_tracert`, `bot_dns_name`, `detected_id`, `hive_id`, `login`
+- **WAL mode caveat:** Query via active Python connection (reads WAL), not raw file copy
+
+### 3. Journal Logs (`journalctl -u manyfaced`)
+- Recent errors, warnings, service status
+- Use for real-time health check and error trend analysis
+
+## Analysis Workflow
+
+### Step 1: Service Health Check
+
+```bash
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "
+echo '=== Service Status ===' && systemctl status manyfaced --no-pager 2>&1
+echo '=== Processes ===' && ps aux | grep mfh | grep -v grep
+echo '=== Listening Ports ===' && ss -tlnp | grep python | wc -l
+echo '=== Disk Space ===' && df -h /opt/manyfaced/bots
+"
+```
+
+**Expected:** 3 processes (main + client + server), 47 ports, < 50% disk usage.
+
+### Step 2: Pull Data Locally
+
+```bash
+mkdir -p deployment-analysis/latest
+cd deployment-analysis/latest
+
+# Pull log file (may not exist)
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cat /opt/manyfaced/bots/honeypot.log" > honeypot.log 2>/dev/null || echo "No log file found on server"
+
+# Pull database (always exists)
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 \
+  "cp /opt/manyfaced/bots/honeypot.sqlite /tmp/hp-latest.sqlite && cat /tmp/hp-latest.sqlite" > honeypot.db
+rm -f /tmp/hp-latest.sqlite
+
+# Pull recent journal logs for error context
+ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 \
+  "journalctl -u manyfaced --no-pager --since '2026-05-05' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
+```
+
+### Step 3: Run Analysis Script
+
+```bash
+cd deployment-analysis/latest
+python3 ../analyze_production.py .
+```
+
+The script outputs:
+- Log level distribution (DEBUG/INFO/WARNING/ERROR)
+- Process breakdown (client/server/send_report/data_saving)
+- Temporal activity patterns
+- Top attacking IPs with mention counts
+- Detected service flags distribution
+- Database schema, row counts, top IPs
+- Data quality metrics (empty fields)
+- Request path/command distributions
+
+### Step 4: Generate Structured Report
+
+Create a markdown report following this template structure:
+
+```markdown
+# Production Honeypot Analysis Report
+
+**Date:** YYYY-MM-DD  
+**Server:** 68.183.114.1 (DigitalOcean Droplet)  
+**Analysis Period:** [time range from DB]
+
+---
+
+## 1. Service Status
+- Service: active/inactive/crashing
+- Processes: N running (expected: 3)
+- Listening Ports: N ports
+- Disk/Memory usage
+
+### Critical Issues
+1. Issue description with evidence
+
+---
+
+## 2. Database Analysis
+- Total Records: N
+- Unique IPs: N
+- Time Range: start → end
+
+### Top Attacking IPs (by request count)
+| IP | Requests | Notes |
+|---|---|---|
+
+### Detected Services Distribution
+| Service | Count | Percentage |
+|---|---|---|
+
+### Data Quality Issues
+| Field | Empty | Percentage |
+|---|---|---|
+
+---
+
+## 3. Log Analysis (if available)
+- Total Lines: N
+- Parsed: N (success rate)
+- Level Distribution
+- Top Errors/Warnings
+
+---
+
+## 4. Key Findings
+
+### What's Working
+1. ✅ Finding with evidence
+
+### What's Not Working
+1. ❌ Issue with severity and impact
+
+### Attack Patterns Observed
+1. Pattern description with examples
+
+---
+
+## 5. Recommendations
+
+### High Priority (fix now)
+1. Action item with rationale
+
+### Medium Priority
+1. ...
+
+### Low Priority
+1. ...
+
+---
+
+## 6. Recent Errors (from journalctl)
+```
+journalctl output here
+```
+```
+
+### Step 5: Save Report
+
+Save to `deployment-analysis/latest/report-YYYY-MM-DD.md` or similar untracked location. **Never commit analysis reports** — they contain sensitive IP data and are session-specific.
+
+## Data Quality Checklist
+
+When analyzing, check these fields for emptiness:
+
+| Field | Expected Source | Common Issue |
+|-------|----------------|--------------|
+| `bot_country` | Geolocation lookup (MaxMind) | API not configured / key missing |
+| `bot_user_agent` | HTTP header extraction | Parser bug in HTTPRequest |
+| `request_raw` | Raw request capture | Truncation or serialization issue |
+| `hostname` | Reverse DNS lookup | DNS timeout / no PTR record |
+| `bot_dns_name` | Forward DNS lookup | DNS resolution failure |
+| `bot_continent` | Derived from country | Cascading empty from bot_country |
+
+**Typical result:** 100% empty for all geolocation fields, ~50-92% empty for request_raw. This is expected until fixes are deployed.
+
+## Common Analysis Findings & Interpretation
+
+| Finding | Severity | Meaning |
+|---------|----------|---------|
+| All `detected_id=4294967294` (UNKNOWN_HTTP) | Medium | Non-HTTP traffic overwhelming HTTP parser — protocol detection layer needed |
+| SSH Probe (`detected_id=4294967293`) present | Good | Protocol detection is working for SSH |
+| Process count > 3 | Critical | Process explosion — child processes crashing and restarting (see LimitNOFILE fix) |
+| Empty `bot_country` (100%) | High | Geolocation not implemented/configured |
+| Empty `request_raw` (>50%) | Medium | Request capture pipeline has gaps |
+| Loopback traffic in DB | Low | Internal iptables redirect probes — filter 127.0.0.1 and self IP |
+| Report send failures | Medium | SERVER process not ready or port mismatch |
+
+## Reusable Analysis Script
+
+The `analyze_production.py` script in this folder provides automated analysis:
+
+```python
+# Key functions:
+parse_log_line(line)     # Parse JSON log line → dict
+analyze_logs(log_path)   # Full log analysis → parsed, ip_counter, interaction_ips
+analyze_db(db_path)      # Full DB analysis → schema, counts, distributions, quality
+```
+
+Run with: `python3 analyze_production.py /path/to/data/dir`
+
+## Tips
+
+1. **Always pull fresh data** — the DB grows continuously; old snapshots become stale quickly
+2. **Check journalctl for real-time errors** — logs may not persist to file on newer deployments
+3. **Filter loopback traffic** in analysis: `WHERE bot_ip NOT IN ('127.0.0.1', '68.183.114.1')`
+4. **Compare detected_id distribution** across time periods to see if protocol detection is improving
+5. **Track top IPs over time** — new high-volume IPs indicate active bot campaigns
+6. **Data quality degrades** as DB grows — check empty field percentages periodically
+
+## File Structure
+
+```
+deployment-analysis/
+├── analyze_production.py    # Reusable analysis script (tracked)
+├── PRODUCTION_ANALYSIS.md   # Example report from 2026-05-01 (reference)
+├── latest/                  # Untracked — fresh analysis data goes here
+│   ├── honeypot.db          # SQLite database dump
+│   ├── honeypot.log         # Log file dump (may be empty)
+│   └── report-YYYY-MM-DD.md # Generated report
+```
+
+## Security Notes
+
+- **Never commit** `honeypot.db`, `honeypot.log`, or analysis reports — they contain attacker IP addresses and request data
+- Add `deployment-analysis/latest/` to `.gitignore` if not already present
+- Analysis reports are for internal use only; share sanitized summaries externally
