@@ -156,7 +156,9 @@ class AIResponder:
                 logger.info("AI responder initialized successfully")
             else:
                 self._available = False
-                logger.warning("AI responder endpoint not reachable at %s", self.endpoint)
+                logger.warning(
+                    "AI responder endpoint not reachable at %s", self.endpoint
+                )
         except ImportError:
             logger.warning(
                 "openai package not installed – AI responder disabled. "
