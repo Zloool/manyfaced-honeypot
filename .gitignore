@@ -101,3 +101,9 @@ temp.db
 
 # Local analysis/dev artifacts
 deployment-analysis/
+
+# Production analysis data (contains sensitive IP info)
+deployment-analysis/latest/
+
+# Local production backups
+prod-backup/
