@@ -43,6 +43,14 @@ line-length = 100
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
+# Workaround for ruff bug (0.15.x): formatter converts valid Python 3
+# `except (A, B):` to invalid `except A, B:` syntax. These files use
+# multi-exception tuples and must be excluded from auto-formatting.
+exclude = [
+    "manyfaced/db/storage.py",
+    "manyfaced/mfh.py",
+    "manyfaced/common/bearstorage.py",
+]
 
 [tool.ruff.lint]
 ignore = [
