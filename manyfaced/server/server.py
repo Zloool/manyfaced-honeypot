@@ -26,13 +26,13 @@ class ServerHandler(BaseHandler):
         """Get the AES key for a given identifier.
 
         Rejects unknown identifiers – only explicitly configured
-        AUTHORISEDBEARS entries are accepted.
+        AUTHORIZED_BEES entries are accepted.
         """
-        key = settings.AUTHORISEDBEARS.get(identifier)
+        key = settings.AUTHORIZED_BEES.get(identifier)
         if key is None:
             logger.warning(
                 "Rejected connection from unknown identifier '%s' – "
-                'not in AUTHORISEDBEARS. Connection dropped.',
+                'not in AUTHORIZED_BEES. Connection dropped.',
                 identifier,
             )
             raise ValueError(f"Unknown identifier '{identifier}' – not authorized")
