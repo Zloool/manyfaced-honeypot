@@ -9,7 +9,7 @@ from manyfaced.common.status import CLIENT_TIMEOUT
 logger = get_logger(__name__)
 
 # Default JSONL dump path – overridable via settings.DUMP_FILE or env var
-_DUMP_FILE = os.environ.get("MANYFACED_DUMP_FILE", "/var/lib/manyfaced/dump.jsonl")
+_DUMP_FILE = os.environ.get('MANYFACED_DUMP_FILE', '/var/lib/manyfaced/dump.jsonl')
 
 
 def dump_file(data):
@@ -18,13 +18,13 @@ def dump_file(data):
     Each call appends one JSON-serialisable object (dict, list, str, …).
     The file is created with 0600 permissions if it does not exist.
     """
-    path = getattr(settings, "DUMP_FILE", _DUMP_FILE)
+    path = getattr(settings, 'DUMP_FILE', _DUMP_FILE)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
     except OSError:
         pass
-    with open(path, "a") as f:
-        f.write(json.dumps(data, default=str) + "\n")
+    with open(path, 'a') as f:
+        f.write(json.dumps(data, default=str) + '\n')
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
@@ -51,9 +51,7 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
     finally:
         the_socket.settimeout(None)  # Reset to blocking
 
-    raw = b"".join(total_data)
-    result = raw.decode("utf-8", errors="replace")
-    logger.debug(
-        "receive_timeout: received %d bytes, repr=%r", len(raw), repr(result[:200])
-    )
+    raw = b''.join(total_data)
+    result = raw.decode('utf-8', errors='replace')
+    logger.debug('receive_timeout: received %d bytes, repr=%r', len(raw), repr(result[:200]))
     return result

@@ -59,17 +59,17 @@ class StorageBackend(ABC):
 # Configuration helpers
 # ---------------------------------------------------------------------------
 
-_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def _resolve_db_path() -> str:
     """Return the SQLite database path from env or default."""
-    return os.environ.get("HONEY_DB_PATH", "bots/honeypot.sqlite")
+    return os.environ.get('HONEY_DB_PATH', 'bots/honeypot.sqlite')
 
 
 def _resolve_backend() -> str:
     """Return the backend name from env or default to 'sqlite'."""
-    return os.environ.get("HONEY_DB_BACKEND", "sqlite").lower()
+    return os.environ.get('HONEY_DB_BACKEND', 'sqlite').lower()
 
 
 # ---------------------------------------------------------------------------
@@ -124,13 +124,11 @@ class SQLiteStorage(StorageBackend):
         """Open the connection and create the table if it does not exist."""
         try:
             self._conn = sqlite3.connect(self._db_path)
-            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute('PRAGMA journal_mode=WAL')
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-            logger.exception(
-                "Failed to initialise SQLite database at %s", self._db_path
-            )
+            logger.exception('Failed to initialise SQLite database at %s', self._db_path)
             self._conn = None
 
     # -- public API ----------------------------------------------------------
@@ -138,41 +136,39 @@ class SQLiteStorage(StorageBackend):
     def insert(self, record: dict) -> None:  # noqa: C901
         """Insert a single bear record."""
         if self._conn is None:
-            logger.error("SQLite storage is not initialised; skipping insert")
+            logger.error('SQLite storage is not initialised; skipping insert')
             return
 
         try:
             # Map the record dict to individual fields (extract safely)
-            parsed = record.get("parsed_request") or {}
+            parsed = record.get('parsed_request') or {}
 
-            bot_ip = record.get("ip") or ""
-            hostname = record.get("hostname") or ""
-            timestamp = record.get("timestamp") or ""
-            request_path = parsed.get("path") or record.get("request_path") or ""
-            request_command = (
-                parsed.get("command") or record.get("request_command") or ""
-            )
+            bot_ip = record.get('ip') or ''
+            hostname = record.get('hostname') or ''
+            timestamp = record.get('timestamp') or ''
+            request_path = parsed.get('path') or record.get('request_path') or ''
+            request_command = parsed.get('command') or record.get('request_command') or ''
             request_version = (
-                parsed.get("request_version")
-                or parsed.get("version")
-                or record.get("request_version")
-                or ""
+                parsed.get('request_version')
+                or parsed.get('version')
+                or record.get('request_version')
+                or ''
             )
-            request_raw = record.get("raw_request") or ""
-            bot_user_agent = parsed.get("user_agent") or record.get("ua") or ""
-            bot_country = record.get("country") or ""
-            bot_continent = record.get("continent") or ""
-            bot_tracert = record.get("tracert") or ""
-            bot_dns_name = record.get("dns_name") or ""
-            detected_id = record.get("is_detected")
+            request_raw = record.get('raw_request') or ''
+            bot_user_agent = parsed.get('user_agent') or record.get('ua') or ''
+            bot_country = record.get('country') or ''
+            bot_continent = record.get('continent') or ''
+            bot_tracert = record.get('tracert') or ''
+            bot_dns_name = record.get('dns_name') or ''
+            detected_id = record.get('is_detected')
             if detected_id is None:
-                detected_id = record.get("isDetected")
-            hive_id = record.get("hive_id")
-            login = record.get("login") or record.get("HIVELOGIN") or ""
+                detected_id = record.get('isDetected')
+            hive_id = record.get('hive_id')
+            login = record.get('login') or record.get('HIVELOGIN') or ''
 
             # Convert timestamps to text if needed
             if isinstance(timestamp, datetime):
-                timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")
+                timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')
             timestamp = str(timestamp)
 
             with self._lock:
@@ -199,7 +195,7 @@ class SQLiteStorage(StorageBackend):
                 self._conn.commit()
 
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-            logger.exception("Error inserting record into SQLite storage")
+            logger.exception('Error inserting record into SQLite storage')
 
     def close(self) -> None:
         """Close the SQLite connection."""
@@ -207,14 +203,14 @@ class SQLiteStorage(StorageBackend):
             try:
                 self._conn.close()
             except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-                logger.exception("Error closing SQLite connection")
+                logger.exception('Error closing SQLite connection')
             finally:
                 self._conn = None
 
     def __del__(self) -> None:
         self.close()
 
-    def __enter__(self) -> "SQLiteStorage":
+    def __enter__(self) -> 'SQLiteStorage':
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -267,11 +263,11 @@ class PostgreSQLStorage(StorageBackend):
         user: str | None = None,
         password: str | None = None,
     ) -> None:
-        self._host = host or os.environ.get("HONEY_PG_HOST", "127.0.0.1")
-        self._port = port or int(os.environ.get("HONEY_PG_PORT", "5432"))
-        self._database = database or os.environ.get("HONEY_PG_DB", "honeypot")
-        self._user = user or os.environ.get("HONEY_PG_USER", "postgres")
-        self._password = password or os.environ.get("HONEY_PG_PASSWORD", "postgres")
+        self._host = host or os.environ.get('HONEY_PG_HOST', '127.0.0.1')
+        self._port = port or int(os.environ.get('HONEY_PG_PORT', '5432'))
+        self._database = database or os.environ.get('HONEY_PG_DB', 'honeypot')
+        self._user = user or os.environ.get('HONEY_PG_USER', 'postgres')
+        self._password = password or os.environ.get('HONEY_PG_PASSWORD', 'postgres')
         self._conn: Any = None
         self._lock = Lock()
         self._init_db()
@@ -282,8 +278,8 @@ class PostgreSQLStorage(StorageBackend):
             import psycopg2
         except ImportError:
             raise ImportError(
-                "psycopg2 is required for PostgreSQL backend. "
-                "Install it with: pip install psycopg2-binary"
+                'psycopg2 is required for PostgreSQL backend. '
+                'Install it with: pip install psycopg2-binary'
             )
         try:
             self._conn = psycopg2.connect(
@@ -297,7 +293,7 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(_CREATE_TABLE_PG_SQL)
             self._conn.commit()
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-            logger.exception("Failed to initialise PostgreSQL storage")
+            logger.exception('Failed to initialise PostgreSQL storage')
             self._conn = None
 
     # -- public API ----------------------------------------------------------
@@ -305,39 +301,37 @@ class PostgreSQLStorage(StorageBackend):
     def insert(self, record: dict) -> None:  # noqa: C901
         """Insert a single bear record."""
         if self._conn is None:
-            logger.error("PostgreSQL storage is not initialised; skipping insert")
+            logger.error('PostgreSQL storage is not initialised; skipping insert')
             return
 
         try:
-            parsed = record.get("parsed_request") or {}
+            parsed = record.get('parsed_request') or {}
 
-            bot_ip = record.get("ip") or ""
-            hostname = record.get("hostname") or ""
-            timestamp = record.get("timestamp") or ""
-            request_path = parsed.get("path") or record.get("request_path") or ""
-            request_command = (
-                parsed.get("command") or record.get("request_command") or ""
-            )
+            bot_ip = record.get('ip') or ''
+            hostname = record.get('hostname') or ''
+            timestamp = record.get('timestamp') or ''
+            request_path = parsed.get('path') or record.get('request_path') or ''
+            request_command = parsed.get('command') or record.get('request_command') or ''
             request_version = (
-                parsed.get("request_version")
-                or parsed.get("version")
-                or record.get("request_version")
-                or ""
+                parsed.get('request_version')
+                or parsed.get('version')
+                or record.get('request_version')
+                or ''
             )
-            request_raw = record.get("raw_request") or ""
-            bot_user_agent = parsed.get("user_agent") or record.get("ua") or ""
-            bot_country = record.get("country") or ""
-            bot_continent = record.get("continent") or ""
-            bot_tracert = record.get("tracert") or ""
-            bot_dns_name = record.get("dns_name") or ""
-            detected_id = record.get("is_detected")
+            request_raw = record.get('raw_request') or ''
+            bot_user_agent = parsed.get('user_agent') or record.get('ua') or ''
+            bot_country = record.get('country') or ''
+            bot_continent = record.get('continent') or ''
+            bot_tracert = record.get('tracert') or ''
+            bot_dns_name = record.get('dns_name') or ''
+            detected_id = record.get('is_detected')
             if detected_id is None:
-                detected_id = record.get("isDetected")
-            hive_id = record.get("hive_id")
-            login = record.get("login") or record.get("HIVELOGIN") or ""
+                detected_id = record.get('isDetected')
+            hive_id = record.get('hive_id')
+            login = record.get('login') or record.get('HIVELOGIN') or ''
 
             if isinstance(timestamp, datetime):
-                timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")
+                timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')
             timestamp = str(timestamp)
 
             with self._lock:
@@ -365,7 +359,7 @@ class PostgreSQLStorage(StorageBackend):
                 self._conn.commit()
 
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-            logger.exception("Error inserting record into PostgreSQL storage")
+            logger.exception('Error inserting record into PostgreSQL storage')
 
     def close(self) -> None:
         """Close the PostgreSQL connection."""
@@ -373,14 +367,14 @@ class PostgreSQLStorage(StorageBackend):
             try:
                 self._conn.close()
             except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-                logger.exception("Error closing PostgreSQL connection")
+                logger.exception('Error closing PostgreSQL connection')
             finally:
                 self._conn = None
 
     def __del__(self) -> None:
         self.close()
 
-    def __enter__(self) -> "PostgreSQLStorage":
+    def __enter__(self) -> 'PostgreSQLStorage':
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -399,7 +393,7 @@ def get_storage() -> StorageBackend:
     the value of the ``HONEY_DB_BACKEND`` environment variable (case-insensitive).
     """
     backend = _resolve_backend()
-    if backend == "postgresql":
+    if backend == 'postgresql':
         return PostgreSQLStorage()
     # default to SQLite
     return SQLiteStorage()
@@ -416,10 +410,10 @@ PostgreSQLStorageType = PostgreSQLStorage
 
 
 __all__ = [
-    "StorageBackend",
-    "SQLiteStorage",
-    "PostgreSQLStorage",
-    "SQLiteStorageType",
-    "PostgreSQLStorageType",
-    "get_storage",
+    'StorageBackend',
+    'SQLiteStorage',
+    'PostgreSQLStorage',
+    'SQLiteStorageType',
+    'PostgreSQLStorageType',
+    'get_storage',
 ]

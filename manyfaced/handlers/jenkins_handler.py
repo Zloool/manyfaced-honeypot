@@ -21,26 +21,26 @@ logger = logging.getLogger(__name__)
 class JenkinsHandler(HTTPHandlerBase):
     """Jenkins CI/CD honeypot handler."""
 
-    domain = "jenkins"
+    domain = 'jenkins'
     PATH_PATTERNS = [
-        "/jenkins",
-        "/jenkins/",
-        "/jenkins/login",
-        "/jenkins/script",
-        "/jenkins/manage",
-        "/jenkins/api",
-        "/jenkins/computer",
-        "/jenkins/view",
-        "/jenkins/job",
-        "/hudson",
-        "/hudson/",
-        "/hudson/login",
+        '/jenkins',
+        '/jenkins/',
+        '/jenkins/login',
+        '/jenkins/script',
+        '/jenkins/manage',
+        '/jenkins/api',
+        '/jenkins/computer',
+        '/jenkins/view',
+        '/jenkins/job',
+        '/hudson',
+        '/hudson/',
+        '/hudson/login',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -54,11 +54,11 @@ class JenkinsHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -66,9 +66,7 @@ class JenkinsHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and (
-            "login" in path_lower or "j_security_check" in raw_request
-        ):
+        if method == 'POST' and ('login' in path_lower or 'j_security_check' in raw_request):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -78,17 +76,17 @@ class JenkinsHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "login" in path_lower:
+        if 'login' in path_lower:
             body = self._login_page()
-        elif "manage" in path_lower:
+        elif 'manage' in path_lower:
             body = self._manage_page()
-        elif "api" in path_lower:
+        elif 'api' in path_lower:
             body = self._api_response()
-        elif "computer" in path_lower:
+        elif 'computer' in path_lower:
             body = self._computer_page()
-        elif "script" in path_lower:
+        elif 'script' in path_lower:
             body = self._script_console()
-        elif "job" in path_lower or "view" in path_lower:
+        elif 'job' in path_lower or 'view' in path_lower:
             body = self._job_page()
         else:
             body = self._main_page()
@@ -173,7 +171,7 @@ class JenkinsHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
-        return self._build_http_response(body, "/jenkins/login")
+        return self._build_http_response(body, '/jenkins/login')
 
     def _main_page(self) -> str:
         """Generate the Jenkins main page."""
@@ -343,28 +341,26 @@ class JenkinsHandler(HTTPHandlerBase):
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Jetty(11.0.20)\r\n"
-            f"X-Hudson: 1.400\r\n"
-            f"X-Jenkins: 2.426\r\n"
-            f"Set-Cookie: JSESSIONID=node0abc123def456; Path=/jenkins/; HttpOnly\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html;charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Jetty(11.0.20)\r\n'
+            f'X-Hudson: 1.400\r\n'
+            f'X-Jenkins: 2.426\r\n'
+            f'Set-Cookie: JSESSIONID=node0abc123def456; Path=/jenkins/; HttpOnly\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html;charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"JenkinsHandler(domain={self.domain!r})"
+        return f'JenkinsHandler(domain={self.domain!r})'

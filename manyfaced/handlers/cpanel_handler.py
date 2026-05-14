@@ -21,33 +21,33 @@ logger = logging.getLogger(__name__)
 class CPanelHandler(HTTPHandlerBase):
     """cPanel/WHM honeypot handler."""
 
-    domain = "cpanel"
+    domain = 'cpanel'
     PATH_PATTERNS = [
-        "/cpanel",
-        "/cpanel/",
-        "/cpanel/hotlinkprotect",
-        "/whm",
-        "/whm/",
-        "/whm/login",
-        "/webmail",
-        "/webmail/",
-        "/webmail/login",
-        "/mail",
-        "/mail/",
-        "/webdisk",
-        "/webdisk/",
-        "/cpsess",
-        "/cpsess",
-        "/setup1",
-        "/setup1/",
-        "/~",
-        "/~",
+        '/cpanel',
+        '/cpanel/',
+        '/cpanel/hotlinkprotect',
+        '/whm',
+        '/whm/',
+        '/whm/login',
+        '/webmail',
+        '/webmail/',
+        '/webmail/login',
+        '/mail',
+        '/mail/',
+        '/webdisk',
+        '/webdisk/',
+        '/cpsess',
+        '/cpsess',
+        '/setup1',
+        '/setup1/',
+        '/~',
+        '/~',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -61,11 +61,11 @@ class CPanelHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -73,7 +73,7 @@ class CPanelHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and ("login" in path_lower or "cpsess" in path_lower):
+        if method == 'POST' and ('login' in path_lower or 'cpsess' in path_lower):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -82,11 +82,11 @@ class CPanelHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "whm" in path_lower or "/setup" in path_lower:
+        if 'whm' in path_lower or '/setup' in path_lower:
             body = self._whm_login_page()
-        elif "webmail" in path_lower:
+        elif 'webmail' in path_lower:
             body = self._webmail_login_page()
-        elif "cpanel" in path_lower or path_lower.startswith("/"):
+        elif 'cpanel' in path_lower or path_lower.startswith('/'):
             body = self._cpanel_login_page()
         else:
             body = self._cpanel_login_page()
@@ -261,34 +261,32 @@ class CPanelHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
-        return self._build_http_response(body, "/cpanel/")
+        return self._build_http_response(body, '/cpanel/')
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: cpsrvd/120.0.6\r\n"
-            f"X-Frame-Options: SAMEORIGIN\r\n"
-            f"X-Content-Type-Options: nosniff\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html; charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: cpsrvd/120.0.6\r\n'
+            f'X-Frame-Options: SAMEORIGIN\r\n'
+            f'X-Content-Type-Options: nosniff\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html; charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"CPanelHandler(domain={self.domain!r})"
+        return f'CPanelHandler(domain={self.domain!r})'

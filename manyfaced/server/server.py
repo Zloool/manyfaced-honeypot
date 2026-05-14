@@ -32,7 +32,7 @@ class ServerHandler(BaseHandler):
         if key is None:
             logger.warning(
                 "Rejected connection from unknown identifier '%s' – "
-                "not in AUTHORISEDBEARS. Connection dropped.",
+                'not in AUTHORISEDBEARS. Connection dropped.',
                 identifier,
             )
             raise ValueError(f"Unknown identifier '{identifier}' – not authorized")
@@ -50,34 +50,34 @@ class ServerHandler(BaseHandler):
     def save_data(self, data, args):
         try:
             bear = BearRequests(
-                ip=data["ip"],
-                raw_request=data["raw_request"],
-                timestamp=data["timestamp"],
-                parsed_request=data["parsed_request"],
-                is_detected=data["is_detected"],
-                HIVELOGIN=data["HIVELOGIN"],
+                ip=data['ip'],
+                raw_request=data['raw_request'],
+                timestamp=data['timestamp'],
+                parsed_request=data['parsed_request'],
+                is_detected=data['is_detected'],
+                HIVELOGIN=data['HIVELOGIN'],
             )
             Insert(bear)
-            logger.info("Data saved for %s", data["ip"])
+            logger.info('Data saved for %s', data['ip'])
             if args.verbose:
-                print(f"Data saved for {data['ip']}")
+                print(f'Data saved for {data["ip"]}')
         except (ConnectionError, TypeError) as e:
             dump_file(json.dumps(data))
-            logger.error("Error writing data to database: %s – dumped to file", e)
+            logger.error('Error writing data to database: %s – dumped to file', e)
             if self.args.verbose:
-                print(f"Error writing data to database: {e}, writing to file")
+                print(f'Error writing data to database: {e}, writing to file')
 
 
 def main(args, update_event):
-    logger.info("Server honeypot listening on port %d", args.server)
-    if getattr(signal, "SIGCHLD", None) is not None:
+    logger.info('Server honeypot listening on port %d', args.server)
+    if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    server_socket.bind(("", args.server))
+    server_socket.bind(('', args.server))
     server_socket.listen(1)
     if args.verbose:
-        print("Awaiting for bears on port %s" % args.server)
+        print('Awaiting for bears on port %s' % args.server)
     while True:
         if update_event.is_set():
             break
@@ -91,21 +91,21 @@ def main(args, update_event):
             handler = ServerHandler(args, update_event)
             response = handler.handle_request(message)
             if isinstance(response, bool):
-                response = "200 OK"
+                response = '200 OK'
             elif not isinstance(response, str):
                 response = str(response)
             connection_socket.send(response.encode())
         except socket_error as e:
-            logger.warning("Socket error: %s", e)
+            logger.warning('Socket error: %s', e)
             if args.verbose:
-                print(f"Socket error: {e}")
+                print(f'Socket error: {e}')
             continue
         except (ValueError, TypeError, KeyError, ImportError) as e:
-            logger.error("Unexpected error: %s", e)
+            logger.error('Unexpected error: %s', e)
             if connection_socket:
-                connection_socket.send(b"CODE 300 ERROR")
+                connection_socket.send(b'CODE 300 ERROR')
             if args.verbose:
-                print(f"Unexpected error: {e}")
+                print(f'Unexpected error: {e}')
         finally:
             if connection_socket:
                 connection_socket.close()

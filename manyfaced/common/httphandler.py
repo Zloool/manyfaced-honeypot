@@ -23,12 +23,12 @@ class HTTPRequest(BaseHTTPRequestHandler):
             # Encode to latin-1 (iso-8859-1) which accepts any byte value
             # Replace characters outside range with replacement char
             try:
-                request_text = request_text.encode("iso-8859-1")
+                request_text = request_text.encode('iso-8859-1')
             except UnicodeEncodeError:
                 request_text = (
-                    request_text.encode("utf-8", errors="replace")
-                    .decode("latin-1")
-                    .encode("iso-8859-1")
+                    request_text.encode('utf-8', errors='replace')
+                    .decode('latin-1')
+                    .encode('iso-8859-1')
                 )
         elif isinstance(request_text, bytes):
             # Already bytes — use as-is (handles the case where raw socket data is passed)
@@ -39,9 +39,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
         self.parse_request()
         self.data = request_text
         if self.error_code is not None:
-            raise ValueError(
-                self.error_message or f"HTTP parse error: {self.error_code}"
-            )
+            raise ValueError(self.error_message or f'HTTP parse error: {self.error_code}')
 
     def send_error(self, code, message):
         self.error_code = code
