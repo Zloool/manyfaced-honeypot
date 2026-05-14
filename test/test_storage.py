@@ -35,22 +35,28 @@ class TestResolveDbPath:
     """Tests for _resolve_db_path()."""
 
     def test_default_path_when_env_not_set(self):
-        with patch.dict(os.environ, {}, clear=True), \
-             patch('manyfaced.common.config.settings', DB_PATH=None):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch('manyfaced.common.config.settings', DB_PATH=None),
+        ):
             result = _resolve_db_path()
         assert result == 'bots/honeypot.sqlite'
 
     def test_falls_back_to_toml_config_db_path(self):
         """When no env var is set, falls back to TOML config's database.path."""
-        with patch.dict(os.environ, {}, clear=True), \
-             patch('manyfaced.common.config.settings', DB_PATH='/custom/from/toml.db'):
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch('manyfaced.common.config.settings', DB_PATH='/custom/from/toml.db'),
+        ):
             result = _resolve_db_path()
         assert result == '/custom/from/toml.db'
 
     def test_env_overrides_toml_config(self):
         """HONEY_DB_PATH env var takes precedence over TOML config."""
-        with patch.dict(os.environ, {'HONEY_DB_PATH': '/env/override.db'}, clear=True), \
-             patch('manyfaced.common.config.settings', DB_PATH='/toml/path.db'):
+        with (
+            patch.dict(os.environ, {'HONEY_DB_PATH': '/env/override.db'}, clear=True),
+            patch('manyfaced.common.config.settings', DB_PATH='/toml/path.db'),
+        ):
             result = _resolve_db_path()
         assert result == '/env/override.db'
 
