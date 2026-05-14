@@ -63,8 +63,28 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 
 def _resolve_db_path() -> str:
-    """Return the SQLite database path from env or default."""
-    return os.environ.get('HONEY_DB_PATH', 'bots/honeypot.sqlite')
+    """Return the SQLite database path.
+
+    Precedence (highest to lowest):
+      1. HONEY_DB_PATH environment variable
+      2. database.path from TOML config (settings.DB_PATH)
+      3. Default 'bots/honeypot.sqlite' (relative to CWD)
+    """
+    env_path = os.environ.get('HONEY_DB_PATH')
+    if env_path:
+        return env_path
+
+    # Fall back to TOML config setting
+    try:
+        from manyfaced.common.config import settings  # noqa: PLC0415
+
+        toml_path = getattr(settings, 'DB_PATH', None)
+        if toml_path:
+            return toml_path
+    except Exception:
+        pass
+
+    return 'bots/honeypot.sqlite'
 
 
 def _resolve_backend() -> str:
