@@ -93,7 +93,6 @@ bots/
 settings.py
 local_cases.txt
 local_faces.txt
-temp.db
 .idea/
 .aider*
 .hermes
@@ -105,5 +104,12 @@ deployment-analysis/
 # Production analysis data (contains sensitive IP info)
 deployment-analysis/latest/
 
-# Local production backups
+# Analysis output reports
+report-*.md
+
+# Database files (*.sqlite, *.db) — always untracked
+*.sqlite
+*.db
+
+# Production backups
 prod-backup/
