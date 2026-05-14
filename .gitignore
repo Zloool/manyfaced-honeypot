@@ -113,3 +113,6 @@ report-*.md
 
 # Production backups
 prod-backup/
+
+# Local CLI binaries (downloaded for local pre-checks)
+actionlint

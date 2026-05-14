@@ -95,8 +95,17 @@ jobs:
       - name: Type check with basedpyright
         run: basedpyright manyfaced/
 
+  actionlint:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
   deploy:
-    needs: [lint, test, typecheck]
+    needs: [lint, test, typecheck, actionlint]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -113,7 +122,7 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=12 HEAD)
-          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "Deploying short SHA: ${SHORT_SHA}"
 
       - name: Set up SSH
