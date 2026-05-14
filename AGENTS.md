@@ -36,6 +36,8 @@ See `DEVELOPER.md` for architecture deep-dive and how to add new faces.
 
 Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). Health check: SSH in and run `systemctl status manyfaced --no-pager`. For the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis skill**.
 
+The deploy pipeline (GitHub Actions) runs automatically on push to `master` after CI passes. It syncs all files atomically, reinstalls deps, restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
+
 ## Available skills
 
 - **`skills/prod-analysis`** — Production honeypot analysis via SSH. Use when you need to analyze production bot data, check service health on the droplet, or generate structured reports from `honeypot.sqlite` and `honeypot.log`. Triggers: "analyze production", "check the honeypot", "pull latest data", "manyfaced service status".
