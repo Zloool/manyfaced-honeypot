@@ -15,12 +15,13 @@ manyfaced/              # Package root
   server/               # Honeypot SERVER — receives encrypted bot reports
   handlers/             # Request processing (ABC pattern, service-specific handlers)
   db/                   # Data persistence layer (SQLite / PostgreSQL)
+    storage.py          # _resolve_db_path() precedence: env > TOML config > default 'bots/honeypot.sqlite'
 deployment-analysis/    # Production analysis scripts and data (untracked output in latest/)
 bots/                   # Untracked — honeypot.sqlite lives here on prod
 skills/prod-analysis/   # SSH-based production analysis workflow skill
 test/                   # pytest suite (~76% coverage target)
 systemd/                # manyfaced.service + logrotate config
-.github/workflows/      # CI (ruff lint, pytest + basedpyright on 3.12/3.13/3.14), deploy (SSH rsync to droplet)
+.github/workflows/      # CI (ruff lint, deploy only — no tests on master push), deploy (SSH rsync to droplet)
 ```
 
 ## Local development
@@ -36,7 +37,22 @@ See `DEVELOPER.md` for architecture deep-dive and how to add new faces.
 
 Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). Health check: SSH in and run `systemctl status manyfaced --no-pager`. For the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis skill**.
 
-The deploy pipeline (GitHub Actions) runs automatically on push to `master` after CI passes. It syncs all files atomically, reinstalls deps, restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
+The deploy pipeline (GitHub Actions) runs automatically on push to `master` — it skips tests and deploys directly. It syncs all files atomically via rsync into a per-commit staging directory under `/opt/manyfaced/releases/<sha>/`, reinstalls deps, swaps the symlink (`/opt/manyfaced/current → releases/<sha>`), restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
+
+### Config file locations (critical for debugging)
+
+- **Service runs as `honeypot` user** — reads config from `/home/honeypot/.config/manyfaced/config.toml`, NOT root's config
+- Root's stale config at `/root/.config/manyfaced/config.toml` is ignored by the service but can cause Python import errors if loaded directly as root
+- **Production DB path:** `/opt/manyfaced/bots/honeypot.sqlite` (persistent, outside releases directory)
+- The storage backend (`_resolve_db_path()`) resolves DB path with this precedence:
+  1. `HONEY_DB_PATH` environment variable (highest priority)
+  2. `database.path` from TOML config (`settings.DB_PATH`)
+  3. Default `'bots/honeypot.sqlite'` (relative to CWD — **this was the bug that caused data loss**)
+
+### CI/CD monitoring pattern
+
+- Use `gh run watch <run-id>` to wait on GitHub Actions runs — do NOT use `sleep N` loops
+- After pushing a branch: `gh pr create ... && gh pr checks <pr-number> --watch` or `gh run watch <run-id>`
 
 ## Available skills
 
