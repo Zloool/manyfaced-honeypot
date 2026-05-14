@@ -65,7 +65,7 @@ class BearStorage:
         try:
             socket.setdefaulttimeout(timeout)
             return socket.gethostbyaddr(ip)[0]
-        except socket.herror, socket.timeout, socket.gaierror, OSError:
+        except (socket.herror, socket.timeout, socket.gaierror, OSError):
             return ''
         finally:
             socket.setdefaulttimeout(None)

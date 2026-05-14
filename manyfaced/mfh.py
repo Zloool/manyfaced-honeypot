@@ -50,7 +50,7 @@ def _release_lockfile():
             _lock_fd.close()
             os.unlink(settings.LOCKFILE)
             logger.info('Lockfile released')
-        except IOError, OSError:
+        except (IOError, OSError):
             pass
         _lock_fd = None
 
