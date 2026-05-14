@@ -164,7 +164,7 @@ class SQLiteStorage(StorageBackend):
             parsed = record.get('parsed_request') or {}
 
             bot_ip = record.get('ip') or ''
-            hostname = record.get('hostname') or ''
+            hostname = record.get('hostname') or record.get('HIVELOGIN') or ''
             timestamp = record.get('timestamp') or ''
             request_path = parsed.get('path') or record.get('request_path') or ''
             request_command = parsed.get('command') or record.get('request_command') or ''
@@ -328,7 +328,7 @@ class PostgreSQLStorage(StorageBackend):
             parsed = record.get('parsed_request') or {}
 
             bot_ip = record.get('ip') or ''
-            hostname = record.get('hostname') or ''
+            hostname = record.get('hostname') or record.get('HIVELOGIN') or ''
             timestamp = record.get('timestamp') or ''
             request_path = parsed.get('path') or record.get('request_path') or ''
             request_command = parsed.get('command') or record.get('request_command') or ''

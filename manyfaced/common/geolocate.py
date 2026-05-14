@@ -70,7 +70,7 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
             return (country, continent)
 
     except Exception as e:
-        logger.debug('Geo lookup failed for %s: %s', ip, e)
+        logger.warning('Geo lookup failed for %s: %s', ip, e)
 
     # On failure, cache empty result to avoid repeated lookups
     _geo_cache[ip] = {'country': '', 'continent': ''}
