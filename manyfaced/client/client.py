@@ -221,15 +221,17 @@ REPORT_SEND_RETRY_DELAY = 2  # seconds
 REPORT_SEND_BACKOFF_FACTOR = 2  # exponential backoff
 
 
-def send_report(data, client, password, server_host, server_port):
+def send_report(data, client, password, server_host, server_port, sensor_id=None):
     """Send a bot report to the server as an encrypted TCP message.
 
     Args:
         data: BearStorage instance with bot data
-        client: Bot IP address
+        client: Bot IP address (used for logging and data dict)
         password: AES encryption password (HIVEPASS)
         server_host: Server hostname
         server_port: Server port number
+        sensor_id: Sensor identifier sent as message prefix to the server.
+                   If None, falls back to client IP (legacy behavior).
     """
     cypher = AESCipher(password)
     parsed = data.parsed_request if hasattr(data, 'parsed_request') else None
@@ -266,7 +268,8 @@ def send_report(data, client, password, server_host, server_port):
         'country': getattr(data, 'country', '') or '',
         'continent': getattr(data, 'continent', '') or '',
     }
-    message = (client + ':').encode()
+    identifier = sensor_id if sensor_id else client
+    message = (identifier + ':').encode()
     message += cypher.encrypt(json.dumps(data_dict).encode()).encode()
 
     # Retry with exponential backoff to handle server restarts
