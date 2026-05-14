@@ -25,6 +25,7 @@ from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
 from manyfaced.common.status import SSH_CLIENT, UNKNOWN_NON_HTTP
 
+from .config_disclosure_handler import ConfigDisclosureHandler
 from .cpanel_handler import CPanelHandler
 from .drupal_handler import DrupalHandler
 from .generic_handler import GenericHandler
@@ -118,6 +119,8 @@ def _get_registry() -> HandlerRegistry:
         _registry.register(TomcatHandler())
         _registry.register(DrupalHandler())
         _registry.register(CPanelHandler())
+        # Config disclosure handler – catches config file probes before generic fallback
+        _registry.register(ConfigDisclosureHandler())
         # Generic handler is last – catches everything else
         _registry.register(GenericHandler())
         logger.info(

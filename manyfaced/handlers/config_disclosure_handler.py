@@ -155,6 +155,11 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         "/sql/",
         "/mysql/",
         "/postgres/",
+        "/.git/config",
+        "/.git/head",
+        "/.git/index",
+        "/security.txt",
+        "/.well-known/security.txt",
     ]
     DETECTED_ID = 1
 
@@ -318,6 +323,21 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
             body = self._db_directory()
             return self._build_http_response(
                 body, 200, "OK", {"Content-Type": "text/html"}
+            ), self.DETECTED_ID
+
+        if "/.git/config" in path_lower or "/.git/head" in path_lower:
+            if "/.git/head" in path_lower:
+                body = self._git_head()
+            else:
+                body = self._git_config()
+            return self._build_http_response(
+                body, 200, "OK", {"Content-Type": "text/plain"}
+            ), self.DETECTED_ID
+
+        if "/security.txt" in path_lower or "/.well-known/security.txt" in path_lower:
+            body = self._security_txt()
+            return self._build_http_response(
+                body, 200, "OK", {"Content-Type": "text/plain"}
             ), self.DETECTED_ID
 
         # Default: serve wp-config.php as the most common target
@@ -1389,6 +1409,48 @@ INSERT INTO `api_keys` VALUES (2,2,'ak_test_abcdef1234567890','sk_test_fedcba098
 <address>Apache/2.4.57 (Ubuntu) Server at example.com Port 80</address>
 </body>
 </html>"""
+
+    def _git_config(self) -> str:
+        """Fake .git/config file with realistic remote URLs."""
+        return r"""[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	precomposeUnicode = true
+[remote "origin"]
+	url = git@github.com:company/myapp.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+[branch "develop"]
+	remote = origin
+	merge = refs/heads/develop
+[user]
+	name = Developer
+	email = dev@company.com
+[credential]
+	helper = store
+[http]
+	sslVerify = false
+"""
+
+    def _git_head(self) -> str:
+        """Fake .git/HEAD file."""
+        return r"ref: refs/heads/main" + "\n"
+
+    def _security_txt(self) -> str:
+        """Fake security.txt following RFC 9116."""
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return f"""Contact: mailto:security@example.com
+Contact: https://example.com/.well-known/security.txt
+Expires: {now}T23:59:59Z
+Encryption: https://example.com/pgp-key.txt
+Preferred-Languages: en, es, zh
+Hiring: https://example.com/careers
+Policy: https://example.com/security-policy
+"""
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
