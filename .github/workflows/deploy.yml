@@ -27,6 +27,7 @@ jobs:
 
       - name: Verify commit SHA matches CI
         run: |
+          set -euo pipefail
           EXPECTED="${{ github.event.workflow_run.head_sha }}"
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$EXPECTED" != "$ACTUAL" ]; then
@@ -41,24 +42,50 @@ jobs:
 
       - name: Add droplet host key
         run: |
+          set -euo pipefail
           ssh-keyscan -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SERVER_IP }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy to droplet
+      - name: Migrate legacy deployment to release-symlink scheme
         env:
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
           DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DEPLOY_DIR: "/opt/manyfaced"
-          VENV_DIR: "/opt/manyfaced/venv"
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
         run: |
-          echo "=== Deploying commit ${{ github.event.workflow_run.head_sha }} ==="
+          set -euo pipefail
 
-          # Create deploy temp directory on droplet
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" \
-            "mkdir -p /tmp/manyfaced-deploy"
+          # Only migrate if current is not yet a symlink (first deploy with new mechanism)
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            set -euo pipefail && \
+            if [ ! -L /opt/manyfaced/current ]; then \
+              mkdir -p /opt/manyfaced/releases && \
+              PRE_DIR=\"/opt/manyfaced/releases/pre-symlink\" && \
+              mkdir -p \"\$PRE_DIR\" && \
+              if [ -d /opt/manyfaced/manyfaced ]; then \
+                mv /opt/manyfaced/manyfaced \"\$PRE_DIR/\"; \
+              fi && \
+              ln -sfn \"\$PRE_DIR\" \"/opt/manyfaced/current.new\" && \
+              mv -Tf \"/opt/manyfaced/current.new\" \"/opt/manyfaced/current\" && \
+              echo 'Migrated legacy deployment to releases/pre-symlink'; \
+            else \
+              echo 'Already using release-symlink scheme — no migration needed'; \
+            fi"
 
-          # Sync ALL repo files (not just the package dir) to temp location.
-          # Excludes: git, venv, caches, data dirs, and sensitive files.
+      - name: Rsync commit to staging directory
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
+
+          # Clean staging dir if re-deploying same commit (idempotent)
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${STAGING_DIR} && mkdir -p ${STAGING_DIR}"
+
+          # Rsync ALL repo files into staging dir. --delete is safe because
+          # the staging directory is per-commit and starts empty.
           rsync -avz --delete \
             -e "ssh -p ${DROPLET_SSH_PORT}" \
             --exclude='.git/' \
@@ -75,67 +102,128 @@ jobs:
             --exclude='*.log' \
             --exclude='honeypot.env' \
             . \
-            "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:/tmp/manyfaced-deploy/"
+            "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:${STAGING_DIR}/"
 
-          # Atomic swap: backup the manyfaced/ package dir (not the whole deploy dir),
-          # then move new code in place. The venv survives because it is outside this swap.
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            BACKUP_DIR=\"\${DEPLOY_DIR}/manyfaced.bak.\$(date +%Y%m%d%H%M%S)\" && \
-            mv \"\${DEPLOY_DIR}/manyfaced\" \"\$BACKUP_DIR\" 2>/dev/null || true && \
-            mv /tmp/manyfaced-deploy/manyfaced \"\${DEPLOY_DIR}/manyfaced\" && \
-            echo \"Backup saved at \$BACKUP_DIR\""
+      - name: Install Python dependencies
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
 
-          # Install/update Python dependencies in venv (editable install picks up pyproject.toml)
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            source ${VENV_DIR}/bin/activate && \
-            pip install --upgrade pip -q && \
-            pip install -e ${DEPLOY_DIR} -q 2>&1 | tail -5"
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
-          # Update systemd service file from deployed code, reload daemon
+          # Install BEFORE symlink swap so the swap can't expose a release
+          # whose deps aren't installed. Full pip output shown in workflow log;
+          # tee also saves to droplet-side file for debugging.
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            cp ${DEPLOY_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
-            systemctl daemon-reload"
+            set -euo pipefail && \
+            /opt/manyfaced/venv/bin/pip install -e ${STAGING_DIR} 2>&1 | tee /opt/manyfaced/deploy-${SHORT_SHA}.log"
 
-          # Restart the service and verify it started
+      - name: Atomically swap release symlink
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
+
+          # ln -sfn alone is NOT atomic (it unlinks then symlinks).
+          # The current.new intermediate + mv -Tf guarantees a single
+          # rename(2) syscall — the service never observes a partial state.
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            set -euo pipefail && \
+            ln -sfn '${STAGING_DIR}' '/opt/manyfaced/current.new' && \
+            mv -Tf '/opt/manyfaced/current.new' '/opt/manyfaced/current'"
+
+      - name: Update systemd unit and restart service
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
+
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            set -euo pipefail && \
+            cp ${STAGING_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
+            systemctl daemon-reload && \
             systemctl restart manyfaced && \
             sleep 3 && \
-            systemctl status manyfaced --no-pager"
+            if [ \"\$(systemctl is-active manyfaced)\" = \"active\" ]; then \
+              echo 'Service started successfully'; \
+            else \
+              echo 'FAIL: Service not active after restart' && exit 1; \
+            fi"
+
+      - name: Health check (ports)
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
 
           # Health check: verify honeypot is actually listening on configured ports.
           # Reads HONEY_TOP_PORTS from the droplet's own env file (source of truth).
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             PORTS=\$(grep '^HONEY_TOP_PORTS=' /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2) && \
             if [ -z \"\$PORTS\" ]; then echo 'ERROR: HONEY_TOP_PORTS not found in honeypot.env'; exit 1; fi && \
-            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '(?<=:)\d+(?= )' | sort -u) && \
+            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '(?<=:)\\d+(?= )' | sort -u) && \
             MISSING=0 && \
-            for p in \$(echo \$PORTS | tr ',' '\n'); do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
+            for p in \$(echo \$PORTS | tr ',' '\\n'); do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
             if [ \$MISSING -gt 0 ]; then echo \"FAIL: \$MISSING of \$PORTS ports not listening\"; exit 1; fi && \
-            echo \"Health check OK: honeypot listening on all configured ports\""
+            echo 'Health check OK: honeypot listening on all configured ports'"
 
-          # Clean up temp deploy dir and old backups (keep last 3)
+      - name: Clean up old releases (keep last 5)
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          # Keep last 5 releases under /opt/manyfaced/releases/. Never delete
+          # current's target even if it falls outside the last 5 (defensive).
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            rm -rf /tmp/manyfaced-deploy && \
-            ls -td \"\${DEPLOY_DIR}/manyfaced.bak.\"* 2>/dev/null | tail -n +4 | xargs -r rm -rf && \
-            echo 'Old backups cleaned up (keeping last 3)'"
-
-          echo "=== Deployment complete ==="
+            set -euo pipefail && \
+            CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
+            ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | tail -n +6 | xargs -r rm -rf && \
+            echo 'Old releases cleaned up (keeping last 5)' && \
+            echo \"Current release: \$CURRENT_TARGET\""
 
       - name: Rollback on failure
         if: failure()
         env:
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
           DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DEPLOY_DIR: "/opt/manyfaced"
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
         run: |
-          echo "=== Rolling back to previous deployment ==="
+          set -euo pipefail
+
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            LATEST_BAK=\$(ls -td \"\${DEPLOY_DIR}/manyfaced.bak.\"* 2>/dev/null | head -1) && \
-            if [ -n \"\$LATEST_BAK\" ]; then \
-              rm -rf \"\${DEPLOY_DIR}/manyfaced\" && \
-              mv \"\$LATEST_BAK\" \"\${DEPLOY_DIR}/manyfaced\" && \
-              echo \"Rolled back to \$LATEST_BAK\"; \
+            set -euo pipefail && \
+            CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
+            PREV_RELEASE=\$(ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | head -1) && \
+            if [ -z \"\$PREV_RELEASE\" ]; then \
+              echo 'No prior release to roll back to — manual intervention required' && exit 1; \
+            fi && \
+            ln -sfn \"\$PREV_RELEASE\" '/opt/manyfaced/current.new' && \
+            mv -Tf '/opt/manyfaced/current.new' '/opt/manyfaced/current' && \
+            cp \"\$PREV_RELEASE/systemd/manyfaced.service\" /etc/systemd/system/manyfaced.service && \
+            systemctl daemon-reload && \
+            systemctl restart manyfaced && \
+            sleep 3 && \
+            if [ \"\$(systemctl is-active manyfaced)\" = \"active\" ]; then \
+              echo \"Rollback successful — service running on \$PREV_RELEASE\"; \
             else \
-              echo 'No backup found — manual intervention required'; \
+              echo 'FAIL: Rollback did not restore service' && exit 1; \
             fi"
