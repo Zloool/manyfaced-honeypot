@@ -15,7 +15,6 @@ manyfaced/              # Package root
   server/               # Honeypot SERVER — receives encrypted bot reports
   handlers/             # Request processing (ABC pattern, service-specific handlers)
   db/                   # Data persistence layer (SQLite / PostgreSQL)
-    storage.py          # _resolve_db_path() precedence: env > TOML config > default 'bots/honeypot.sqlite'
 deployment-analysis/    # Production analysis scripts and data (untracked output in latest/)
 bots/                   # Untracked — honeypot.sqlite lives here on prod
 skills/prod-analysis/   # SSH-based production analysis workflow skill
@@ -39,15 +38,10 @@ Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection d
 
 The deploy pipeline (GitHub Actions) runs automatically on push to `master` — it skips tests and deploys directly. It syncs all files atomically via rsync into a per-commit staging directory under `/opt/manyfaced/releases/<sha>/`, reinstalls deps, swaps the symlink (`/opt/manyfaced/current → releases/<sha>`), restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
 
-### Config file locations (critical for debugging)
+### Config file locations
 
-- **Service runs as `honeypot` user** — reads config from `/home/honeypot/.config/manyfaced/config.toml`, NOT root's config
-- Root's stale config at `/root/.config/manyfaced/config.toml` is ignored by the service but can cause Python import errors if loaded directly as root
+- **Service runs as `honeypot` user** — reads config from `/home/honeypot/.config/manyfaced/config.toml`
 - **Production DB path:** `/opt/manyfaced/bots/honeypot.sqlite` (persistent, outside releases directory)
-- The storage backend (`_resolve_db_path()`) resolves DB path with this precedence:
-  1. `HONEY_DB_PATH` environment variable (highest priority)
-  2. `database.path` from TOML config (`settings.DB_PATH`)
-  3. Default `'bots/honeypot.sqlite'` (relative to CWD — **this was the bug that caused data loss**)
 
 ### CI/CD monitoring pattern
 
