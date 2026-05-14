@@ -194,7 +194,7 @@ pg_password = "postgres"
 
 [security]
 # semicolon-separated bearid:key pairs
-authorised_bears = ""
+authorized_beans = ""
 ```
 
 ### Environment Variables

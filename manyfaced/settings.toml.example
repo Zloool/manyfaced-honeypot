@@ -29,7 +29,7 @@ pg_password = "postgres"
 [security]
 # semicolon-separated bearid:key pairs for authorized bots
 # e.g. "bear1:key1;bear2:key2"
-authorised_bears = ""
+authorized_beans = ""  # semicolon-separated "bean_id:key" pairs for client sensors
 
 [logging]
 # Path to the log file (JSON format). Falls back to ~/.local/share/manyfaced/honeypot.log

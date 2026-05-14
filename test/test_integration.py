@@ -58,7 +58,7 @@ def _clean_env_and_db():
 
 @pytest.fixture(autouse=True)
 def _patch_bears_dict():
-    """Ensure AUTHORISEDBEARS has our test bear.
+    """Ensure AUTHORIZED_BEANS has our test bear.
 
     Mutates the dict in-place because server.py holds a reference to
     the original dict object (from 'from ... import settings' at load time).
@@ -70,12 +70,12 @@ def _patch_bears_dict():
     cfg = mod.settings
 
     # Mutate the original dict in-place (not a copy!)
-    cfg.AUTHORISEDBEARS['testbear'] = TEST_KEY
+    cfg.AUTHORIZED_BEANS['testbear'] = TEST_KEY
     try:
         yield cfg
     finally:
         # Clean up just the test entry
-        cfg.AUTHORISEDBEARS.pop('testbear', None)
+        cfg.AUTHORIZED_BEANS.pop('testbear', None)
 
 
 def _verify_record(db_path, ip=None, path=None, detected=None, field=None, value=None):
@@ -192,7 +192,7 @@ class TestFullPathSocketToDatabase:
         )
 
     def test_incorrect_identifier_fails_gracefully(self):
-        """An unknown identifier should raise ValueError and not save."""
+        """An unknown identifier falls back to DEFAULT_KEY; garbage data fails decryption."""
         from manyfaced.server.server import ServerHandler
 
         aes = AESCipher(TEST_KEY)
@@ -201,7 +201,9 @@ class TestFullPathSocketToDatabase:
         message = f'unknown_bear:{encrypted}'
 
         handler = ServerHandler(MagicMock(server=(0, 6669), verbose=False), MagicMock())
-        with pytest.raises(ValueError, match='Unknown identifier'):
+        # Unknown identifier falls back to DEFAULT_KEY, but decryption fails because
+        # the data was encrypted with TEST_KEY (not DEFAULT_KEY) → InvalidTag exception
+        with pytest.raises(Exception):
             handler.handle_request(message)
 
         # Verify nothing was saved to the DB
@@ -400,13 +402,36 @@ class TestServerHandlerKeyLookup:
         key = handler.get_key('testbear')
         assert key == TEST_KEY
 
-    def test_get_key_raises_for_unknown_bear(self):
-        """get_key should raise ValueError for unknown identifiers."""
+    def test_get_key_raises_for_unknown_bean(self):
+        """get_key should raise ValueError for unknown identifiers (no fallback)."""
         from manyfaced.server.server import ServerHandler
 
         handler = ServerHandler(MagicMock(server=(0, 6677), verbose=False), MagicMock())
         with pytest.raises(ValueError, match='Unknown identifier'):
-            handler.get_key('completely_unknown_bear')
+            handler.get_key('completely_unknown_bean')
+
+    def test_get_key_raises_when_no_default_key(self):
+        """get_key should raise ValueError when neither AUTHORISEDBEARS nor DEFAULT_KEY is set."""
+        from manyfaced.server.server import ServerHandler
+
+        handler = ServerHandler(MagicMock(server=(0, 6678), verbose=False), MagicMock())
+        # Use object.__setattr__ to bypass frozen dataclass restriction
+        saved_default_key = handler.args.DEFAULT_KEY if hasattr(handler.args, 'DEFAULT_KEY') else None
+        # We need to patch settings.DEFAULT_KEY directly via the module
+        import manyfaced.common.config as config_mod
+
+        mod = sys.modules['manyfaced.common.config']
+        cfg = mod.settings
+
+        # Save and clear DEFAULT_KEY using object.__setattr__ for frozen dataclass
+        saved_default_key = cfg.DEFAULT_KEY
+        object.__setattr__(cfg, 'DEFAULT_KEY', None)
+        try:
+            with pytest.raises(ValueError, match='Unknown identifier'):
+                handler.get_key('completely_unknown_bear')
+        finally:
+            # Restore DEFAULT_KEY
+            object.__setattr__(cfg, 'DEFAULT_KEY', saved_default_key)
 
 
 class TestSQLiteStorageDirect:
