@@ -77,34 +77,30 @@ jobs:
             . \
             "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:/tmp/manyfaced-deploy/"
 
-          # Atomic swap: rename current dir to timestamped backup, then move new in.
-          # This ensures the deploy target always has a complete directory — no partial state.
+          # Atomic swap: backup the manyfaced/ package dir (not the whole deploy dir),
+          # then move new code in place. The venv survives because it is outside this swap.
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            BACKUP_DIR=\"\${DEPLOY_DIR}.bak.\$(date +%Y%m%d%H%M%S)\" && \
-            mv \"${DEPLOY_DIR}\" \"\$BACKUP_DIR\" 2>/dev/null || true && \
-            mv /tmp/manyfaced-deploy \"${DEPLOY_DIR}\" && \
-            echo \"Backup saved at \$BACKUP_DIR\"
-          "
+            BACKUP_DIR=\"\${DEPLOY_DIR}/manyfaced.bak.\$(date +%Y%m%d%H%M%S)\" && \
+            mv \"\${DEPLOY_DIR}/manyfaced\" \"\$BACKUP_DIR\" 2>/dev/null || true && \
+            mv /tmp/manyfaced-deploy/manyfaced \"\${DEPLOY_DIR}/manyfaced\" && \
+            echo \"Backup saved at \$BACKUP_DIR\""
 
           # Install/update Python dependencies in venv (editable install picks up pyproject.toml)
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             source ${VENV_DIR}/bin/activate && \
             pip install --upgrade pip -q && \
-            pip install -e ${DEPLOY_DIR} -q 2>&1 | tail -5
-          "
+            pip install -e ${DEPLOY_DIR} -q 2>&1 | tail -5"
 
           # Update systemd service file from deployed code, reload daemon
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             cp ${DEPLOY_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
-            systemctl daemon-reload
-          "
+            systemctl daemon-reload"
 
           # Restart the service and verify it started
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             systemctl restart manyfaced && \
             sleep 3 && \
-            systemctl status manyfaced --no-pager
-          "
+            systemctl status manyfaced --no-pager"
 
           # Health check: verify honeypot is actually listening on configured ports.
           # Reads HONEY_TOP_PORTS from the droplet's own env file (source of truth).
@@ -115,12 +111,13 @@ jobs:
             MISSING=0 && \
             for p in \$PORTS; do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
             if [ \$MISSING -gt 0 ]; then echo \"FAIL: \$MISSING of \$PORTS ports not listening\"; exit 1; fi && \
-            echo \"Health check OK: honeypot listening on all configured ports\"
-          "
+            echo \"Health check OK: honeypot listening on all configured ports\""
 
-          # Clean up temp deploy dir
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" \
-            "rm -rf /tmp/manyfaced-deploy"
+          # Clean up temp deploy dir and old backups (keep last 3)
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            rm -rf /tmp/manyfaced-deploy && \
+            ls -td \"\${DEPLOY_DIR}/manyfaced.bak.\"* 2>/dev/null | tail -n +4 | xargs -r rm -rf && \
+            echo 'Old backups cleaned up (keeping last 3)'"
 
           echo "=== Deployment complete ==="
 
@@ -134,12 +131,11 @@ jobs:
         run: |
           echo "=== Rolling back to previous deployment ==="
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            LATEST_BAK=\$(ls -td \"\${DEPLOY_DIR}.bak.\"* 2>/dev/null | head -1) && \
+            LATEST_BAK=\$(ls -td \"\${DEPLOY_DIR}/manyfaced.bak.\"* 2>/dev/null | head -1) && \
             if [ -n \"\$LATEST_BAK\" ]; then \
-              rm -rf \"${DEPLOY_DIR}\" && \
-              mv \"\$LATEST_BAK\" \"${DEPLOY_DIR}\" && \
+              rm -rf \"\${DEPLOY_DIR}/manyfaced\" && \
+              mv \"\$LATEST_BAK\" \"\${DEPLOY_DIR}/manyfaced\" && \
               echo \"Rolled back to \$LATEST_BAK\"; \
             else \
               echo 'No backup found — manual intervention required'; \
-            fi
-          "
+            fi"
