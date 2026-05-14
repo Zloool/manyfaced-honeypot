@@ -26,13 +26,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ci:
-    # Runs on every push and PR. On PRs the deploy job is skipped via if:.
-    name: CI
+  lint:
+    # Ruff is version-agnostic; single Python version suffices.
+    name: Lint
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        job: [lint, test, typecheck]
     steps:
       - uses: actions/checkout@v4
 
@@ -46,24 +43,60 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Check formatting (lint)
-        if: matrix.job == 'lint'
+      - name: Check formatting
         run: ruff format --check .
 
-      - name: Check linting (lint)
-        if: matrix.job == 'lint'
+      - name: Check linting
         run: ruff check .
 
-      - name: Run tests (test)
-        if: matrix.job == 'test'
+  test:
+    # Verify compatibility across all declared Python versions.
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
         run: pytest -v --tb=short
 
-      - name: Type check with basedpyright (typecheck)
-        if: matrix.job == 'typecheck'
+  typecheck:
+    # Type-check across all declared Python versions.
+    name: Typecheck (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Type check with basedpyright
         run: basedpyright manyfaced/
 
   deploy:
-    needs: ci
+    needs: [lint, test, typecheck]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
