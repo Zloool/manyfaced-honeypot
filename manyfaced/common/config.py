@@ -142,7 +142,7 @@ _DEFAULT_DEFAULT_KEY = None
 _DEFAULT_LOG_FILE = os.path.join(
     os.path.expanduser('~'), '.local', 'share', 'manyfaced', 'honeypot.log'
 )
-_DEFAULT_DUMP_FILE = '/var/lib/manyfaced/dump.jsonl'
+_DEFAULT_DUMP_FILE = 'dump.jsonl'
 _DEFAULT_LOCKFILE = os.path.join('/opt/manyfaced/bots', 'lockfile')
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
