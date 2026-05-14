@@ -322,9 +322,8 @@ manyfaced-honeypot/
 │   └── test_*.py                   # Other test modules
 ├── requirements.txt                # Legacy manual deps
 ├── pytest.ini                      # pytest config
-└── .github/workflows/              # CI/CD pipelines
-    ├── ci.yml                      # Test suite + coverage gates
-    └── deploy.yml                  # Production deployment via rsync
+└── .github/workflows/              # CI/CD (single workflow)
+    └── deploy.yml                  # CI (lint/test/typecheck) + production deployment via rsync
 ```
 
 ## Running Tests
