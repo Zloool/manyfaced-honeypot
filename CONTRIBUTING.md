@@ -4,7 +4,7 @@
 
 1. **Branch off latest `master`.** Use a descriptive name: `feature/add-jenkins-face`, `fix/ua-extraction-bug`.
 2. **Commit in small, logically-grouped chunks.** Imperative mood subject line (~72 chars). Add a body when the "why" isn't obvious from the diff. Don't pre-squash locally — let squash-merge handle it.
-3. **Open a PR against `master`.** Opening triggers CI (ruff lint + pytest on Python 3.13/3.14).
+3. **Open a PR against `master`.** Opening triggers CI (ruff lint + pytest on Python 3.14 + basedpyright type check).
 4. **Watch CI.** Fix failures by fixing the underlying problem, not by disabling checks. If a failure is unrelated to your change, say so explicitly in PR comments.
 5. **Squash-merge once green.** No regular merges — keep `master` linear.
 6. **Verify post-merge deployment.** The deploy workflow runs automatically on push to master (after CI passes). Link the Actions run URL in a final PR comment. If no deploy workflow is configured, document that gap here.
@@ -42,9 +42,11 @@ Run `ruff check . && ruff format .` before committing. The CI job will reject an
 Tests live in `test/`. Run them with:
 
 ```bash
-pytest test/ -v          # all tests, coverage enforced at 76%
-pytest test/test_foo.py  # single file
+pytest -v --tb=short          # all tests, coverage enforced at 76% (from pyproject.toml addopts)
+pytest test/test_foo.py       # single file
 ```
+
+These commands match CI exactly — running them locally produces the same result as GitHub Actions.
 
 Mock `geoip2` modules before importing anything that uses them. Use `conftest.py` for shared fixtures.
 
