@@ -539,6 +539,58 @@ class TestConfigDisclosureHandler(unittest.TestCase):
         self.assertIn(b"XML-RPC", response)
 
 
+    def test_git_config(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.git/config",
+            "GET /.git/config HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b'[remote "origin"]', response)
+        self.assertIn(b"git@github.com", response)
+        self.assertIn(b"company/myapp", response)
+
+    def test_git_head(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.git/HEAD",
+            "GET /.git/HEAD HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"ref: refs/heads/main", response)
+
+    def test_security_txt(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/security.txt",
+            "GET /security.txt HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Contact:", response)
+        self.assertIn(b"mailto:security@example.com", response)
+        self.assertIn(b"Expires:", response)
+
+    def test_well_known_security_txt(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {"1.2.3.4": profile}
+        response, _ = self.handler.generate_response(
+            "/.well-known/security.txt",
+            "GET /.well-known/security.txt HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "1.2.3.4",
+        )
+        self.assertIn(b"Contact:", response)
+        self.assertIn(b"mailto:security@example.com", response)
+
+    def test_matches_git_and_security_paths(self):
+        self.assertTrue(self.handler.matches_path("/.git/config"))
+        self.assertTrue(self.handler.matches_path("/.git/HEAD"))
+        self.assertTrue(self.handler.matches_path("/.git/index"))
+        self.assertTrue(self.handler.matches_path("/security.txt"))
+        self.assertTrue(self.handler.matches_path("/.well-known/security.txt"))
+
 class TestCPanelHandler(unittest.TestCase):
     """Test CPanelHandler responses."""
 
@@ -610,6 +662,7 @@ class TestHandlerRegistry(unittest.TestCase):
         self.registry.register(TomcatHandler())
         self.registry.register(DrupalHandler())
         self.registry.register(CPanelHandler())
+        self.registry.register(ConfigDisclosureHandler())
         self.registry.register(GenericHandler())
 
     def test_get_handler_wordpress(self):
@@ -652,11 +705,11 @@ class TestHandlerRegistry(unittest.TestCase):
 
     def test_get_all_handlers(self):
         handlers = self.registry.get_all_handlers()
-        self.assertEqual(len(handlers), 7)
+        self.assertEqual(len(handlers), 8)
 
     def test_stats(self):
         stats = self.registry.get_stats()
-        self.assertEqual(stats["total_handlers"], 7)
+        self.assertEqual(stats["total_handlers"], 8)
         self.assertIn("handlers", stats)
 
     def test_get_all_matching_handlers(self):
