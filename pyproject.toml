@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
 geoip = ["geoip2>=4.0"]
-dev = ["pytest>=7.0", "ruff>=0.1", "pytest-cov>=4.0"]
+dev = ["pytest>=7.0", "ruff>=0.1", "pytest-cov>=4.0", "basedpyright>=1.39"]
 
 [project.scripts]
 manyfaced = "manyfaced.mfh:run"
@@ -68,3 +68,28 @@ fail-under = 80
 exclude = ["test", "build", ".venv"]
 verbose = 1
 omit-covered-files = true
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+include = ["manyfaced"]
+exclude = [".venv", "__pycache__", "*.egg-info"]
+# Suppress noisy rules that are common in a codebase without extensive type annotations
+reportMissingTypeArgument = false
+reportUnknownParameterType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportAny = false
+reportUnusedCallResult = false
+reportUnusedVariable = false
+# Downgrade remaining error-level rules to warnings so CI passes on pre-existing issues
+# but developers still see them locally and can fix them over time
+reportAttributeAccessIssue = "warning"
+reportArgumentType = "warning"
+reportReturnType = "warning"
+reportOptionalMemberAccess = "warning"
+reportInvalidTypeForm = "warning"
+reportGeneralTypeIssues = "warning"
+reportRedeclaration = "warning"
+reportCallIssue = "warning"
+reportIncompatibleMethodOverride = "warning"
+reportIndexIssue = "warning"
