@@ -27,9 +27,9 @@ pg_user = "postgres"
 pg_password = "postgres"
 
 [security]
-# semicolon-separated bearid:key pairs for authorized bots
-# e.g. "bear1:key1;bear2:key2"
-authorized_beans = ""  # semicolon-separated "bean_id:key" pairs for client sensors
+# semicolon-separated "bee_id:key" pairs for authorized client sensors (bees)
+# e.g. "sensor1:secret1;sensor2:secret2"
+authorized_bees = ""  # semicolon-separated "bee_id:key" pairs for authorized client sensors
 
 [logging]
 # Path to the log file (JSON format). Falls back to ~/.local/share/manyfaced/honeypot.log
