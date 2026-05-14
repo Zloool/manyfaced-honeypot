@@ -417,7 +417,7 @@ class TestConfigGenerateConfigFile:
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -466,7 +466,7 @@ class TestConfigGenerateConfigFile:
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -707,7 +707,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -734,7 +734,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -761,7 +761,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -792,7 +792,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='80,443,8080,3306',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -820,7 +820,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='80, 443, 8080',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -848,7 +848,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='all',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
@@ -878,7 +878,7 @@ class TestConfigResolvePorts:
             HONEY_PORT_MODE='TOP',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            DUMP_FILE='dump.jsonl',
             LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
