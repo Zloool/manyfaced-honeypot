@@ -91,7 +91,7 @@ class BearStorage:
             self.continent = continent
             return (country, continent)
         except Exception as e:
-            logger.debug('Geo resolution failed for %s: %s', ip, e)
+            logger.warning('Geo resolution failed for %s: %s', ip, e)
             return ('', '')
 
     def __str__(self) -> str:
