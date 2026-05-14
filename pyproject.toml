@@ -13,7 +13,7 @@ authors = [
     {name = "Zhavoronkov Pavlo", email = "zhavoronkov.p@gmail.com"},
 ]
 urls = {Homepage = "https://github.com/Zloool/manyfaced-honeypot"}
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "cryptography>=41.0",
 ]
@@ -37,7 +37,7 @@ manyfaced = [
 ]
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 100
 
 [tool.ruff.format]
