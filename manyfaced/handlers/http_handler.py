@@ -250,7 +250,12 @@ class HTTPHandler:
             logger.debug('Geo resolution failed for %s', bot_ip)
 
         q = _get_report_queue()
-        q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
+        q.put(
+            (
+                send_report,
+                (bs, bot_ip, settings.HIVEPASS, server_host, server_port, settings.HIVELOGIN),
+            )
+        )
 
     def _handle_ssh_probe(self, bot_ip: str, protocol_info: dict) -> bytes:
         """Handle an SSH probe by responding with a fake SSH banner and capturing credentials.
