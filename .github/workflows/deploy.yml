@@ -172,17 +172,69 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Health check: verify honeypot is actually listening on configured ports.
-          # Reads HONEY_TOP_PORTS from the droplet's own env file (source of truth).
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            PORTS=\$(grep '^HONEY_TOP_PORTS=' /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2) && \
-            if [ -z \"\$PORTS\" ]; then echo 'ERROR: HONEY_TOP_PORTS not found in honeypot.env'; exit 1; fi && \
-            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '(?<=:)\\d+(?= )' | sort -u) && \
-            MISSING=0 && \
-            for p in \$(echo \$PORTS | tr ',' '\\n'); do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
-            if [ \$MISSING -gt 0 ]; then echo \"FAIL: \$MISSING of \$PORTS ports not listening\"; exit 1; fi && \
-            echo 'Health check OK: honeypot listening on all configured ports'"
+          # Health check: verify every port in HONEY_TOP_PORTS is in LISTEN state.
+          # Uses per-port ss filter syntax (sport = :PORT) — no regex over ss output.
+          # Expands ranges (e.g. 11300-11311 → individual ports). Retries up to
+          # 10 times with 3s sleep for a total 30-second budget on startup.
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" 'bash -c '"'"'
+            set -euo pipefail
 
+            # Read HONEY_TOP_PORTS from the droplet env file (source of truth)
+            PORTS_RAW=$(grep "^HONEY_TOP_PORTS=" /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2)
+            if [ -z "$PORTS_RAW" ]; then echo "ERROR: HONEY_TOP_PORTS not found in honeypot.env"; exit 1; fi
+
+            # Expand port list: split on commas, expand ranges via seq, validate tokens
+            PORT_LIST=""
+            for token in $(echo "$PORTS_RAW" | tr "," "\n"); do
+              if echo "$token" | grep -qP "^[0-9]+-[0-9]+$"; then
+                # Range like 11300-11311 → expand to individual ports
+                PORT_LIST="$PORT_LIST $(seq $token)"
+              elif echo "$token" | grep -qP "^[0-9]+$"; then
+                # Single port — keep as-is
+                PORT_LIST="$PORT_LIST $token"
+              else
+                echo "ERROR: malformed port token \"$token\" in HONEY_TOP_PORTS"
+                exit 1
+              fi
+            done
+
+            # Normalize to one-port-per-line, strip blanks
+            PORT_LIST=$(echo "$PORT_LIST" | tr -s " \t\n" "\n" | grep -v "^$")
+            TOTAL=$(echo "$PORT_LIST" | wc -l)
+
+            echo "Checking $TOTAL ports from HONEY_TOP_PORTS ..."
+
+            # Retry loop: up to 10 iterations × 3 s = 30 s budget
+            MAX_RETRIES=10
+            for (( i=1; i<=MAX_RETRIES; i++ )); do
+              MISSING=""
+              while read -r p; do
+                if ! ss -Htln "sport = :$p" | grep -q LISTEN; then
+                  MISSING="$MISSING $p"
+                fi
+              done <<< "$PORT_LIST"
+
+              # Trim leading space
+              MISSING="${MISSING# }"
+
+              if [ -z "$MISSING" ]; then
+                echo "Health check OK: $TOTAL/$TOTAL ports listening"
+                exit 0
+              fi
+
+              if [ "$i" -lt "$MAX_RETRIES" ]; then
+                MISSING_COUNT=$(echo "$MISSING" | wc -w)
+                echo "Iteration $i: $MISSING_COUNT port(s) not yet listening, retrying ..."
+                sleep 3
+              else
+                echo "FAIL: ports never reached LISTEN state after $MAX_RETRIES attempts:"
+                while read -r p; do
+                  echo "  MISSING: $p"
+                done <<< "$MISSING"
+                exit 1
+              fi
+            done
+          '"'"''
       - name: Clean up old releases (keep last 5)
         env:
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
