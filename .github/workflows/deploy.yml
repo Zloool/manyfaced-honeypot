@@ -1,6 +1,6 @@
 name: Deploy to Droplet
 
-# Trigger AFTER CI workflow completes successfully on the same commit
+# Trigger AFTER CI workflow completes successfully on the same commit.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -20,10 +20,19 @@ jobs:
     environment: production
 
     steps:
-      - name: Checkout code (exact CI-tested commit)
+      - name: Checkout exact CI-tested commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Verify commit SHA matches CI
+        run: |
+          EXPECTED="${{ github.event.workflow_run.head_sha }}"
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::Commit SHA mismatch! Expected $EXPECTED, got $ACTUAL"
+            exit 1
+          fi
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -42,13 +51,14 @@ jobs:
           DEPLOY_DIR: "/opt/manyfaced"
           VENV_DIR: "/opt/manyfaced/venv"
         run: |
-          echo "=== Deploying to ${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:${DROPLET_SSH_PORT} ==="
-          
-          # Create deploy temp directory
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "mkdir -p /tmp/manyfaced-deploy"
-          
-          # rsync code (excluding git, venv, cache, and ignored files)
-          # Host key was added by ssh-keyscan above; use it for verification.
+          echo "=== Deploying commit ${{ github.event.workflow_run.head_sha }} ==="
+
+          # Create deploy temp directory on droplet
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" \
+            "mkdir -p /tmp/manyfaced-deploy"
+
+          # Sync ALL repo files (not just the package dir) to temp location.
+          # Excludes: git, venv, caches, data dirs, and sensitive files.
           rsync -avz --delete \
             -e "ssh -p ${DROPLET_SSH_PORT}" \
             --exclude='.git/' \
@@ -58,41 +68,78 @@ jobs:
             --exclude='.ruff_cache/' \
             --exclude='.pytest_cache/' \
             --exclude='deployment-analysis/' \
+            --exclude='prod-backup/' \
+            --exclude='bots/' \
+            --exclude='coverage.xml' \
             --exclude='*.db' \
             --exclude='*.log' \
-            --exclude='.gitignore' \
+            --exclude='honeypot.env' \
             . \
             "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:/tmp/manyfaced-deploy/"
-          
-          # Move code into place
-          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${DEPLOY_DIR}/manyfaced && mv /tmp/manyfaced-deploy/manyfaced ${DEPLOY_DIR}/ && rm -rf /tmp/manyfaced-deploy"
-          
-          # Ensure OUTPUT chain is clean — honeypot only needs PREROUTING to catch incoming attacks.
-          # OUTPUT rules that redirect outbound traffic back to honeypot handlers break pip, curl,
-          # and any HTTPS client. See: https://serverfault.com/questions/iptables-prerouting-vs-output
+
+          # Atomic swap: rename current dir to timestamped backup, then move new in.
+          # This ensures the deploy target always has a complete directory — no partial state.
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            iptables -t nat -F OUTPUT
-            mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4
+            BACKUP_DIR=\"\${DEPLOY_DIR}.bak.\$(date +%Y%m%d%H%M%S)\" && \
+            mv \"${DEPLOY_DIR}\" \"\$BACKUP_DIR\" 2>/dev/null || true && \
+            mv /tmp/manyfaced-deploy \"${DEPLOY_DIR}\" && \
+            echo \"Backup saved at \$BACKUP_DIR\"
           "
-          
-          # Install/update Python dependencies in venv
+
+          # Install/update Python dependencies in venv (editable install picks up pyproject.toml)
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             source ${VENV_DIR}/bin/activate && \
             pip install --upgrade pip -q && \
-            pip install -e ${DEPLOY_DIR} -q
+            pip install -e ${DEPLOY_DIR} -q 2>&1 | tail -5
           "
-          
-          # Update systemd service file (rsynced from repo, no heredoc)
+
+          # Update systemd service file from deployed code, reload daemon
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             cp ${DEPLOY_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
             systemctl daemon-reload
           "
-          
-          # Restart the service (KillMode=control-group ensures old processes are cleaned up)
+
+          # Restart the service and verify it started
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             systemctl restart manyfaced && \
-            sleep 2 && \
+            sleep 3 && \
             systemctl status manyfaced --no-pager
           "
-          
+
+          # Health check: verify honeypot is actually listening on configured ports.
+          # Reads HONEY_TOP_PORTS from the droplet's own env file (source of truth).
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            PORTS=\$(grep '^HONEY_TOP_PORTS=' /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2) && \
+            if [ -z \"\$PORTS\" ]; then echo 'ERROR: HONEY_TOP_PORTS not found in honeypot.env'; exit 1; fi && \
+            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '\d+(?= )' | sort -u) && \
+            MISSING=0 && \
+            for p in \$PORTS; do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
+            if [ \$MISSING -gt 0 ]; then echo \"FAIL: \$MISSING of \$PORTS ports not listening\"; exit 1; fi && \
+            echo \"Health check OK: honeypot listening on all configured ports\"
+          "
+
+          # Clean up temp deploy dir
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" \
+            "rm -rf /tmp/manyfaced-deploy"
+
           echo "=== Deployment complete ==="
+
+      - name: Rollback on failure
+        if: failure()
+        env:
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DEPLOY_DIR: "/opt/manyfaced"
+        run: |
+          echo "=== Rolling back to previous deployment ==="
+          ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            LATEST_BAK=\$(ls -td \"\${DEPLOY_DIR}.bak.\"* 2>/dev/null | head -1) && \
+            if [ -n \"\$LATEST_BAK\" ]; then \
+              rm -rf \"${DEPLOY_DIR}\" && \
+              mv \"\$LATEST_BAK\" \"${DEPLOY_DIR}\" && \
+              echo \"Rolled back to \$LATEST_BAK\"; \
+            else \
+              echo 'No backup found — manual intervention required'; \
+            fi
+          "
