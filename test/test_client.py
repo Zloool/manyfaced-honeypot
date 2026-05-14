@@ -538,7 +538,6 @@ class TestConfigDisclosureHandler(unittest.TestCase):
         )
         self.assertIn(b"XML-RPC", response)
 
-
     def test_git_config(self):
         profile = MagicMock()
         self.handler.bot_profiles = {"1.2.3.4": profile}
@@ -590,6 +589,7 @@ class TestConfigDisclosureHandler(unittest.TestCase):
         self.assertTrue(self.handler.matches_path("/.git/index"))
         self.assertTrue(self.handler.matches_path("/security.txt"))
         self.assertTrue(self.handler.matches_path("/.well-known/security.txt"))
+
 
 class TestCPanelHandler(unittest.TestCase):
     """Test CPanelHandler responses."""
