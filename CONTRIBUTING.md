@@ -4,7 +4,7 @@
 
 1. **Branch off latest `master`.** Use a descriptive name: `feature/add-jenkins-face`, `fix/ua-extraction-bug`.
 2. **Commit in small, logically-grouped chunks.** Imperative mood subject line (~72 chars). Add a body when the "why" isn't obvious from the diff. Don't pre-squash locally — let squash-merge handle it.
-3. **Open a PR against `master`.** Opening triggers CI (ruff lint on 3.14 + pytest and basedpyright on Python 3.12, 3.13, 3.14).
+3. **Open a PR against `master`.** Opening triggers CI (ruff lint on 3.14 + pytest and basedpyright on Python 3.12, 3.13, 3.14 + actionlint on workflow files).
 4. **Watch CI.** Fix failures by fixing the underlying problem, not by disabling checks. If a failure is unrelated to your change, say so explicitly in PR comments.
 5. **Squash-merge once green.** No regular merges — keep `master` linear.
 6. **Verify post-merge deployment.** The deploy workflow runs automatically on push to master (after CI passes). Link the Actions run URL in a final PR comment. If no deploy workflow is configured, document that gap here.
@@ -34,6 +34,7 @@ Style rules are enforced by tooling, not prose. The authoritative configs are:
 - **Lint + format:** `pyproject.toml` → `[tool.ruff]`
 - **Editor defaults:** `.editorconfig` (UTF-8, LF, 4-space indent for Python)
 - **Pre-commit hook:** `.pre-commit-config.yaml` (runs ruff on staged files)
+- **GitHub Actions workflows:** linted with actionlint (`brew install actionlint` or `go install github.com/rhysd/actionlint/cmd/actionlint@latest`). Run locally: `./actionlint .github/workflows/`. CI runs it on every push.
 
 Run `ruff check . && ruff format .` before committing. The CI job will reject anything that doesn't pass.
 
