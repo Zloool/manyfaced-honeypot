@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 User=honeypot
 Group=honeypot
-WorkingDirectory=/opt/manyfaced
+WorkingDirectory=/opt/manyfaced/current
 EnvironmentFile=/opt/manyfaced/honeypot.env
 ExecStart=/opt/manyfaced/venv/bin/python3 -m manyfaced.mfh
 
@@ -28,7 +28,7 @@ LimitNOFILE=65536
 NoNewPrivileges=true
 ProtectSystem=strict
 PrivateTmp=true
-ReadWritePaths=/opt/manyfaced/bots /home/honeypot/.config
+ReadWritePaths=/opt/manyfaced/bots /home/honeypot/.config /opt/manyfaced/current /opt/manyfaced/releases
 
 # Logging
 StandardOutput=journal

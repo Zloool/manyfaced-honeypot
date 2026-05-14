@@ -73,14 +73,7 @@ See `DEVELOPER.md` section "How to Add New Faces" for the full procedure:
 
 ## Deployment
 
-After squash-merging to `master`, the deploy workflow runs automatically (CI must pass first). The deploy process:
-
-1. Syncs **all** repo files to `/opt/manyfaced/` on the droplet via rsync (atomic directory swap with timestamped backup)
-2. Reinstalls Python dependencies in-place (`pip install -e`)
-3. Updates and reloads the systemd service file from `systemd/manyfaced.service`
-4. Restarts the service and runs a health check — verifies honeypot is listening on all ports listed in `HONEY_TOP_PORTS`
-
-If any step fails, the deploy workflow automatically rolls back to the previous timestamped backup. Check the GitHub Actions tab for deployment status. The `honeypot.env` file (port config) lives only on the droplet and is not version-controlled.
+After squash-merging to `master`, the deploy workflow runs automatically (CI must pass first). The deploy workflow rsyncs the commit to `/opt/manyfaced/releases/<sha>/`, installs deps into the shared venv, atomically flips `/opt/manyfaced/current` via rename(2), and restarts the systemd service. Rollback flips the symlink back to the previous release. Check the GitHub Actions tab for deployment status. The `honeypot.env` file (port config) lives only on the droplet and is not version-controlled.
 
 ## What not to do
 
