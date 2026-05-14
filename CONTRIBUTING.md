@@ -4,7 +4,7 @@
 
 1. **Branch off latest `master`.** Use a descriptive name: `feature/add-jenkins-face`, `fix/ua-extraction-bug`.
 2. **Commit in small, logically-grouped chunks.** Imperative mood subject line (~72 chars). Add a body when the "why" isn't obvious from the diff. Don't pre-squash locally — let squash-merge handle it.
-3. **Open a PR against `master`.** Opening triggers CI (ruff lint + pytest on Python 3.14 + basedpyright type check).
+3. **Open a PR against `master`.** Opening triggers CI (ruff lint on 3.14 + pytest and basedpyright on Python 3.12, 3.13, 3.14).
 4. **Watch CI.** Fix failures by fixing the underlying problem, not by disabling checks. If a failure is unrelated to your change, say so explicitly in PR comments.
 5. **Squash-merge once green.** No regular merges — keep `master` linear.
 6. **Verify post-merge deployment.** The deploy workflow runs automatically on push to master (after CI passes). Link the Actions run URL in a final PR comment. If no deploy workflow is configured, document that gap here.
