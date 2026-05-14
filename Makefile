@@ -5,9 +5,9 @@
 #   make run        — run both client and server
 #   make test       — run test suite
 #   make lint       — run linter
+#   make help       — show this help text
 #
-# Systemd management (run as root on target server):
-#   make systemd-install  — install systemd service
+# Maintenance (run as root on target server):
 #   make logrotate-install — install logrotate config
 #   make backup-cron     — install database backup cron
 
@@ -16,16 +16,38 @@ VENV    := .venv
 BIN     := $(VENV)/bin
 PKG     := manyfaced
 
-SYSTEMD_UNIT  := systemd/manyfaced.service
-LOGROTATE     := systemd/manyfaced.logrotate
+SERVER_PORT ?= 8080
+CLIENT_PORT ?= 8081
+LOGROTATE   := systemd/manyfaced.logrotate
 BACKUP_SCRIPT := scripts/backup-db.sh
 DEPLOY_USER   := honeypot
+
+.DEFAULT_GOAL := help
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Development
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: venv install run dev test lint format clean
+.PHONY: help venv install run test lint format clean \
+        run-server run-client test-file
+
+help:
+	@echo "Manyfaced Honeypot — Makefile targets"
+	@echo ""
+	@echo "Development:"
+	@echo "  make install      — set up venv and install deps"
+	@echo "  make run          — run client + server"
+	@echo "  make run-server   — run server only (SERVER_PORT=8080)"
+	@echo "  make run-client   — run client only (CLIENT_PORT=8081)"
+	@echo "  make test         — run test suite"
+	@echo "  make test-file    — run a single test file (TEST_FILE=path)"
+	@echo "  make lint         — run ruff check + format-check"
+	@echo "  make format       — run ruff format"
+	@echo "  make clean        — remove caches, venv, build artifacts"
+	@echo ""
+	@echo "Maintenance (run as root on droplet):"
+	@echo "  make logrotate-install  — install logrotate config"
+	@echo "  make backup-cron        — install DB backup cron"
 
 venv:
 	@$(PYTHON) -m venv $(VENV)
@@ -36,19 +58,13 @@ install: venv
 	@echo "Installed. Activate with: source $(VENV)/bin/activate"
 
 run-server:
-	@$(BIN)/$(PKG) --server 8080
+	@$(BIN)/$(PKG) --server $(SERVER_PORT)
 
 run-client:
-	@$(BIN)/$(PKG) --client 8081
+	@$(BIN)/$(PKG) --client $(CLIENT_PORT)
 
 run:
-	@$(BIN)/$(PKG) --server 8080 --client 8081
-
-dev:
-	@echo "Running linter and tests..."
-	@$(BIN)/ruff check .
-	@$(BIN)/ruff format --check .
-	@$(BIN)/pytest -v
+	@$(BIN)/$(PKG) --server $(SERVER_PORT) --client $(CLIENT_PORT)
 
 format:
 	@$(BIN)/ruff format .
@@ -65,61 +81,17 @@ lint:
 
 clean:
 	@echo "Cleaning..."
-	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name '*.pyc' -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name '*.pyc' -delete 2>/dev/null || true
-	@find . -type f -name '*.pyo' -delete 2>/dev/null || true
-	@find . -type f -name '*.pyd' -delete 2>/dev/null || true
-	@find . -type f -name '*.so' -delete 2>/dev/null || true
+	@find . -type d -name __pycache__ -exec rm -rf {} + || true
+	@find . -type d -name '*.pyc' -exec rm -rf {} + || true
+	@find . -type f -name '*.pyc' -delete || true
+	@find . -type f -name '*.pyo' -delete || true
+	@find . -type f -name '*.pyd' -delete || true
+	@find . -type f -name '*.so' -delete || true
 	@rm -rf $(VENV) .pytest_cache .ruff_cache build dist *.egg-info
-	@rm -f bots/honeypot.sqlite
 	@echo "Clean complete."
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Systemd management (run as root on target server)
-# ──────────────────────────────────────────────────────────────────────────────
-
-.PHONY: systemd-install systemd-start systemd-stop systemd-restart \
-        systemd-enable systemd-disable systemd-status systemd-logs \
-        systemd-uninstall
-
-systemd-install:
-	@echo "Installing systemd service..."
-	@cp $(SYSTEMD_UNIT) /etc/systemd/system/manyfaced.service
-	@systemctl daemon-reload
-	@echo "Service installed. Enable with: systemctl enable manyfaced"
-	@echo "Start with: systemctl start manyfaced"
-
-systemd-start:
-	@systemctl start manyfaced
-
-systemd-stop:
-	@systemctl stop manyfaced
-
-systemd-restart:
-	@systemctl restart manyfaced
-
-systemd-enable:
-	@systemctl enable manyfaced
-
-systemd-disable:
-	@systemctl disable manyfaced
-
-systemd-status:
-	@systemctl status manyfaced
-
-systemd-logs:
-	@journalctl -u manyfaced -f --no-pager
-
-systemd-uninstall:
-	@systemctl stop manyfaced 2>/dev/null || true
-	@systemctl disable manyfaced 2>/dev/null || true
-	@rm -f /etc/systemd/system/manyfaced.service
-	@systemctl daemon-reload
-	@echo "Service removed."
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Maintenance
+# Maintenance (run as root on target server)
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: logrotate-install backup-cron
@@ -139,8 +111,10 @@ backup-cron:
 	@if [ -f $(BACKUP_SCRIPT) ]; then \
 		cp $(BACKUP_SCRIPT) /opt/manyfaced/scripts/backup-db.sh; \
 		chmod +x /opt/manyfaced/scripts/backup-db.sh; \
-		echo "0 3 * * * /opt/manyfaced/scripts/backup-db.sh" | \
-			crontab -u $(DEPLOY_USER) -; \
+		(crontab -u $(DEPLOY_USER) -l 2>/dev/null | \
+		 grep -v 'backup-db.sh' ; \
+		 echo "0 3 * * * /opt/manyfaced/scripts/backup-db.sh" \
+		) | crontab -u $(DEPLOY_USER) -; \
 		echo "  Cron installed: daily at 3:00 AM"; \
 	else \
 		echo "  Backup script not found: $(BACKUP_SCRIPT)"; \
