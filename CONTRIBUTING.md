@@ -75,6 +75,8 @@ See `DEVELOPER.md` section "How to Add New Faces" for the full procedure:
 
 After squash-merging to `master`, the deploy workflow runs automatically (CI must pass first). The deploy workflow rsyncs the commit to `/opt/manyfaced/releases/<sha>/`, installs deps into the shared venv, atomically flips `/opt/manyfaced/current` via rename(2), and restarts the systemd service. Post-restart, the workflow verifies every port in `HONEY_TOP_PORTS` is in LISTEN state (with a 30-second retry budget for startup). Rollback flips the symlink back to the previous release. Check the GitHub Actions tab for deployment status. The `honeypot.env` file (port config) lives only on the droplet and is not version-controlled.
 
+Ad-hoc deploys of non-master branches are available via the Actions tab: select "Deploy to Droplet", click "Run workflow", and pick a ref. CI still runs first. Use this for feature-branch testing on the live droplet; do not use it as a replacement for the standard PR/merge flow.
+
 ## What not to do
 
 - Don't push directly to `master`.

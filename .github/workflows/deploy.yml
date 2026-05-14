@@ -1,39 +1,87 @@
 name: Deploy to Droplet
 
-# Trigger AFTER CI workflow completes successfully on the same commit.
+# Triggers:
+#   - push to master → CI runs, then deploy (fast path, no workflow_run latency)
+#   - pull_request on main/master → CI only (deploy job skipped via if:)
+#   - manual dispatch → pick any ref; CI runs first, then deploys it
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
+    branches: [master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to deploy'
+        required: true
+        default: 'master'
 
 permissions:
   contents: read
 
+# Serialize deploys against the shared venv. New deploys queue behind
+# in-progress ones; never cancel mid-install (could leave droplet broken).
+concurrency:
+  group: deploy-droplet
+  cancel-in-progress: false
+
 jobs:
+  ci:
+    # Runs on every push and PR. On PRs the deploy job is skipped via if:.
+    name: CI
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        job: [lint, test, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Check formatting (lint)
+        if: matrix.job == 'lint'
+        run: ruff format --check .
+
+      - name: Check linting (lint)
+        if: matrix.job == 'lint'
+        run: ruff check .
+
+      - name: Run tests (test)
+        if: matrix.job == 'test'
+        run: pytest -v --tb=short
+
+      - name: Type check with basedpyright (typecheck)
+        if: matrix.job == 'typecheck'
+        run: basedpyright manyfaced/
+
   deploy:
-    # Only deploy if CI passed and the commit is on master or main
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      (github.event.workflow_run.head_branch == 'master' ||
-       github.event.workflow_run.head_branch == 'main')
+    needs: ci
+    # Only deploy on push-to-master and manual dispatch; skip on PRs.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
 
     steps:
-      - name: Checkout exact CI-tested commit
+      - name: Checkout exact commit to deploy
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.inputs.ref || github.sha }}
 
-      - name: Verify commit SHA matches CI
+      - name: Resolve commit SHA
+        id: sha
         run: |
           set -euo pipefail
-          EXPECTED="${{ github.event.workflow_run.head_sha }}"
-          ACTUAL="$(git rev-parse HEAD)"
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::Commit SHA mismatch! Expected $EXPECTED, got $ACTUAL"
-            exit 1
-          fi
+          SHORT_SHA=$(git rev-parse --short=12 HEAD)
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Deploying short SHA: ${SHORT_SHA}"
 
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -78,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
           # Clean staging dir if re-deploying same commit (idempotent)
@@ -112,7 +160,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
           # Install BEFORE symlink swap so the swap can't expose a release
@@ -130,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
           # ln -sfn alone is NOT atomic (it unlinks then symlinks).
@@ -149,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SHORT_SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-12)
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
@@ -235,6 +283,7 @@ jobs:
               fi
             done
           '"'"''
+
       - name: Clean up old releases (keep last 5)
         env:
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
