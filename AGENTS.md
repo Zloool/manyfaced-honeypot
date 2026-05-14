@@ -2,7 +2,7 @@
 
 ## What is this?
 
-A Python 3.12+ socket-based honeypot that impersonates many web services (WordPress, phpMyAdmin, WebDAV, Jenkins, etc.) to capture bot interactions. Captured data lands in `honeypot.sqlite` on a DigitalOcean droplet and is served via systemd as the `manyfaced` service.
+A Python 3.14+ socket-based honeypot that impersonates many web services (WordPress, phpMyAdmin, WebDAV, Jenkins, etc.) to capture bot interactions. Captured data lands in `honeypot.sqlite` on a DigitalOcean droplet and is served via systemd as the `manyfaced` service.
 
 ## Repo layout
 
@@ -20,7 +20,7 @@ bots/                   # Untracked — honeypot.sqlite lives here on prod
 skills/prod-analysis/   # SSH-based production analysis workflow skill
 test/                   # pytest suite (~76% coverage target)
 systemd/                # manyfaced.service + logrotate config
-.github/workflows/      # CI (ruff lint, pytest on 3.12, basedpyright), deploy (SSH rsync to droplet)
+.github/workflows/      # CI (ruff lint, pytest on 3.14, basedpyright), deploy (SSH rsync to droplet)
 ```
 
 ## Local development
