@@ -1,81 +1,81 @@
 # Contributing to Many-faced Honeypot
 
-Thank you for your interest in contributing! This guide covers how to get started and the conventions we follow.
+## The shipping loop
 
-## Getting Started
+1. **Branch off latest `master`.** Use a descriptive name: `feature/add-jenkins-face`, `fix/ua-extraction-bug`.
+2. **Commit in small, logically-grouped chunks.** Imperative mood subject line (~72 chars). Add a body when the "why" isn't obvious from the diff. Don't pre-squash locally — let squash-merge handle it.
+3. **Open a PR against `master`.** Opening triggers CI (ruff lint + pytest on Python 3.13/3.14).
+4. **Watch CI.** Fix failures by fixing the underlying problem, not by disabling checks. If a failure is unrelated to your change, say so explicitly in PR comments.
+5. **Squash-merge once green.** No regular merges — keep `master` linear.
+6. **Verify post-merge deployment.** The deploy workflow runs automatically on push to master (after CI passes). Link the Actions run URL in a final PR comment. If no deploy workflow is configured, document that gap here.
+7. **Delete the feature branch.**
 
-1. Fork and clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Copy settings template: `cp manyfaced/common/settings.py.example manyfaced/common/settings.py`
-4. Run a quick test: `python3 mfh.py -c 8888 -s 9999 -v`
+## Branching conventions
 
-## Workflow
+| Prefix | Use case |
+|--------|----------|
+| `feature/` | New faces, handlers, capabilities |
+| `fix/`     | Bug fixes, corrections |
+| `docs/`    | Documentation-only changes |
+| `chore/`   | Dependency bumps, CI tweaks, cleanup |
 
-### Adding Features
+## Commit conventions
 
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Implement your changes
-3. Add tests for new functionality
-4. Update README.md if you change behavior
-5. Submit a pull request
+- **Subject:** imperative mood, ~72 chars. Examples:
+  - `feat: add WebDAV face with basic auth challenge`
+  - `fix: handle empty bot_user_agent in DB insert`
+  - `chore: bump ruff to 0.15`
+- **Body:** explain the "why" when it's not obvious from the code. Reference issue numbers if applicable.
 
-### Adding New Faces (Fake Web Services)
+## Code style
 
-See `DEVELOPER.md` section "How to Add New Faces" for the full procedure.
+Style rules are enforced by tooling, not prose. The authoritative configs are:
 
-Quick summary:
-1. Add path mapping to `manyfaced/client/faces.py` or `manyfaced/client/client.py`
+- **Lint + format:** `pyproject.toml` → `[tool.ruff]` (also `.ruff.toml` if present)
+- **Editor defaults:** `.editorconfig` (UTF-8, LF, 4-space indent for Python)
+- **Pre-commit hook:** `.pre-commit-config.yaml` (runs ruff on staged files)
+
+Run `ruff check . && ruff format .` before committing. The CI job will reject anything that doesn't pass.
+
+## Tests
+
+Tests live in `test/`. Run them with:
+
+```bash
+pytest test/ -v          # all tests, coverage enforced at 76%
+pytest test/test_foo.py  # single file
+```
+
+Mock `geoip2` modules before importing anything that uses them. Use `conftest.py` for shared fixtures.
+
+## Adding new faces (fake web services)
+
+See `DEVELOPER.md` section "How to Add New Faces" for the full procedure:
+
+1. Add path mapping in `manyfaced/client/faces.py` or `manyfaced/client/client.py`
 2. Create a response file in `manyfaced/client/responses/`
 3. Add special routing logic if the response needs custom handling
 
-### Adding Database Fields
+## Adding database fields
 
 1. Add column to `_CREATE_TABLE_SQL` and `_INSERT_SQL` in `manyfaced/db/storage.py`
 2. Add field extraction in both `SQLiteStorage.insert()` and `PostgreSQLStorage.insert()`
 3. Add to `BearRequests` dataclass in `manyfaced/db/dbconnect.py`
 4. Verify tests pass for both backends
 
-### Code Style
+## Pull requests
 
-- Follow PEP 8 with reasonable defaults
-- No trailing commas required but welcome
-- String literals: single quotes unless the string contains single quotes
-- Type hints: prefer them on new code (existing code may have partial annotations)
-- Docstrings: use docstrings for public functions and classes
+- Use the PR template (`.github/pull_request_template.md`) — it auto-populates in the GitHub UI.
+- Title should follow commit conventions (`feat:`, `fix:`, etc.).
+- Link any related issues with `Closes #NNN` or similar.
 
-## Writing Tests
+## Deployment
 
-Tests go in the `test/` directory.
+After squash-merging to `master`, the deploy workflow runs automatically (CI must pass first). It rsyncs code to `/opt/manyfaced/` on the droplet, reinstalls deps, and restarts the systemd service. Check the GitHub Actions tab for deployment status.
 
-```bash
-# Run all tests
-cd /home/zlol/manyfaced-honeypot
-/usr/bin/python3 -m pytest test/ -v
+## What not to do
 
-# Run a specific test
-/usr/bin/python3 -m pytest test/test_integration.py -v
-```
-
-### Test Conventions
-
-- Use `/usr/bin/python3` for the test executable path
-- Run from the project root with `-c pytest.ini`
-- Mock `geoip2` modules before importing anything that uses them
-- When testing `AUTHORISEDBEARS`, set it via `sys.modules` dict manipulation
-- `multiprocessing.Process.start()` returns immediately — poll the DB for async operations
-- Use `conftest.py` for shared fixtures and utilities
-
-## Pull Request Guidelines
-
-1. **Title**: Clear and descriptive (e.g., "Add fake Jenkins CI face", "Fix AES decryption on large payloads")
-2. **Description**: Explain WHAT changed and WHY
-3. **Tests**: Include tests for new functionality
-4. **Documentation**: Update README.md or DEVELOPER.md as needed
-5. **No breaking changes**: Prefer backwards-compatible changes
-
-## Questions?
-
-Check:
-- `README.md` — overview and quick start
-- `DEVELOPER.md` — deep dive into code, architecture, and HOW-TOs
-- `manyfaced/db/README.md` — database backend specifics
+- Don't push directly to `master`.
+- Don't commit analysis output (`deployment-analysis/latest/*.md`, `*.sqlite`, `*.db`, `*.log`).
+- Don't modify `.deploy_config` — it's gitignored and contains SSH credentials.
+- Don't run destructive SSH commands without explicit confirmation.
