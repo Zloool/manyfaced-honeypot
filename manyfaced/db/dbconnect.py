@@ -20,6 +20,10 @@ class BearRequests:
     parsed_request: dict[str, Any]
     is_detected: int
     HIVELOGIN: str
+    ua: str = ''
+    dns_name: str = ''
+    country: str = ''
+    continent: str = ''
 
 
 def Insert(bear: BearRequests) -> None:
@@ -32,5 +36,9 @@ def Insert(bear: BearRequests) -> None:
         'parsed_request': bear.parsed_request,
         'is_detected': bear.is_detected,
         'HIVELOGIN': bear.HIVELOGIN,
+        'ua': bear.ua,
+        'dns_name': bear.dns_name,
+        'country': bear.country,
+        'continent': bear.continent,
     }
     storage.insert(record)
