@@ -325,10 +325,7 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
                 body, 200, "OK", {"Content-Type": "text/html"}
             ), self.DETECTED_ID
 
-        if (
-            "/.git/config" in path_lower
-            or "/.git/head" in path_lower
-        ):
+        if "/.git/config" in path_lower or "/.git/head" in path_lower:
             if "/.git/head" in path_lower:
                 body = self._git_head()
             else:
@@ -342,7 +339,6 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
             return self._build_http_response(
                 body, 200, "OK", {"Content-Type": "text/plain"}
             ), self.DETECTED_ID
-
 
         # Default: serve wp-config.php as the most common target
         body = self._wp_config_php()
