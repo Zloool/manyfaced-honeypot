@@ -5,29 +5,65 @@ description: Production honeypot analysis workflow — SSH data pull, log/DB par
 
 # Production Honeypot Analysis Skill
 
-Analyze production honeypot data (logs + SQLite DB) to detect attack patterns, identify bugs, assess data quality, and generate structured reports.
+Use this skill when you need to analyze production honeypot data (logs + SQLite DB) on the remote droplet — detect attack patterns, identify bugs, assess data quality, and generate structured reports.
+
+## Triggers
+
+**Use this skill when:**
+- "analyze production" or "check the honeypot"
+- "pull latest data from the droplet" / "get fresh honeypot data"
+- "manyfaced service status" / "is the honeypot running?"
+- "generate a production report" / "write an analysis report"
+- References to `manyfaced` systemd service, `honeypot.sqlite`, or `honeypot.log` on the server
+
+**Do NOT use this skill for:**
+- Local development debugging (use `python3 mfh.py -c 8888 -s 9999 -v`)
+- Writing new faces or handlers (see DEVELOPER.md)
+- Modifying deployment configuration or SSH credentials
+- Analyzing local test data
 
 ## Prerequisites
 
-- SSH access to production droplet (`~/.ssh/dohp`, port 22222)
-- `.deploy_config` file with connection details
+- SSH access to production droplet (`~/.ssh/dohp`, port from `.deploy_config`)
+- `.deploy_config` file with connection details at repo root
 - Python 3.10+ with sqlite3 (stdlib)
 - `analyze_production.py` script in `deployment-analysis/`
+
+## Loading config
+
+Before running any SSH commands, source the deploy config:
+
+```bash
+# Source connection variables from .deploy_config
+source .deploy_config
+# Variables available: SERVER_IP, SSH_PORT, SSH_USER, SSH_KEY, REMOTE_DB, REMOTE_LOG
+```
 
 ## Quick Start
 
 ```bash
-# 1. Pull fresh data from production
-mkdir -p deployment-analysis/latest
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cat /opt/manyfaced/bots/honeypot.log" > deployment-analysis/latest/honeypot.log
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cp /opt/manyfaced/bots/honeypot.sqlite /tmp/hp-latest.sqlite && cat /tmp/hp-latest.sqlite" > deployment-analysis/latest/honeypot.db
-rm -f /tmp/hp-latest.sqlite
+# 1. Load config
+source .deploy_config
 
-# 2. Run analysis script
+# 2. Pull fresh data from production
+mkdir -p deployment-analysis/latest
+cd deployment-analysis/latest
+
+# Pull log file (may not exist — logging may go to journalctl only)
+ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > honeypot.log 2>/dev/null || echo "No log file found on server"
+
+# Pull database safely via scp (avoids WAL corruption from cat-redirect)
+scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
+
+# Pull recent journal logs for error context (last 24 hours)
+ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
+  "journalctl -u manyfaced --no-pager --since '24 hours ago' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
+
+# 3. Run analysis script
 cd deployment-analysis/latest
 python3 ../analyze_production.py .
 
-# 3. Generate report (see Report Generation section below)
+# 4. Generate report (see Report Generation section below)
 ```
 
 ## Data Sources
@@ -41,7 +77,7 @@ python3 ../analyze_production.py .
 ### 2. SQLite Database (`honeypot.sqlite`)
 - Table: `honeypot_bears` — all captured bot records
 - Schema: `id`, `bot_ip`, `hostname`, `timestamp`, `request_path`, `request_command`, `request_version`, `request_raw`, `bot_user_agent`, `bot_country`, `bot_continent`, `bot_tracert`, `bot_dns_name`, `detected_id`, `hive_id`, `login`
-- **WAL mode caveat:** Query via active Python connection (reads WAL), not raw file copy
+- **WAL mode caveat:** Query via active Python connection (reads WAL), not raw file copy. Use `scp` to pull the DB file, then open it with a Python sqlite3 connection for accurate reads.
 
 ### 3. Journal Logs (`journalctl -u manyfaced`)
 - Recent errors, warnings, service status
@@ -52,7 +88,8 @@ python3 ../analyze_production.py .
 ### Step 1: Service Health Check
 
 ```bash
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "
+source .deploy_config
+ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "
 echo '=== Service Status ===' && systemctl status manyfaced --no-pager 2>&1
 echo '=== Processes ===' && ps aux | grep mfh | grep -v grep
 echo '=== Listening Ports ===' && ss -tlnp | grep python | wc -l
@@ -65,20 +102,19 @@ echo '=== Disk Space ===' && df -h /opt/manyfaced/bots
 ### Step 2: Pull Data Locally
 
 ```bash
+source .deploy_config
 mkdir -p deployment-analysis/latest
 cd deployment-analysis/latest
 
 # Pull log file (may not exist)
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 "cat /opt/manyfaced/bots/honeypot.log" > honeypot.log 2>/dev/null || echo "No log file found on server"
+ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > honeypot.log 2>/dev/null || echo "No log file found on server"
 
-# Pull database (always exists)
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 \
-  "cp /opt/manyfaced/bots/honeypot.sqlite /tmp/hp-latest.sqlite && cat /tmp/hp-latest.sqlite" > honeypot.db
-rm -f /tmp/hp-latest.sqlite
+# Pull database via scp (WAL-safe — avoids cat-redirect corruption)
+scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
 
-# Pull recent journal logs for error context
-ssh -i ~/.ssh/dohp -p 22222 root@68.183.114.1 \
-  "journalctl -u manyfaced --no-pager --since '2026-05-05' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
+# Pull recent journal logs for error context (last 24 hours)
+ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
+  "journalctl -u manyfaced --no-pager --since '24 hours ago' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
 ```
 
 ### Step 3: Run Analysis Script
@@ -106,7 +142,7 @@ Create a markdown report following this template structure:
 # Production Honeypot Analysis Report
 
 **Date:** YYYY-MM-DD  
-**Server:** 68.183.114.1 (DigitalOcean Droplet)  
+**Server:** ${SERVER_IP} (DigitalOcean Droplet)  
 **Analysis Period:** [time range from DB]
 
 ---
@@ -229,7 +265,7 @@ Run with: `python3 analyze_production.py /path/to/data/dir`
 
 1. **Always pull fresh data** — the DB grows continuously; old snapshots become stale quickly
 2. **Check journalctl for real-time errors** — logs may not persist to file on newer deployments
-3. **Filter loopback traffic** in analysis: `WHERE bot_ip NOT IN ('127.0.0.1', '68.183.114.1')`
+3. **Filter loopback traffic** in analysis: `WHERE bot_ip NOT IN ('127.0.0.1', '${SERVER_IP}')`
 4. **Compare detected_id distribution** across time periods to see if protocol detection is improving
 5. **Track top IPs over time** — new high-volume IPs indicate active bot campaigns
 6. **Data quality degrades** as DB grows — check empty field percentages periodically

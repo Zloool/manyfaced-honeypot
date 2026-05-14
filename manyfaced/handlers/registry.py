@@ -64,7 +64,7 @@ class HandlerRegistry:
                     domain,
                 )
             self.handlers[domain] = handler
-            logger.info("Registered handler: %s (domain=%s)", handler, domain)
+            logger.info('Registered handler: %s (domain=%s)', handler, domain)
 
     def unregister(self, domain: str) -> None:
         """Unregister a handler by domain.
@@ -75,7 +75,7 @@ class HandlerRegistry:
         with self._lock:
             if domain in self.handlers:
                 del self.handlers[domain]
-                logger.info("Unregistered handler: %s", domain)
+                logger.info('Unregistered handler: %s', domain)
 
     def get_handler(self, path: str) -> HTTPHandlerBase | None:
         """Get the first handler for a given path.
@@ -136,16 +136,16 @@ class HandlerRegistry:
             Tuple of (mashed_response_bytes, detected_flag)
         """
         if not results:
-            return b"", 0
+            return b'', 0
 
         # Extract headers from first response and bodies from all
-        first_headers = b""
+        first_headers = b''
         all_bodies = []
         detected = 0
 
         for response_bytes, detected_flag in results:
             # Split headers from body (headers end at first \r\n\r\n)
-            header_end = response_bytes.find(b"\r\n\r\n")
+            header_end = response_bytes.find(b'\r\n\r\n')
             if header_end == -1:
                 # No headers/body split – treat entire response as body
                 all_bodies.append(response_bytes)
@@ -161,9 +161,9 @@ class HandlerRegistry:
 
         # Combine: headers from first response, all bodies concatenated
         if first_headers:
-            mashed = first_headers + b"".join(all_bodies)
+            mashed = first_headers + b''.join(all_bodies)
         else:
-            mashed = b"".join(all_bodies)
+            mashed = b''.join(all_bodies)
 
         return mashed, detected
 
@@ -206,14 +206,14 @@ class HandlerRegistry:
                 )
                 results.append((response_bytes, detected_flag))
                 logger.debug(
-                    "Handler %s generated response for %s (detected=%d, size=%d)",
+                    'Handler %s generated response for %s (detected=%d, size=%d)',
                     handler.domain,
                     path,
                     detected_flag,
                     len(response_bytes),
                 )
             except Exception as e:
-                logger.warning("Handler %s failed for %s: %s", handler.domain, path, e)
+                logger.warning('Handler %s failed for %s: %s', handler.domain, path, e)
 
         if not results:
             return None
@@ -254,12 +254,11 @@ class HandlerRegistry:
         """
         with self._lock:
             return {
-                "total_handlers": len(self.handlers),
-                "handlers": {
-                    domain: handler.get_stats()
-                    for domain, handler in self.handlers.items()
+                'total_handlers': len(self.handlers),
+                'handlers': {
+                    domain: handler.get_stats() for domain, handler in self.handlers.items()
                 },
             }
 
     def __repr__(self) -> str:
-        return f"HandlerRegistry(handlers={len(self.handlers)})"
+        return f'HandlerRegistry(handlers={len(self.handlers)})'

@@ -15,7 +15,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Ensure project root is importable
 # ---------------------------------------------------------------------------
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,9 +24,9 @@ if project_root not in sys.path:
 # ---------------------------------------------------------------------------
 geoip_mock = MagicMock()
 geoip_mock.geolite2.geolite2 = geoip_mock.geolite2
-sys.modules["geoip"] = geoip_mock
-sys.modules["geoip.geolite2"] = geoip_mock.geolite2
-sys.modules["GeoIP"] = MagicMock()
+sys.modules['geoip'] = geoip_mock
+sys.modules['geoip.geolite2'] = geoip_mock.geolite2
+sys.modules['GeoIP'] = MagicMock()
 
 # ---------------------------------------------------------------------------
 # Import units under test
@@ -48,7 +48,7 @@ class _TempDumpFile:
 
     def __enter__(self):
         self._real_open = open
-        self._mock = patch("manyfaced.common.utils.open", self._patched_open)
+        self._mock = patch('manyfaced.common.utils.open', self._patched_open)
         self._mock.start()
         return self.path
 
@@ -62,7 +62,7 @@ class _TempDumpFile:
 
 def _write_toml(tmp_path, content):
     """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
+    toml_path = tmp_path / 'config.toml'
     toml_path.write_text(content)
     return toml_path
 
@@ -88,84 +88,84 @@ class TestDumpFile:
 
     def test_creates_file_and_writes_data(self, tmp_path):
         """dump_file creates the dump file, writes JSON line with data."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         with _TempDumpFile(dump_path):
-            dump_file({"key": "value"})
-        lines = dump_path.read_text().strip().split("\n")
+            dump_file({'key': 'value'})
+        lines = dump_path.read_text().strip().split('\n')
         assert len(lines) == 1
-        assert json.loads(lines[0]) == {"key": "value"}
+        assert json.loads(lines[0]) == {'key': 'value'}
 
     def test_appends_to_existing_file(self, tmp_path):
         """dump_file appends data as a new JSON line."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         # Pre-seed one line
         dump_path.write_text('{"first": 1}\n')
 
         with _TempDumpFile(dump_path):
-            dump_file({"second": 2})
+            dump_file({'second': 2})
 
-        lines = dump_path.read_text().strip().split("\n")
+        lines = dump_path.read_text().strip().split('\n')
         assert len(lines) == 2
-        assert json.loads(lines[0]) == {"first": 1}
-        assert json.loads(lines[1]) == {"second": 2}
+        assert json.loads(lines[0]) == {'first': 1}
+        assert json.loads(lines[1]) == {'second': 2}
 
     def test_handles_missing_file(self, tmp_path):
         """dump_file handles missing dump file gracefully (creates new file)."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         assert not dump_path.exists()
 
         with _TempDumpFile(dump_path):
-            dump_file("new_data")
+            dump_file('new_data')
 
-        lines = dump_path.read_text().strip().split("\n")
+        lines = dump_path.read_text().strip().split('\n')
         assert len(lines) == 1
-        assert json.loads(lines[0]) == "new_data"
+        assert json.loads(lines[0]) == 'new_data'
 
     def test_multiple_appends(self, tmp_path):
         """Multiple dump_file calls accumulate data."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
 
         with _TempDumpFile(dump_path):
-            dump_file("item1")
-            dump_file("item2")
-            dump_file("item3")
+            dump_file('item1')
+            dump_file('item2')
+            dump_file('item3')
 
-        lines = dump_path.read_text().strip().split("\n")
+        lines = dump_path.read_text().strip().split('\n')
         assert len(lines) == 3
-        assert json.loads(lines[0]) == "item1"
-        assert json.loads(lines[1]) == "item2"
-        assert json.loads(lines[2]) == "item3"
+        assert json.loads(lines[0]) == 'item1'
+        assert json.loads(lines[1]) == 'item2'
+        assert json.loads(lines[2]) == 'item3'
 
     def test_dump_file_with_dict_data(self, tmp_path):
         """dump_file handles dict data correctly."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         with _TempDumpFile(dump_path):
-            dump_file({"url": "http://example.com", "method": "GET"})
-        lines = dump_path.read_text().strip().split("\n")
-        assert json.loads(lines[0]) == {"url": "http://example.com", "method": "GET"}
+            dump_file({'url': 'http://example.com', 'method': 'GET'})
+        lines = dump_path.read_text().strip().split('\n')
+        assert json.loads(lines[0]) == {'url': 'http://example.com', 'method': 'GET'}
 
     def test_dump_file_with_bytes_data(self, tmp_path):
         """dump_file handles bytes data (converted to string via default=str)."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         with _TempDumpFile(dump_path):
-            dump_file(b"raw bytes data")
-        lines = dump_path.read_text().strip().split("\n")
+            dump_file(b'raw bytes data')
+        lines = dump_path.read_text().strip().split('\n')
         # bytes → str via default=str → "b'raw bytes data'"
         assert json.loads(lines[0]) == "b'raw bytes data'"
 
     def test_dump_file_is_append_only(self, tmp_path):
         """dump_file never truncates the file – it always appends."""
-        dump_path = tmp_path / "dump.jsonl"
+        dump_path = tmp_path / 'dump.jsonl'
         dump_path.write_text('{"existing": true}\n{"more": 1}\n')
 
         with _TempDumpFile(dump_path):
-            dump_file({"new": "entry"})
+            dump_file({'new': 'entry'})
 
-        lines = dump_path.read_text().strip().split("\n")
+        lines = dump_path.read_text().strip().split('\n')
         assert len(lines) == 3
-        assert json.loads(lines[0]) == {"existing": True}
-        assert json.loads(lines[1]) == {"more": 1}
-        assert json.loads(lines[2]) == {"new": "entry"}
+        assert json.loads(lines[0]) == {'existing': True}
+        assert json.loads(lines[1]) == {'more': 1}
+        assert json.loads(lines[2]) == {'new': 'entry'}
 
 
 class TestReceiveTimeout:
@@ -181,10 +181,10 @@ class TestReceiveTimeout:
 
         mock_socket = MagicMock()
         data_chunks = [
-            b"HTTP/1.1 200 OK\r\n",
-            b"Content-Type: text/html\r\n",
-            b"\r\n",
-            b"<!DOCTYPE html>",
+            b'HTTP/1.1 200 OK\r\n',
+            b'Content-Type: text/html\r\n',
+            b'\r\n',
+            b'<!DOCTYPE html>',
         ]
 
         recv_count = [0]
@@ -194,16 +194,13 @@ class TestReceiveTimeout:
             recv_count[0] += 1
             if idx < len(data_chunks):
                 return data_chunks[idx]
-            raise socket_timeout("timed out")
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert (
-            result
-            == "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>"
-        )
+        assert result == 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>'
         mock_socket.settimeout.assert_any_call(1.0)  # set timeout
         mock_socket.settimeout.assert_any_call(None)  # reset in finally
         assert mock_socket.recv.call_count == len(data_chunks) + 1  # +1 for timeout
@@ -211,11 +208,11 @@ class TestReceiveTimeout:
     def test_returns_empty_on_immediate_empty(self, monkeypatch):
         """receive_timeout returns empty string when peer closes connection immediately."""
         mock_socket = MagicMock()
-        mock_socket.recv = MagicMock(return_value=b"")
+        mock_socket.recv = MagicMock(return_value=b'')
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == ""
+        assert result == ''
         mock_socket.settimeout.assert_any_call(1.0)
 
     def test_timeout_breaks_after_data_received(self, monkeypatch):
@@ -223,7 +220,7 @@ class TestReceiveTimeout:
         from socket import timeout as socket_timeout
 
         mock_socket = MagicMock()
-        data_chunks = [b"data1", b"data2", b"data3", b"data4", b"data5"]
+        data_chunks = [b'data1', b'data2', b'data3', b'data4', b'data5']
 
         recv_count = [0]
 
@@ -232,13 +229,13 @@ class TestReceiveTimeout:
             recv_count[0] += 1
             if idx < len(data_chunks):
                 return data_chunks[idx]
-            raise socket_timeout("timed out")
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == "data1data2data3data4data5"
+        assert result == 'data1data2data3data4data5'
 
     def test_timeout_without_data(self, monkeypatch):
         """receive_timeout returns empty after timeout even with no data."""
@@ -250,20 +247,20 @@ class TestReceiveTimeout:
 
         def side_effect(*args):
             recv_count[0] += 1
-            raise socket_timeout("timed out")
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == ""
+        assert result == ''
 
     def test_refreshes_begin_on_data(self, monkeypatch):
         """receive_timeout collects all data until timeout."""
         from socket import timeout as socket_timeout
 
         mock_socket = MagicMock()
-        data_chunks = [b"a", b"b", b"c"]
+        data_chunks = [b'a', b'b', b'c']
 
         recv_count = [0]
 
@@ -272,13 +269,13 @@ class TestReceiveTimeout:
             recv_count[0] += 1
             if idx < len(data_chunks):
                 return data_chunks[idx]
-            raise socket_timeout("timed out")
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == "abc"
+        assert result == 'abc'
 
     def test_socket_error_handled(self, monkeypatch):
         """receive_timeout catches socket.error and returns collected data."""
@@ -291,15 +288,15 @@ class TestReceiveTimeout:
         def side_effect(*args):
             recv_count[0] += 1
             if recv_count[0] == 1:
-                return b"partial"
-            raise socket_error("would block")
+                return b'partial'
+            raise socket_error('would block')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
         # socket_error is caught; returns data collected before the error
-        assert result == "partial"
+        assert result == 'partial'
 
     def test_single_chunk(self, monkeypatch):
         """receive_timeout handles a single recv call with data then timeout."""
@@ -312,25 +309,25 @@ class TestReceiveTimeout:
         def side_effect(*args):
             recv_count[0] += 1
             if recv_count[0] == 1:
-                return b"hello"
-            raise socket_timeout("timed out")
+                return b'hello'
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == "hello"
+        assert result == 'hello'
 
     def test_timeout_exactly_at_timeout2(self, monkeypatch):
         """receive_timeout breaks on socket.timeout with no data."""
         from socket import timeout as socket_timeout
 
         mock_socket = MagicMock()
-        mock_socket.recv = MagicMock(side_effect=socket_timeout("timed out"))
+        mock_socket.recv = MagicMock(side_effect=socket_timeout('timed out'))
 
         result = receive_timeout(mock_socket, timeout=1.0)
 
-        assert result == ""
+        assert result == ''
 
     def test_data_then_timeout(self, monkeypatch):
         """receive_timeout collects data, then times out after receiving data."""
@@ -343,16 +340,16 @@ class TestReceiveTimeout:
         def side_effect(*args):
             recv_count[0] += 1
             if recv_count[0] == 1:
-                return b"hello"
+                return b'hello'
             if recv_count[0] == 2:
-                return b" world"
-            raise socket_timeout("timed out")
+                return b' world'
+            raise socket_timeout('timed out')
 
         mock_socket.recv = MagicMock(side_effect=side_effect)
 
         result = receive_timeout(mock_socket, timeout=0.5)
 
-        assert result == "hello world"
+        assert result == 'hello world'
 
 
 # ===================================================================

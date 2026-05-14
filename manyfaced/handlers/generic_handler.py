@@ -28,16 +28,16 @@ logger = logging.getLogger(__name__)
 
 # Map of handler domain -> (display_name, version, status) for the monster page
 _SERVICE_INFO: dict[str, tuple[str, str, str]] = {
-    "wordpress": ("WordPress CMS", "6.5.3", "Running (v6.5.3)"),
-    "phpmyadmin": ("phpMyAdmin", "5.2.1", "Running (v5.2.1)"),
-    "jenkins": ("Jenkins CI/CD", "2.426", "Running (v2.426)"),
-    "tomcat": ("Apache Tomcat", "9.0.87", "Running (v9.0.87)"),
-    "drupal": ("Drupal CMS", "10.2.4", "Running (v10.2.4)"),
-    "cpanel": ("cPanel", "120.0.6", "Running (v120.0.6)"),
-    "gitlab": ("GitLab", "16.8.5", "Running (v16.8.5)"),
-    "nginx": ("Nginx", "1.24.0", "Running (v1.24.0)"),
-    "mysql": ("MySQL/MariaDB", "10.11.4", "Running (v10.11.4)"),
-    "redis": ("Redis", "7.2.3", "Running (v7.2.3)"),
+    'wordpress': ('WordPress CMS', '6.5.3', 'Running (v6.5.3)'),
+    'phpmyadmin': ('phpMyAdmin', '5.2.1', 'Running (v5.2.1)'),
+    'jenkins': ('Jenkins CI/CD', '2.426', 'Running (v2.426)'),
+    'tomcat': ('Apache Tomcat', '9.0.87', 'Running (v9.0.87)'),
+    'drupal': ('Drupal CMS', '10.2.4', 'Running (v10.2.4)'),
+    'cpanel': ('cPanel', '120.0.6', 'Running (v120.0.6)'),
+    'gitlab': ('GitLab', '16.8.5', 'Running (v16.8.5)'),
+    'nginx': ('Nginx', '1.24.0', 'Running (v1.24.0)'),
+    'mysql': ('MySQL/MariaDB', '10.11.4', 'Running (v10.11.4)'),
+    'redis': ('Redis', '7.2.3', 'Running (v7.2.3)'),
 }
 
 
@@ -56,59 +56,55 @@ def _collect_handler_keywords() -> list[dict[str, Any]]:
 
     # Import other handlers dynamically
     handler_modules = {
-        "wordpress": "WordPressHandler",
-        "phpmyadmin": "PhpMyAdminHandler",
-        "jenkins": "JenkinsHandler",
-        "tomcat": "TomcatHandler",
-        "drupal": "DrupalHandler",
-        "cpanel": "CPanelHandler",
+        'wordpress': 'WordPressHandler',
+        'phpmyadmin': 'PhpMyAdminHandler',
+        'jenkins': 'JenkinsHandler',
+        'tomcat': 'TomcatHandler',
+        'drupal': 'DrupalHandler',
+        'cpanel': 'CPanelHandler',
     }
 
     for domain, class_name in handler_modules.items():
         try:
             module = __import__(
-                f"manyfaced.handlers.{domain}_handler",
+                f'manyfaced.handlers.{domain}_handler',
                 fromlist=[class_name],
             )
             handler_class = getattr(module, class_name)
             handler = handler_class()
-            patterns = (
-                handler.PATH_PATTERNS if hasattr(handler, "PATH_PATTERNS") else []
-            )
+            patterns = handler.PATH_PATTERNS if hasattr(handler, 'PATH_PATTERNS') else []
 
             # Determine login paths (paths containing "login", "admin", "manage", etc.)
-            login_keywords = ["login", "admin", "manage", "console", "dashboard"]
-            login_paths = [
-                p for p in patterns if any(kw in p.lower() for kw in login_keywords)
-            ]
+            login_keywords = ['login', 'admin', 'manage', 'console', 'dashboard']
+            login_paths = [p for p in patterns if any(kw in p.lower() for kw in login_keywords)]
 
             # Get service info
-            info = _SERVICE_INFO.get(domain, (domain, "unknown", "Unknown"))
+            info = _SERVICE_INFO.get(domain, (domain, 'unknown', 'Unknown'))
             display_name, version, status = info
 
             keywords.append(
                 {
-                    "domain": domain,
-                    "name": display_name,
-                    "version": version,
-                    "status": status,
-                    "patterns": patterns,
-                    "login_paths": login_paths,
+                    'domain': domain,
+                    'name': display_name,
+                    'version': version,
+                    'status': status,
+                    'patterns': patterns,
+                    'login_paths': login_paths,
                 }
             )
         except (ImportError, AttributeError) as e:
             logger.debug("Could not load handler for domain '%s': %s", domain, e)
             # Still add a placeholder entry
-            info = _SERVICE_INFO.get(domain, (domain, "unknown", "Unknown"))
+            info = _SERVICE_INFO.get(domain, (domain, 'unknown', 'Unknown'))
             display_name, version, status = info
             keywords.append(
                 {
-                    "domain": domain,
-                    "name": display_name,
-                    "version": version,
-                    "status": status,
-                    "patterns": [],
-                    "login_paths": [],
+                    'domain': domain,
+                    'name': display_name,
+                    'version': version,
+                    'status': status,
+                    'patterns': [],
+                    'login_paths': [],
                 }
             )
 
@@ -118,28 +114,28 @@ def _collect_handler_keywords() -> list[dict[str, Any]]:
 def _build_monster_page(keywords: list[dict[str, Any]]) -> str:
     """Build the monster page HTML from collected handler keywords."""
     # Build service rows
-    service_rows = ""
+    service_rows = ''
     for kw in keywords:
         # Build access links
         links = []
-        for p in kw["patterns"][:3]:  # Limit to first 3 patterns per service
+        for p in kw['patterns'][:3]:  # Limit to first 3 patterns per service
             links.append(f'<a href="{p}">{p.split("/")[-1] or p}</a>')
-        access_str = " | ".join(links) if links else "N/A"
+        access_str = ' | '.join(links) if links else 'N/A'
 
         service_rows += f"""
             <tr>
-                <td>{kw["name"]}</td>
-                <td class="status-active">{kw["status"]}</td>
+                <td>{kw['name']}</td>
+                <td class="status-active">{kw['status']}</td>
                 <td>{access_str}</td>
             </tr>"""
 
     # Build quick links
     quick_links = []
     for kw in keywords:
-        for p in kw["patterns"][:2]:  # Limit to first 2 patterns per service
+        for p in kw['patterns'][:2]:  # Limit to first 2 patterns per service
             quick_links.append(f'<a href="{p}">{kw["name"]} {p}</a>')
 
-    quick_links_str = " | ".join(quick_links[:10]) if quick_links else "None"
+    quick_links_str = ' | '.join(quick_links[:10]) if quick_links else 'None'
 
     return f"""\
 <!DOCTYPE html>
@@ -173,7 +169,7 @@ def _build_monster_page(keywords: list[dict[str, Any]]) -> str:
         <h2>&#128640; Available Services</h2>
         <table>
             <tr><th>Service</th><th>Status</th><th>Access</th></tr>
-            {textwrap.indent(service_rows, "            ").strip()}
+            {textwrap.indent(service_rows, '            ').strip()}
         </table>
     </div>
 
@@ -260,7 +256,7 @@ class GenericHandler(HTTPHandlerBase):
     services to attract probing bots and encourage deeper exploration.
     """
 
-    domain = "generic"
+    domain = 'generic'
     PATH_PATTERNS = []  # Catch-all: matches any path
     DETECTED_ID = 4294967294  # UNKNOWN_HTTP
 
@@ -280,11 +276,11 @@ class GenericHandler(HTTPHandlerBase):
 
         # Record the request
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -292,23 +288,21 @@ class GenericHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Check for exploit patterns in the path
-        if ".." in path or "/etc/" in path or "php://" in path_lower:
+        if '..' in path or '/etc/' in path or 'php://' in path_lower:
             # Path traversal / inclusion attempt
             body = _TRAVERSAL_ERROR.format(path=path)
-            response = self._build_http_response(body, path, "403 Forbidden")
-        elif method == "POST" and any(
-            kw in path_lower for kw in ["login", "admin", "auth"]
-        ):
+            response = self._build_http_response(body, path, '403 Forbidden')
+        elif method == 'POST' and any(kw in path_lower for kw in ['login', 'admin', 'auth']):
             # POST to a login-like path
             credentials = self._extract_credentials(raw_request, headers or {})
             if credentials:
                 profile.capture_credentials(credentials)
                 # Redirect to a plausible admin page
                 response = self._build_http_response(
-                    "<html><body>Redirecting...</body></html>",
+                    '<html><body>Redirecting...</body></html>',
                     path,
-                    "302 Found",
-                    extra_headers={"Location": "/admin/"},
+                    '302 Found',
+                    extra_headers={'Location': '/admin/'},
                 )
             else:
                 response = self._build_http_response(_MONSTER_PAGE, path)
@@ -317,7 +311,7 @@ class GenericHandler(HTTPHandlerBase):
             response = self._build_http_response(_MONSTER_PAGE, path)
 
         profile._response_count = (
-            profile._response_count + 1 if hasattr(profile, "_response_count") else 1
+            profile._response_count + 1 if hasattr(profile, '_response_count') else 1
         )
         self._response_count += 1
 
@@ -328,39 +322,39 @@ class GenericHandler(HTTPHandlerBase):
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
     def _build_http_response(
         self,
         body: str,
         path: str,
-        status: str = "200 OK",
+        status: str = '200 OK',
         extra_headers: dict[str, str] | None = None,
     ) -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
-        content_type = "text/html; charset=UTF-8"
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        content_type = 'text/html; charset=UTF-8'
 
-        if "xml" in path or "xmlrpc" in path:
-            content_type = "application/xml; charset=utf-8"
+        if 'xml' in path or 'xmlrpc' in path:
+            content_type = 'application/xml; charset=utf-8'
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"X-Powered-By: PHP/8.2.15\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: {content_type}\r\n"
-            f"Connection: close\r\n"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'X-Powered-By: PHP/8.2.15\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: {content_type}\r\n'
+            f'Connection: close\r\n'
         )
 
         if extra_headers:
             for key, value in extra_headers.items():
-                response += f"{key}: {value}\r\n"
+                response += f'{key}: {value}\r\n'
 
-        response += "\r\n"
+        response += '\r\n'
         response += body
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"GenericHandler(domain={self.domain!r})"
+        return f'GenericHandler(domain={self.domain!r})'
