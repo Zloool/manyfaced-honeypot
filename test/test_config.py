@@ -127,7 +127,7 @@ default_key = "default_beehive_key"
         assert cfg.DB_PG_DB == 'honeypot'
         assert cfg.DB_PG_USER == 'postgres'
         assert cfg.DB_PG_PASSWORD == '***'
-        assert cfg.AUTHORISEDBEARS == {}
+        assert cfg.AUTHORIZED_BEES == {}
         assert cfg.DEFAULT_KEY == 'default_beehive_key'
 
 
@@ -163,7 +163,7 @@ pg_user = "admin"
 pg_password = "dbpass"
 
 [security]
-authorised_bears = ""
+authorized_bees = ""
 """
         config_path = _write_toml(tmp_path, toml_content)
 
@@ -242,7 +242,7 @@ pg_user = "toml_user"
 pg_password = "toml_pass"
 
 [security]
-authorised_bears = ""
+authorized_bees = ""
 """
         config_path = _write_toml(tmp_path, toml_content)
 
@@ -413,7 +413,7 @@ class TestConfigGenerateConfigFile:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -462,7 +462,7 @@ class TestConfigGenerateConfigFile:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -509,73 +509,73 @@ honeyport = 7777
 
 
 class TestConfigAuthorisedBears:
-    """Parse semicolon-separated authorised_bears from env var."""
+    """Parse semicolon-separated authorized_bees from env var."""
 
-    def test_env_var_authorised_bears(self, monkeypatch):
-        """AUTHORISEDBEARS parsed from HONEY_AUTHORISED_BEARS env var."""
+    def test_env_var_authorized_bees(self, monkeypatch):
+        """AUTHORIZED_BEES parsed from HONEY_AUTHORIZED_BEES env var."""
         with monkeypatch.context() as m:
             m.setattr('manyfaced.common.config._find_config_file', lambda: None)
-            m.setenv('HONEY_AUTHORISED_BEARS', 'bear1:key1;bear2:key2;bear3:key3')
+            m.setenv('HONEY_AUTHORIZED_BEES', 'bee1:key1;bee2:key2;bee3:key3')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {
-            'bear1': 'key1',
-            'bear2': 'key2',
-            'bear3': 'key3',
+        assert cfg.AUTHORIZED_BEES == {
+            'bee1': 'key1',
+            'bee2': 'key2',
+            'bee3': 'key3',
         }
 
-    def test_authorised_bears_empty_env(self, monkeypatch):
-        """Empty HONEY_AUTHORISED_BEARS env var returns default empty dict."""
+    def test_authorized_bees_empty_env(self, monkeypatch):
+        """Empty HONEY_AUTHORIZED_BEES env var returns default empty dict."""
         with monkeypatch.context() as m:
             m.setattr('manyfaced.common.config._find_config_file', lambda: None)
-            m.setenv('HONEY_AUTHORISED_BEARS', '')
+            m.setenv('HONEY_AUTHORIZED_BEES', '')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {}
+        assert cfg.AUTHORIZED_BEES == {}
 
-    def test_authorised_bears_without_colon_ignored(self, monkeypatch):
-        """Pairs without colon are ignored in authorised_bears parsing."""
+    def test_authorized_bees_without_colon_ignored(self, monkeypatch):
+        """Pairs without colon are ignored in authorized_bees parsing."""
         with monkeypatch.context() as m:
             m.setattr('manyfaced.common.config._find_config_file', lambda: None)
-            m.setenv('HONEY_AUTHORISED_BEARS', 'bear1:key1;invalid_no_colon;bear2:key2')
+            m.setenv('HONEY_AUTHORIZED_BEES', 'bee1:key1;invalid_no_colon;bee2:key2')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {'bear1': 'key1', 'bear2': 'key2'}
+        assert cfg.AUTHORIZED_BEES == {'bee1': 'key1', 'bee2': 'key2'}
 
-    def test_authorised_bears_from_toml(self, tmp_path, monkeypatch):
-        """AUTHORISEDBEARS can be set via TOML file."""
+    def test_authorized_bees_from_toml(self, tmp_path, monkeypatch):
+        """AUTHORIZED_BEES can be set via TOML file."""
         toml_content = """
 [security]
-authorised_bears = "toml_bear:toml_key"
+authorized_bees = "toml_bee:toml_key"
 """
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
             m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
-            m.delenv('HONEY_AUTHORISED_BEARS', raising=False)
+            m.delenv('HONEY_AUTHORIZED_BEES', raising=False)
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {'toml_bear': 'toml_key'}
+        assert cfg.AUTHORIZED_BEES == {'toml_bee': 'toml_key'}
 
-    def test_authorised_bears_env_overrides_toml(self, tmp_path, monkeypatch):
-        """AUTHORISEDBEARS env var overrides TOML."""
+    def test_authorized_bees_env_overrides_toml(self, tmp_path, monkeypatch):
+        """AUTHORIZED_BEES env var overrides TOML."""
         toml_content = """
 [security]
-authorised_bears = "toml_bear:toml_key"
+authorized_bees = "toml_bee:toml_key"
 """
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
             m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
-            m.setenv('HONEY_AUTHORISED_BEARS', 'env_bear:env_key')
+            m.setenv('HONEY_AUTHORIZED_BEES', 'env_bee:env_key')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {'env_bear': 'env_key'}
+        assert cfg.AUTHORIZED_BEES == {'env_bee': 'env_key'}
 
 
 # ===================================================================
@@ -615,13 +615,13 @@ class TestResolve:
         assert result == 'env_folder'
 
     def test_resolve_dict_default(self):
-        result = _resolve('authorised_bears', {}, 'security', None, 'HONEY_')
+        result = _resolve('authorized_bees', {}, 'security', None, 'HONEY_')
         assert result == {}
 
     def test_resolve_dict_from_toml(self):
-        toml = {'security.authorised_bears': 'bear1:key1'}
-        result = _resolve('authorised_bears', {}, 'security', toml, 'HONEY_')
-        assert result == {'bear1': 'key1'}
+        toml = {'security.authorized_bees': 'bee1:key1'}
+        result = _resolve('authorized_bees', {}, 'security', toml, 'HONEY_')
+        assert result == {'bee1': 'key1'}
 
     def test_resolve_tuple_from_env(self, monkeypatch):
         monkeypatch.setenv('HONEY_BACKENDS', 'sqlite;postgresql')
@@ -703,7 +703,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -730,7 +730,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='single',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -757,7 +757,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -788,7 +788,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='80,443,8080,3306',
             DEFAULT_KEY='default_beehive_key',
@@ -816,7 +816,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='top',
             HONEY_TOP_PORTS='80, 443, 8080',
             DEFAULT_KEY='default_beehive_key',
@@ -844,7 +844,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='all',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',
@@ -874,7 +874,7 @@ class TestConfigResolvePorts:
             DB_PG_DB='honeypot',
             DB_PG_USER='postgres',
             DB_PG_PASSWORD='***',
-            AUTHORISEDBEARS={},
+            AUTHORIZED_BEES={},
             HONEY_PORT_MODE='TOP',
             HONEY_TOP_PORTS='',
             DEFAULT_KEY='default_beehive_key',

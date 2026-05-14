@@ -74,18 +74,18 @@ mkdir -p mygeoip/GeoIP
 
 ## Authorization (Server Only)
 
-### AUTHORISEDBEARS
+### AUTHORIZED_BEANS
 
 Dict mapping bot identifiers to their encryption keys. Only bots whose identifier appears here will have their reports accepted.
 
 ```python
-AUTHORISEDBEARS = {
+AUTHORIZED_BEANS = {
     "honeybee": "beehive123",
     # "other_client": "other_key",
 }
 ```
 
-If `AUTHORISEDBEARS` is empty or the identifier is not found, the server will reject the report.
+If `AUTHORIZED_BEANS` is empty or the identifier is not found, the server will reject the report.
 
 ### DETECTEDID
 
@@ -122,7 +122,7 @@ DETECTEDID = {
 - [ ] Set `AUTOFOLDER` for data storage (if applicable)
 - [ ] Set `DB_PATH` to a secure, loggable location
 - [ ] Set `DB_LOGGING` to control debug output verbosity
-- [ ] Add `AUTHORISEDBEARS` entries if deploying multiple clients
+- [ ] Add `AUTHORIZED_BEANS` entries if deploying multiple clients
 - [ ] Back up your `settings.py` file (contains secrets!)
 - [ ] Verify the honeypot is on an isolated network
 

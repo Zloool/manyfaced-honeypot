@@ -193,8 +193,8 @@ pg_user = "postgres"
 pg_password = "postgres"
 
 [security]
-# semicolon-separated bearid:key pairs
-authorised_bears = ""
+# semicolon-separated "bee_id:key" pairs for authorized client sensors (bees)
+authorized_bees = ""
 ```
 
 ### Environment Variables

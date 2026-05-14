@@ -105,7 +105,7 @@ Each handler:
 
 SERVER-side handler. When a report arrives:
 1. Extends `BaseHandler` for encrypted message processing
-2. `get_key()` looks up `AUTHORISEDBEARS` dict by identifier
+2. `get_key()` looks up `AUTHORIZED_BEANS` dict by identifier
 3. `process_request()` spawns `save_data()` process to insert into DB
 4. Returns "200 OK" as response
 
@@ -272,7 +272,7 @@ test/
 - Use real `AESCipher` for encryption roundtrips
 - Check SQLite DB directly for persistence tests
 - Mock the `geoip2` module (it can't be imported in tests)
-- Set `AUTHORISEDBEARS` via `sys.modules` dict, not env var
+- Set `AUTHORIZED_BEANS` via `sys.modules` dict, not env var
 
 ## Security Notes
 
@@ -280,7 +280,7 @@ test/
 
 2. **Shared secrets** — `HIVEPASS` is the shared encryption key. Never commit real keys. Use environment variables or `settings.toml.example` (gitignored).
 
-3. **AUTHORISEDBEARS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
+3. **AUTHORIZED_BEANS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
 
 4. **geoip2 dependency** — The `python-geoip-geolite2` package requires a GeoLite2 database to be installed separately. Without it, country/continent fields will be empty.
 
@@ -340,7 +340,7 @@ See existing handlers for patterns — `wordpress_handler.py` is a good referenc
 - [ ] Set `HONEY_HIVEHOST` to your actual server IP
 - [ ] Set `HONEY_HIVEPORT` to the correct port
 - [ ] Configure `DB_BACKEND` and `DB_*` settings
-- [ ] Add authorized bears to `AUTHORISEDBEARS` if needed
+- [ ] Add authorized bears to `AUTHORIZED_BEANS` if needed
 - [ ] Verify `temp.db` directory is writable
 - [ ] Set up monitoring/alerting for bot connection volume
 - [ ] Consider rate limiting to avoid abuse of honeypot ports

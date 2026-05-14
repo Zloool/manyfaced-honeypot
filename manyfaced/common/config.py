@@ -41,7 +41,7 @@ TOML config file layout (the file is auto-generated if run with --generate-confi
     pg_password = "postgres"
 
     [security]
-    authorised_bears = ""  # semicolon-separated "bear_id:key" pairs
+    authorized_bees = ""  # semicolon-separated "bee_id:key" pairs for client sensors
 
     [ai]
     enabled = false
@@ -73,7 +73,7 @@ _DEFAULT_DB_PG_PORT = 5432
 _DEFAULT_DB_PG_DB = 'honeypot'
 _DEFAULT_DB_PG_USER = 'postgres'
 _DEFAULT_DB_PG_PASSWORD = '***'
-_DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
+_DEFAULT_AUTHORIZED_BEES_DEFAULTS: dict[str, str] = {}
 
 # ── port mode configuration ─────────────────────────────────────────────────
 # Port modes for CLIENT honeypot:
@@ -254,7 +254,7 @@ class Config:
     DB_PG_DB: str
     DB_PG_USER: str
     DB_PG_PASSWORD: str
-    AUTHORISEDBEARS: dict[str, str]
+    AUTHORIZED_BEES: dict[str, str]
 
     # Port mode configuration
     HONEY_PORT_MODE: str  # "single", "top", or "all"
@@ -303,10 +303,10 @@ class Config:
             DB_PG_PASSWORD=str(
                 _resolve('pg_password', _DEFAULT_DB_PG_PASSWORD, 'database', toml, prefix)
             ),
-            AUTHORISEDBEARS=dict(
+            AUTHORIZED_BEES=dict(
                 _resolve(
-                    'authorised_bears',
-                    _DEFAULT_AUTHORISEDBEARS_DEFAULTS,
+                    'authorized_bees',
+                    _DEFAULT_AUTHORIZED_BEES_DEFAULTS,
                     'security',
                     toml,
                     prefix,
@@ -358,8 +358,8 @@ class Config:
             f'  pg_password = "{self.DB_PG_PASSWORD}"',
             '',
             '[security]',
-            '  # semicolon-separated bearid:key pairs; e.g. "bear1:key1;bear2:key2"',
-            '  authorised_bears = ""',
+            '  # semicolon-separated bean_id:key pairs for client sensors; e.g. "sensor1:key1;sensor2:key2"',
+            '  authorized_bees = ""',
             '',
             '[logging]',
             '  # Path to the JSON log file',
