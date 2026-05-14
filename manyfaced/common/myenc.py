@@ -26,7 +26,7 @@ class AESCipher(object):
         aesgcm = AESGCM(self.key)
         # AAD is empty; ciphertext includes the 16-byte GCM tag appended
         ct_with_tag = aesgcm.encrypt(nonce, raw, None)
-        return base64.b64encode(nonce + ct_with_tag).decode("ascii")
+        return base64.b64encode(nonce + ct_with_tag).decode('ascii')
 
     def decrypt(self, enc: str) -> bytes:
         """Decrypt a base64-encoded GCM message. Returns plaintext bytes."""

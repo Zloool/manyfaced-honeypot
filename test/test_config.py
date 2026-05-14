@@ -14,7 +14,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Ensure project root is importable
 # ---------------------------------------------------------------------------
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -23,9 +23,9 @@ if project_root not in sys.path:
 # ---------------------------------------------------------------------------
 geoip_mock = MagicMock()
 geoip_mock.geolite2.geolite2 = geoip_mock.geolite2
-sys.modules["geoip"] = geoip_mock
-sys.modules["geoip.geolite2"] = geoip_mock.geolite2
-sys.modules["GeoIP"] = MagicMock()
+sys.modules['geoip'] = geoip_mock
+sys.modules['geoip.geolite2'] = geoip_mock.geolite2
+sys.modules['GeoIP'] = MagicMock()
 
 # ---------------------------------------------------------------------------
 # Import units under test
@@ -47,7 +47,7 @@ class _TempDB:
 
     def __enter__(self):
         self._real_open = open
-        self._mock = patch("manyfaced.common.utils.open", self._patched_open)
+        self._mock = patch('manyfaced.common.utils.open', self._patched_open)
         self._mock.start()
         return self.path
 
@@ -61,7 +61,7 @@ class _TempDB:
 
 def _write_toml(tmp_path, content):
     """Write a TOML file and return its Path."""
-    toml_path = tmp_path / "config.toml"
+    toml_path = tmp_path / 'config.toml'
     toml_path.write_text(content)
     return toml_path
 
@@ -89,7 +89,7 @@ class TestConfigDefaults:
     def _clear_env(self, monkeypatch):
         """Remove all HONEY_ env vars."""
         for key in list(os.environ.keys()):
-            if key.startswith("HONEY_"):
+            if key.startswith('HONEY_'):
                 monkeypatch.delenv(key, raising=False)
 
     def test_defaults_no_toml_no_env(self, tmp_path, monkeypatch):
@@ -110,25 +110,25 @@ default_key = "default_beehive_key"
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
 
             cfg = Config.load()
 
         assert cfg.HONEYPORT == 80
-        assert cfg.HONEYFOLDER == "bots"
-        assert cfg.HIVEHOST == "127.0.0.1"
+        assert cfg.HONEYFOLDER == 'bots'
+        assert cfg.HIVEHOST == '127.0.0.1'
         assert cfg.HIVEPORT == 8080
-        assert cfg.HIVELOGIN == "honeybee"
-        assert cfg.HIVEPASS == "beehive123"
-        assert cfg.DB_BACKEND == "sqlite"
-        assert cfg.DB_PATH == "bots/honeypot.db"
-        assert cfg.DB_PG_HOST == "localhost"
+        assert cfg.HIVELOGIN == 'honeybee'
+        assert cfg.HIVEPASS == 'beehive123'
+        assert cfg.DB_BACKEND == 'sqlite'
+        assert cfg.DB_PATH == 'bots/honeypot.db'
+        assert cfg.DB_PG_HOST == 'localhost'
         assert cfg.DB_PG_PORT == 5432
-        assert cfg.DB_PG_DB == "honeypot"
-        assert cfg.DB_PG_USER == "postgres"
-        assert cfg.DB_PG_PASSWORD == "***"
+        assert cfg.DB_PG_DB == 'honeypot'
+        assert cfg.DB_PG_USER == 'postgres'
+        assert cfg.DB_PG_PASSWORD == '***'
         assert cfg.AUTHORISEDBEARS == {}
-        assert cfg.DEFAULT_KEY == "default_beehive_key"
+        assert cfg.DEFAULT_KEY == 'default_beehive_key'
 
 
 class TestConfigToml:
@@ -137,7 +137,7 @@ class TestConfigToml:
     @pytest.fixture(autouse=True)
     def _clear_env(self, monkeypatch):
         for key in list(os.environ.keys()):
-            if key.startswith("HONEY_"):
+            if key.startswith('HONEY_'):
                 monkeypatch.delenv(key, raising=False)
 
     def test_toml_overrides_defaults(self, tmp_path, monkeypatch):
@@ -168,22 +168,22 @@ authorised_bears = ""
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
 
             cfg = Config.load()
 
         assert cfg.HONEYPORT == 443
-        assert cfg.HONEYFOLDER == "malware"
-        assert cfg.HIVEHOST == "10.0.0.1"
+        assert cfg.HONEYFOLDER == 'malware'
+        assert cfg.HIVEHOST == '10.0.0.1'
         assert cfg.HIVEPORT == 9999
-        assert cfg.HIVELOGIN == "admin"
-        assert cfg.HIVEPASS == "secret123"
-        assert cfg.DB_PATH == "data/honeypot.db"
-        assert cfg.DB_PG_HOST == "db.example.com"
+        assert cfg.HIVELOGIN == 'admin'
+        assert cfg.HIVEPASS == 'secret123'
+        assert cfg.DB_PATH == 'data/honeypot.db'
+        assert cfg.DB_PG_HOST == 'db.example.com'
         assert cfg.DB_PG_PORT == 5433
-        assert cfg.DB_PG_DB == "myhoneypot"
-        assert cfg.DB_PG_USER == "admin"
-        assert cfg.DB_PG_PASSWORD == "dbpass"
+        assert cfg.DB_PG_DB == 'myhoneypot'
+        assert cfg.DB_PG_USER == 'admin'
+        assert cfg.DB_PG_PASSWORD == 'dbpass'
 
 
 class TestConfigEnvVars:
@@ -203,17 +203,17 @@ hiveport = 9999
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.setenv("HONEY_HONEYPORT", "8080")
-            m.setenv("HONEY_HONEYFOLDER", "env_folder")
-            m.setenv("HONEY_HIVEPORT", "3000")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
+            m.setenv('HONEY_HONEYPORT', '8080')
+            m.setenv('HONEY_HONEYFOLDER', 'env_folder')
+            m.setenv('HONEY_HIVEPORT', '3000')
 
             cfg = Config.load()
 
         assert cfg.HONEYPORT == 8080
-        assert cfg.HONEYFOLDER == "env_folder"
+        assert cfg.HONEYFOLDER == 'env_folder'
         assert cfg.HIVEPORT == 3000
-        assert cfg.HIVEHOST == "10.0.0.1"
+        assert cfg.HIVEHOST == '10.0.0.1'
 
 
 class TestConfigEnvVarPrecedence:
@@ -247,25 +247,25 @@ authorised_bears = ""
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.setenv("HONEY_HONEYPORT", "9090")
-            m.setenv("HONEY_HIVEPORT", "7070")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
+            m.setenv('HONEY_HONEYPORT', '9090')
+            m.setenv('HONEY_HIVEPORT', '7070')
 
             cfg = Config.load()
 
         assert cfg.HONEYPORT == 9090
         assert cfg.HIVEPORT == 7070
-        assert cfg.HONEYFOLDER == "toml_folder"
-        assert cfg.HIVEHOST == "10.0.0.1"
-        assert cfg.HIVELOGIN == "toml_login"
-        assert cfg.HIVEPASS == "toml_pass"
-        assert cfg.DB_BACKEND == "postgresql"
-        assert cfg.DB_PATH == "toml_path.db"
-        assert cfg.DB_PG_HOST == "toml_host"
+        assert cfg.HONEYFOLDER == 'toml_folder'
+        assert cfg.HIVEHOST == '10.0.0.1'
+        assert cfg.HIVELOGIN == 'toml_login'
+        assert cfg.HIVEPASS == 'toml_pass'
+        assert cfg.DB_BACKEND == 'postgresql'
+        assert cfg.DB_PATH == 'toml_path.db'
+        assert cfg.DB_PG_HOST == 'toml_host'
         assert cfg.DB_PG_PORT == 5433
-        assert cfg.DB_PG_DB == "toml_db"
-        assert cfg.DB_PG_USER == "toml_user"
-        assert cfg.DB_PG_PASSWORD == "toml_pass"
+        assert cfg.DB_PG_DB == 'toml_db'
+        assert cfg.DB_PG_USER == 'toml_user'
+        assert cfg.DB_PG_PASSWORD == 'toml_pass'
 
     def test_defaults_when_no_toml_no_env(self, tmp_path, monkeypatch):
         """When no TOML and no env, all defaults apply EXCEPT HIVEPASS/DEFAULT_KEY.
@@ -285,36 +285,36 @@ default_key = "default_beehive_key"
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
 
             cfg = Config.load()
 
         assert cfg.HONEYPORT == 80
-        assert cfg.HONEYFOLDER == "bots"
-        assert cfg.HIVEHOST == "127.0.0.1"
+        assert cfg.HONEYFOLDER == 'bots'
+        assert cfg.HIVEHOST == '127.0.0.1'
         assert cfg.HIVEPORT == 8080
-        assert cfg.HIVELOGIN == "honeybee"
-        assert cfg.HIVEPASS == "beehive123"
-        assert cfg.DB_BACKEND == "sqlite"
-        assert cfg.DB_PATH == "bots/honeypot.db"
-        assert cfg.DB_PG_HOST == "localhost"
+        assert cfg.HIVELOGIN == 'honeybee'
+        assert cfg.HIVEPASS == 'beehive123'
+        assert cfg.DB_BACKEND == 'sqlite'
+        assert cfg.DB_PATH == 'bots/honeypot.db'
+        assert cfg.DB_PG_HOST == 'localhost'
         assert cfg.DB_PG_PORT == 5432
-        assert cfg.DB_PG_DB == "honeypot"
-        assert cfg.DB_PG_USER == "postgres"
-        assert cfg.DB_PG_PASSWORD == "***"
-        assert cfg.DEFAULT_KEY == "default_beehive_key"
+        assert cfg.DB_PG_DB == 'honeypot'
+        assert cfg.DB_PG_USER == 'postgres'
+        assert cfg.DB_PG_PASSWORD == '***'
+        assert cfg.DEFAULT_KEY == 'default_beehive_key'
 
     def test_hivepass_required_raises_systemexit(self, tmp_path, monkeypatch):
         """Config.load() with no HIVEPASS raises SystemExit(1) at module level."""
         import subprocess
         import sys
 
-        toml_content = "[honeypot]\nhoneyport = 80\n"
-        toml_path = tmp_path / "config.toml"
+        toml_content = '[honeypot]\nhoneyport = 80\n'
+        toml_path = tmp_path / 'config.toml'
         toml_path.write_text(toml_content)
 
         # Use a fresh Python process with a clean sys.modules
-        script = tmp_path / "test_import.py"
+        script = tmp_path / 'test_import.py'
         script.write_text(f"""
 import sys, os, importlib, importlib.util, types
 
@@ -345,7 +345,7 @@ except SystemExit as e:
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
         assert result.returncode == 1, (
-            f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+            f'Expected SystemExit(1), got {result.returncode}: {result.stderr}'
         )
 
     def test_default_key_required_raises_systemexit(self, tmp_path, monkeypatch):
@@ -354,10 +354,10 @@ except SystemExit as e:
         import sys
 
         toml_content = '[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = "testpass"\n'
-        toml_path = tmp_path / "config.toml"
+        toml_path = tmp_path / 'config.toml'
         toml_path.write_text(toml_content)
 
-        script = tmp_path / "test_import2.py"
+        script = tmp_path / 'test_import2.py'
         script.write_text(f"""
 import sys, os, importlib, importlib.util
 
@@ -385,7 +385,7 @@ except SystemExit as e:
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
         assert result.returncode == 1, (
-            f"Expected SystemExit(1), got {result.returncode}: {result.stderr}"
+            f'Expected SystemExit(1), got {result.returncode}: {result.stderr}'
         )
 
 
@@ -394,89 +394,89 @@ class TestConfigGenerateConfigFile:
 
     def test_creates_file_at_default_path(self, tmp_path, monkeypatch):
         """generate_config_file writes to ~/.config/manyfaced/config.toml by default."""
-        fake_home = tmp_path / "home"
+        fake_home = tmp_path / 'home'
         fake_home.mkdir()
-        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setenv('HOME', str(fake_home))
 
         cfg = Config(
             HONEYPORT=443,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="single",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
 
         path = cfg.generate_config_file()
 
-        assert path == fake_home / ".config" / "manyfaced" / "config.toml"
+        assert path == fake_home / '.config' / 'manyfaced' / 'config.toml'
         assert path.exists()
         content = path.read_text()
-        assert "[honeypot]" in content
-        assert "honeyport = 443" in content
+        assert '[honeypot]' in content
+        assert 'honeyport = 443' in content
         assert 'honeyfolder = "bots"' in content
-        assert "[hive]" in content
+        assert '[hive]' in content
         assert 'hivehost = "127.0.0.1"' in content
-        assert "hiveport = 8080" in content
+        assert 'hiveport = 8080' in content
         assert 'hivelogin = "honeybee"' in content
         assert 'hivepass = "beehive123"' in content
-        assert "[database]" in content
+        assert '[database]' in content
         assert 'backend = "sqlite"' in content
         assert 'path = "bots/honeypot.db"' in content
         assert 'pg_host = "localhost"' in content
-        assert "pg_port = 5432" in content
+        assert 'pg_port = 5432' in content
         assert 'pg_db = "honeypot"' in content
         assert 'pg_user = "postgres"' in content
         assert 'pg_password = "***"' in content
-        assert "[security]" in content
+        assert '[security]' in content
 
     def test_creates_file_at_custom_path(self, tmp_path, monkeypatch):
         """generate_config_file writes to a custom path when specified."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="single",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
 
-        custom_path = tmp_path / "custom" / "config.toml"
+        custom_path = tmp_path / 'custom' / 'config.toml'
         path = cfg.generate_config_file(path=custom_path)
 
         assert path == custom_path
         assert path.exists()
-        assert "honeyport = 80" in path.read_text()
+        assert 'honeyport = 80' in path.read_text()
 
 
 class TestConfigLoadCustomPath:
@@ -493,7 +493,7 @@ honeyport = 8888
         cfg = Config.load(config_path=config_path)
 
         assert cfg.HONEYPORT == 8888
-        assert cfg.HONEYFOLDER == "bots"
+        assert cfg.HONEYFOLDER == 'bots'
 
     def test_load_with_string_path(self, tmp_path, monkeypatch):
         """Config.load accepts a string config_path."""
@@ -514,22 +514,22 @@ class TestConfigAuthorisedBears:
     def test_env_var_authorised_bears(self, monkeypatch):
         """AUTHORISEDBEARS parsed from HONEY_AUTHORISED_BEARS env var."""
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISED_BEARS", "bear1:key1;bear2:key2;bear3:key3")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: None)
+            m.setenv('HONEY_AUTHORISED_BEARS', 'bear1:key1;bear2:key2;bear3:key3')
 
             cfg = Config.load()
 
         assert cfg.AUTHORISEDBEARS == {
-            "bear1": "key1",
-            "bear2": "key2",
-            "bear3": "key3",
+            'bear1': 'key1',
+            'bear2': 'key2',
+            'bear3': 'key3',
         }
 
     def test_authorised_bears_empty_env(self, monkeypatch):
         """Empty HONEY_AUTHORISED_BEARS env var returns default empty dict."""
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISED_BEARS", "")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: None)
+            m.setenv('HONEY_AUTHORISED_BEARS', '')
 
             cfg = Config.load()
 
@@ -538,12 +538,12 @@ class TestConfigAuthorisedBears:
     def test_authorised_bears_without_colon_ignored(self, monkeypatch):
         """Pairs without colon are ignored in authorised_bears parsing."""
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_AUTHORISED_BEARS", "bear1:key1;invalid_no_colon;bear2:key2")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: None)
+            m.setenv('HONEY_AUTHORISED_BEARS', 'bear1:key1;invalid_no_colon;bear2:key2')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {"bear1": "key1", "bear2": "key2"}
+        assert cfg.AUTHORISEDBEARS == {'bear1': 'key1', 'bear2': 'key2'}
 
     def test_authorised_bears_from_toml(self, tmp_path, monkeypatch):
         """AUTHORISEDBEARS can be set via TOML file."""
@@ -554,12 +554,12 @@ authorised_bears = "toml_bear:toml_key"
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.delenv("HONEY_AUTHORISED_BEARS", raising=False)
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
+            m.delenv('HONEY_AUTHORISED_BEARS', raising=False)
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {"toml_bear": "toml_key"}
+        assert cfg.AUTHORISEDBEARS == {'toml_bear': 'toml_key'}
 
     def test_authorised_bears_env_overrides_toml(self, tmp_path, monkeypatch):
         """AUTHORISEDBEARS env var overrides TOML."""
@@ -570,12 +570,12 @@ authorised_bears = "toml_bear:toml_key"
         config_path = _write_toml(tmp_path, toml_content)
 
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: config_path)
-            m.setenv("HONEY_AUTHORISED_BEARS", "env_bear:env_key")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: config_path)
+            m.setenv('HONEY_AUTHORISED_BEARS', 'env_bear:env_key')
 
             cfg = Config.load()
 
-        assert cfg.AUTHORISEDBEARS == {"env_bear": "env_key"}
+        assert cfg.AUTHORISEDBEARS == {'env_bear': 'env_key'}
 
 
 # ===================================================================
@@ -587,58 +587,56 @@ class TestResolve:
     """Tests for the _resolve helper function."""
 
     def test_resolve_int_default(self):
-        result = _resolve("honeyport", 80, "honeypot", None, "HONEY_")
+        result = _resolve('honeyport', 80, 'honeypot', None, 'HONEY_')
         assert result == 80
 
     def test_resolve_int_from_toml(self):
-        toml = {"honeypot.honeyport": 443}
-        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        toml = {'honeypot.honeyport': 443}
+        result = _resolve('honeyport', 80, 'honeypot', toml, 'HONEY_')
         assert result == 443
 
     def test_resolve_int_from_env(self, monkeypatch):
-        monkeypatch.setenv("HONEY_HONEYPORT", "9090")
-        result = _resolve("honeyport", 80, "honeypot", None, "HONEY_")
+        monkeypatch.setenv('HONEY_HONEYPORT', '9090')
+        result = _resolve('honeyport', 80, 'honeypot', None, 'HONEY_')
         assert result == 9090
 
     def test_resolve_str_default(self):
-        result = _resolve("honeyfolder", "bots", "honeypot", None, "HONEY_")
-        assert result == "bots"
+        result = _resolve('honeyfolder', 'bots', 'honeypot', None, 'HONEY_')
+        assert result == 'bots'
 
     def test_resolve_str_from_toml(self):
-        toml = {"honeypot.honeyfolder": "malware"}
-        result = _resolve("honeyfolder", "bots", "honeypot", toml, "HONEY_")
-        assert result == "malware"
+        toml = {'honeypot.honeyfolder': 'malware'}
+        result = _resolve('honeyfolder', 'bots', 'honeypot', toml, 'HONEY_')
+        assert result == 'malware'
 
     def test_resolve_str_from_env(self, monkeypatch):
-        monkeypatch.setenv("HONEY_HONEYFOLDER", "env_folder")
-        result = _resolve("honeyfolder", "bots", "honeypot", None, "HONEY_")
-        assert result == "env_folder"
+        monkeypatch.setenv('HONEY_HONEYFOLDER', 'env_folder')
+        result = _resolve('honeyfolder', 'bots', 'honeypot', None, 'HONEY_')
+        assert result == 'env_folder'
 
     def test_resolve_dict_default(self):
-        result = _resolve("authorised_bears", {}, "security", None, "HONEY_")
+        result = _resolve('authorised_bears', {}, 'security', None, 'HONEY_')
         assert result == {}
 
     def test_resolve_dict_from_toml(self):
-        toml = {"security.authorised_bears": "bear1:key1"}
-        result = _resolve("authorised_bears", {}, "security", toml, "HONEY_")
-        assert result == {"bear1": "key1"}
+        toml = {'security.authorised_bears': 'bear1:key1'}
+        result = _resolve('authorised_bears', {}, 'security', toml, 'HONEY_')
+        assert result == {'bear1': 'key1'}
 
     def test_resolve_tuple_from_env(self, monkeypatch):
-        monkeypatch.setenv("HONEY_BACKENDS", "sqlite;postgresql")
-        result = _resolve(
-            "backends", ("sqlite", "postgresql"), "database", None, "HONEY_"
-        )
-        assert result == ["sqlite", "postgresql"]
+        monkeypatch.setenv('HONEY_BACKENDS', 'sqlite;postgresql')
+        result = _resolve('backends', ('sqlite', 'postgresql'), 'database', None, 'HONEY_')
+        assert result == ['sqlite', 'postgresql']
 
     def test_env_overrides_toml(self, monkeypatch):
-        toml = {"honeypot.honeyport": 443}
-        monkeypatch.setenv("HONEY_HONEYPORT", "9090")
-        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        toml = {'honeypot.honeyport': 443}
+        monkeypatch.setenv('HONEY_HONEYPORT', '9090')
+        result = _resolve('honeyport', 80, 'honeypot', toml, 'HONEY_')
         assert result == 9090
 
     def test_toml_overrides_default(self):
-        toml = {"honeypot.honeyport": 443}
-        result = _resolve("honeyport", 80, "honeypot", toml, "HONEY_")
+        toml = {'honeypot.honeyport': 443}
+        result = _resolve('honeyport', 80, 'honeypot', toml, 'HONEY_')
         assert result == 443
 
 
@@ -646,7 +644,7 @@ class TestEnvPrefix:
     """Tests for _env_prefix."""
 
     def test_default_prefix(self):
-        assert _env_prefix() == "HONEY_"
+        assert _env_prefix() == 'HONEY_'
 
 
 class TestLoadToml:
@@ -663,12 +661,12 @@ hiveport = 9999
 """
         toml_path = _write_toml(tmp_path, toml_content)
         result = _load_toml(toml_path)
-        assert result["honeypot.honeyport"] == 443
-        assert result["honeypot.honeyfolder"] == "test"
-        assert result["hive.hiveport"] == 9999
+        assert result['honeypot.honeyport'] == 443
+        assert result['honeypot.honeyfolder'] == 'test'
+        assert result['hive.hiveport'] == 9999
 
     def test_load_toml_missing_file_raises(self, tmp_path):
-        toml_path = tmp_path / "nonexistent.toml"
+        toml_path = tmp_path / 'nonexistent.toml'
         with pytest.raises(FileNotFoundError):
             _load_toml(toml_path)
 
@@ -685,33 +683,33 @@ class TestConfigResolvePorts:
     def _clear_env(self, monkeypatch):
         """Remove all HONEY_ env vars."""
         for key in list(os.environ.keys()):
-            if key.startswith("HONEY_"):
+            if key.startswith('HONEY_'):
                 monkeypatch.delenv(key, raising=False)
 
     def test_resolve_ports_single_default(self):
         """Single mode returns [HONEYPORT]."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="single",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         assert cfg.resolve_ports() == [80]
 
@@ -719,26 +717,26 @@ class TestConfigResolvePorts:
         """Single mode with custom HONEYPORT."""
         cfg = Config(
             HONEYPORT=443,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="single",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         assert cfg.resolve_ports() == [443]
 
@@ -746,26 +744,26 @@ class TestConfigResolvePorts:
         """Top mode returns the default top 50 ports."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="top",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='top',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -777,26 +775,26 @@ class TestConfigResolvePorts:
         """Top mode with custom port list."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="top",
-            HONEY_TOP_PORTS="80,443,8080,3306",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='top',
+            HONEY_TOP_PORTS='80,443,8080,3306',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 3306, 8080]
@@ -805,26 +803,26 @@ class TestConfigResolvePorts:
         """Top mode with custom port list containing spaces."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="top",
-            HONEY_TOP_PORTS="80, 443, 8080",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='top',
+            HONEY_TOP_PORTS='80, 443, 8080',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         ports = cfg.resolve_ports()
         assert ports == [80, 443, 8080]
@@ -833,26 +831,26 @@ class TestConfigResolvePorts:
         """All mode returns all 65535 ports."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="all",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='all',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 65535
@@ -863,26 +861,26 @@ class TestConfigResolvePorts:
         """Port mode is case-insensitive."""
         cfg = Config(
             HONEYPORT=80,
-            HONEYFOLDER="bots",
-            HIVEHOST="127.0.0.1",
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
             HIVEPORT=8080,
-            HIVELOGIN="honeybee",
-            HIVEPASS="beehive123",
-            DB_BACKEND="sqlite",
-            DB_BACKENDS=("sqlite", "postgresql"),
-            DB_PATH="bots/honeypot.db",
-            DB_PG_HOST="localhost",
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
             DB_PG_PORT=5432,
-            DB_PG_DB="honeypot",
-            DB_PG_USER="postgres",
-            DB_PG_PASSWORD="***",
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
             AUTHORISEDBEARS={},
-            HONEY_PORT_MODE="TOP",
-            HONEY_TOP_PORTS="",
-            DEFAULT_KEY="default_beehive_key",
-            DUMP_FILE="/var/lib/manyfaced/dump.jsonl",
-            LOG_FILE="~/.local/share/manyfaced/honeypot.log",
-            LOCKFILE="/run/manyfaced/lockfile",
+            HONEY_PORT_MODE='TOP',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='/var/lib/manyfaced/dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            LOCKFILE='/run/manyfaced/lockfile',
         )
         ports = cfg.resolve_ports()
         assert len(ports) == 50
@@ -890,11 +888,11 @@ class TestConfigResolvePorts:
     def test_resolve_ports_env_override(self, monkeypatch):
         """HONEY_PORT_MODE env var overrides config."""
         with monkeypatch.context() as m:
-            m.setattr("manyfaced.common.config._find_config_file", lambda: None)
-            m.setenv("HONEY_PORT_MODE", "top")
-            m.setenv("HONEY_TOP_PORTS", "8080,9090")
+            m.setattr('manyfaced.common.config._find_config_file', lambda: None)
+            m.setenv('HONEY_PORT_MODE', 'top')
+            m.setenv('HONEY_TOP_PORTS', '8080,9090')
             cfg = Config.load()
-        assert cfg.HONEY_PORT_MODE == "top"
-        assert cfg.HONEY_TOP_PORTS == "8080,9090"
+        assert cfg.HONEY_PORT_MODE == 'top'
+        assert cfg.HONEY_TOP_PORTS == '8080,9090'
         ports = cfg.resolve_ports()
         assert ports == [8080, 9090]

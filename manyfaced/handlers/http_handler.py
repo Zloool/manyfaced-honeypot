@@ -63,7 +63,7 @@ def _report_worker():
             try:
                 fn(*args)
             except Exception:
-                logger.exception("Report worker error")
+                logger.exception('Report worker error')
             finally:
                 q.task_done()
         except _queue.Empty:
@@ -87,7 +87,7 @@ def _get_report_queue() -> _queue.Queue:
                         t = threading.Thread(
                             target=_report_worker,
                             daemon=True,
-                            name="report_worker",
+                            name='report_worker',
                         )
                         t.start()
                         _report_workers.append(t)
@@ -124,7 +124,7 @@ def _get_registry() -> HandlerRegistry:
         # Generic handler is last – catches everything else
         _registry.register(GenericHandler())
         logger.info(
-            "HandlerRegistry initialized with %d handlers",
+            'HandlerRegistry initialized with %d handlers',
             len(_registry.get_all_handlers()),
         )
     return _registry
@@ -148,7 +148,7 @@ class HTTPHandler:
         self.args = args
         self.update_event = update_event
 
-    def handle_request(self, message: str, bot_ip: str = "127.0.0.1"):
+    def handle_request(self, message: str, bot_ip: str = '127.0.0.1'):
         """Handle a raw HTTP request from a bot.
 
         Detects protocol before parsing and handles non-HTTP probes
@@ -162,42 +162,34 @@ class HTTPHandler:
             The honeypot response data (HTTP response string or bytes).
         """
         # Detect protocol before attempting HTTP parsing
-        raw_bytes = message.encode("utf-8") if isinstance(message, str) else message
+        raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
         protocol = detect_protocol(raw_bytes)
         protocol_info = get_protocol_info(raw_bytes) if protocol else {}
 
-        if protocol == "ssh":
+        if protocol == 'ssh':
             logger.info(
-                "SSH probe detected from %s: %s",
+                'SSH probe detected from %s: %s',
                 bot_ip,
-                protocol_info.get("client", "unknown"),
+                protocol_info.get('client', 'unknown'),
             )
             return self._handle_ssh_probe(bot_ip, protocol_info)
 
-        if protocol is not None and protocol != "http":
-            logger.info("Non-HTTP protocol detected from %s: %s", bot_ip, protocol)
+        if protocol is not None and protocol != 'http':
+            logger.info('Non-HTTP protocol detected from %s: %s', bot_ip, protocol)
             return self._handle_non_http_probe(bot_ip, protocol, protocol_info)
 
         # Parse the raw HTTP request
         try:
             parsed = HTTPRequest(message)
             # If parsing failed (path is None), create a minimal valid request
-            path_val = getattr(parsed, "path", None)
+            path_val = getattr(parsed, 'path', None)
             if path_val is None:
-                logger.debug(
-                    "HTTPRequest failed to parse path, using fallback for %s", bot_ip
-                )
-                fallback = (
-                    "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
-                )
+                logger.debug('HTTPRequest failed to parse path, using fallback for %s', bot_ip)
+                fallback = 'GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n'
                 parsed = HTTPRequest(fallback)
         except Exception as e:
-            logger.debug(
-                "Failed to parse HTTP request: %s, using fallback for %s", e, bot_ip
-            )
-            fallback = (
-                "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n"
-            )
+            logger.debug('Failed to parse HTTP request: %s, using fallback for %s', e, bot_ip)
+            fallback = 'GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n'
             parsed = HTTPRequest(fallback)
 
         # Build the data dict that process_request expects
@@ -205,12 +197,12 @@ class HTTPHandler:
         raw_for_report = (
             message
             if message
-            else ("GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n")
+            else ('GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n')
         )
         data = {
-            "ip": bot_ip,
-            "raw_request": raw_for_report,
-            "parsed_request": parsed,
+            'ip': bot_ip,
+            'raw_request': raw_for_report,
+            'parsed_request': parsed,
         }
 
         return self.process_request(data)
@@ -229,9 +221,9 @@ class HTTPHandler:
         """
         from manyfaced.client.client import send_report
 
-        request_time = str(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"))
-        server_host = getattr(self.args, "server_host", "127.0.0.1")
-        server_port = getattr(self.args, "server", None)
+        request_time = str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f'))
+        server_host = getattr(self.args, 'server_host', '127.0.0.1')
+        server_port = getattr(self.args, 'server', None)
 
         if server_port is None:
             return
@@ -249,13 +241,13 @@ class HTTPHandler:
         try:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:
-            logger.debug("DNS resolution failed for %s", bot_ip)
+            logger.debug('DNS resolution failed for %s', bot_ip)
 
         # Resolve geolocation off the hot path (with short timeout)
         try:
             bs.resolve_geo(bot_ip, timeout=2.0)
         except Exception:
-            logger.debug("Geo resolution failed for %s", bot_ip)
+            logger.debug('Geo resolution failed for %s', bot_ip)
 
         q = _get_report_queue()
         q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
@@ -271,41 +263,39 @@ class HTTPHandler:
             Fake SSH banner response bytes.
         """
         # Extract client version if available
-        client = protocol_info.get("client", "")
-        version = protocol_info.get("version", "")
+        client = protocol_info.get('client', '')
+        version = protocol_info.get('version', '')
 
         # Generate a realistic-looking SSH banner with varying OpenSSH versions
         banner_versions = [
-            "SSH-2.0-OpenSSH_9.6",
-            "SSH-2.0-OpenSSH_8.9",
-            "SSH-2.0-OpenSSH_7.9",
-            "SSH-2.0-libssh2_1.10.0",
+            'SSH-2.0-OpenSSH_9.6',
+            'SSH-2.0-OpenSSH_8.9',
+            'SSH-2.0-OpenSSH_7.9',
+            'SSH-2.0-libssh2_1.10.0',
         ]
-        banner = random.choice(banner_versions) + "\r\n"
+        banner = random.choice(banner_versions) + '\r\n'
 
-        logger.debug("Sent SSH banner to %s (client=%s)", bot_ip, client)
+        logger.debug('Sent SSH banner to %s (client=%s)', bot_ip, client)
 
         # Send report for SSH probe
         # Create a minimal parsed object for reporting
         class _ParsedSSH:
-            command = "SSH"
-            path = "/"
+            command = 'SSH'
+            path = '/'
             headers = {}
-            user_agent = client or "unknown"
-            request_version = version or "SSH-2.0"
+            user_agent = client or 'unknown'
+            request_version = version or 'SSH-2.0'
 
         self._send_report(
             bot_ip,
-            protocol_info.get("raw", "SSH-2.0-PUTTY"),
+            protocol_info.get('raw', 'SSH-2.0-PUTTY'),
             _ParsedSSH(),
             SSH_CLIENT,
-            protocol="ssh",
+            protocol='ssh',
         )
-        return banner.encode("utf-8")
+        return banner.encode('utf-8')
 
-    def _handle_non_http_probe(
-        self, bot_ip: str, protocol: str, protocol_info: dict
-    ) -> bytes:
+    def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
         """Handle non-HTTP protocol probes.
 
         Args:
@@ -320,56 +310,56 @@ class HTTPHandler:
         response = None
 
         # FTP: respond with a fake FTP banner
-        if protocol == "ftp":
+        if protocol == 'ftp':
             banners = [
-                "220 (vsFTPd 3.0.3)\r\n",
-                "220 Welcome to FTP service.\r\n",
-                "220 ProFTPD 1.3.5 Server\r\n",
+                '220 (vsFTPd 3.0.3)\r\n',
+                '220 Welcome to FTP service.\r\n',
+                '220 ProFTPD 1.3.5 Server\r\n',
             ]
-            response = random.choice(banners).encode("utf-8")
+            response = random.choice(banners).encode('utf-8')
             detected_id = UNKNOWN_NON_HTTP
 
         # Telnet: send null bytes (common telnet probe response)
-        elif protocol == "telnet":
-            response = b"\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1f"
+        elif protocol == 'telnet':
+            response = b'\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1f'
             detected_id = UNKNOWN_NON_HTTP
 
         # RDP: send a negative response
-        elif protocol == "rdp":
-            response = b"\x03\x00\x00\x1f\x0e\xe0\x00\x00\x18\x00\x01\xc1\x00\x00\x00"
+        elif protocol == 'rdp':
+            response = b'\x03\x00\x00\x1f\x0e\xe0\x00\x00\x18\x00\x01\xc1\x00\x00\x00'
             detected_id = UNKNOWN_NON_HTTP
 
         # VNC: respond with version string
-        elif protocol == "vnc":
-            response = b"RFB 003.003\r\n"
+        elif protocol == 'vnc':
+            response = b'RFB 003.003\r\n'
             detected_id = UNKNOWN_NON_HTTP
 
         # SMTP/POP3/IMAP: send a fake greeting
-        elif protocol in ("smtp", "pop3", "imap"):
+        elif protocol in ('smtp', 'pop3', 'imap'):
             greetings = {
-                "smtp": "220 manyfaced-honeypot ESMTP\r\n",
-                "pop3": "+OK manyfaced-honeypot POP3 ready\r\n",
-                "imap": "* OK manyfaced-honeypot IMAP4 ready\r\n",
+                'smtp': '220 manyfaced-honeypot ESMTP\r\n',
+                'pop3': '+OK manyfaced-honeypot POP3 ready\r\n',
+                'imap': '* OK manyfaced-honeypot IMAP4 ready\r\n',
             }
-            response = greetings[protocol].encode("utf-8")
+            response = greetings[protocol].encode('utf-8')
             detected_id = UNKNOWN_NON_HTTP
 
         else:
             # Unknown protocol: just close (empty response)
-            response = b""
+            response = b''
 
         if response:
             # Send report for non-HTTP probe
             class _ParsedNonHTTP:
                 command = protocol.upper()
-                path = "/"
-                version = protocol_info.get("version", protocol)
+                path = '/'
+                version = protocol_info.get('version', protocol)
                 headers = {}
-                user_agent = protocol_info.get("client", protocol)
+                user_agent = protocol_info.get('client', protocol)
 
             self._send_report(
                 bot_ip,
-                protocol_info.get("raw", ""),
+                protocol_info.get('raw', ''),
                 _ParsedNonHTTP(),
                 detected_id,
                 protocol=protocol,
@@ -391,24 +381,24 @@ class HTTPHandler:
         """
         from manyfaced.client.client import send_report
 
-        bot_ip = data["ip"]
-        raw_request = data["raw_request"]
-        parsed = data["parsed_request"]
-        request_time = str(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"))
+        bot_ip = data['ip']
+        raw_request = data['raw_request']
+        parsed = data['parsed_request']
+        request_time = str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f'))
 
-        logger.info("Incoming request from %s at %s", bot_ip, request_time)
+        logger.info('Incoming request from %s at %s', bot_ip, request_time)
 
         # Extract headers from parsed request
         headers = {}
-        if hasattr(parsed, "headers") and parsed.headers:
+        if hasattr(parsed, 'headers') and parsed.headers:
             try:
                 headers = dict(parsed.headers)
             except Exception:
-                logger.debug("Failed to parse request headers for %s", bot_ip)
+                logger.debug('Failed to parse request headers for %s', bot_ip)
 
         # Route through the handler registry
         handler = _get_registry()
-        path = getattr(parsed, "path", "/")
+        path = getattr(parsed, 'path', '/')
 
         # Try handler registry first
         result = handler.generate_response(
@@ -421,17 +411,17 @@ class HTTPHandler:
         if result is not None:
             output_data, detected = result
             logger.debug(
-                "Handler registry returned response for %s (detected=%s)",
+                'Handler registry returned response for %s (detected=%s)',
                 bot_ip,
                 detected,
             )
 
             # Record the full interaction in the dialogue for all matching handlers
             request_data = {
-                "path": path,
-                "method": self._extract_method(raw_request),
-                "raw": raw_request,
-                "headers": headers,
+                'path': path,
+                'method': self._extract_method(raw_request),
+                'raw': raw_request,
+                'headers': headers,
             }
             matching_handlers = handler.get_all_matching_handlers(path)
             for h in matching_handlers:
@@ -441,14 +431,14 @@ class HTTPHandler:
             output_data, detected = self._fallback_response(path), 1
 
         logger.debug(
-            "Generated response for %s, detected=%s, size=%d",
+            'Generated response for %s, detected=%s, size=%d',
             bot_ip,
             detected,
             len(output_data),
         )
 
         # Create BearStorage for reporting
-        logger.debug("Creating BearStorage for %s", bot_ip)
+        logger.debug('Creating BearStorage for %s', bot_ip)
         bs = BearStorage(
             bot_ip,
             raw_request,
@@ -457,23 +447,23 @@ class HTTPHandler:
             detected,
             settings.HIVELOGIN,
         )
-        logger.debug("BearStorage created for %s", bot_ip)
+        logger.debug('BearStorage created for %s', bot_ip)
 
         # Resolve reverse-DNS off the hot path (with short timeout)
         try:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:
-            logger.debug("DNS resolution failed for %s", bot_ip)
+            logger.debug('DNS resolution failed for %s', bot_ip)
 
         # Resolve geolocation off the hot path (with short timeout)
         try:
             bs.resolve_geo(bot_ip, timeout=2.0)
         except Exception:
-            logger.debug("Geo resolution failed for %s", bot_ip)
+            logger.debug('Geo resolution failed for %s', bot_ip)
 
         # Determine server connection info for sending reports
-        server_host = getattr(self.args, "server_host", "127.0.0.1")
-        server_port = getattr(self.args, "server", None)
+        server_host = getattr(self.args, 'server_host', '127.0.0.1')
+        server_port = getattr(self.args, 'server', None)
 
         if server_port is not None:
             # Use bounded queue for backpressure instead of per-request subprocess spawning.
@@ -481,11 +471,9 @@ class HTTPHandler:
             # per bot request (200+ processes logged), causing file descriptor
             # exhaustion and crashes. Worker threads pull from the queue.
             q = _get_report_queue()
-            q.put(
-                (send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port))
-            )
+            q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port)))
         else:
-            logger.debug("No server port configured, skipping report for %s", bot_ip)
+            logger.debug('No server port configured, skipping report for %s', bot_ip)
 
         return output_data
 
@@ -495,11 +483,11 @@ class HTTPHandler:
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
     def _fallback_response(self, path: str) -> bytes:
         """Fallback response for unmatched paths."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
         body = f"""<!DOCTYPE html>
 <html><head><title>Server</title></head>
 <body><h1>Welcome to zlol's manyface!</h1>
@@ -507,12 +495,12 @@ class HTTPHandler:
 <p>Path: {path}</p>
 </body></html>"""
         response = (
-            f"HTTP/1.1 200 OK\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html; charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 200 OK\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html; charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')

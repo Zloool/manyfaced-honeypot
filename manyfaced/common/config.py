@@ -60,19 +60,19 @@ from pathlib import Path
 # ── defaults (layer 1 – code) ──────────────────────────────────────────────
 
 _DEFAULT_HONEYPORT = 80
-_DEFAULT_HONEYFOLDER = "bots"
-_DEFAULT_HIVEHOST = "127.0.0.1"
+_DEFAULT_HONEYFOLDER = 'bots'
+_DEFAULT_HIVEHOST = '127.0.0.1'
 _DEFAULT_HIVEPORT = 8080
-_DEFAULT_HIVELOGIN = "honeybee"
+_DEFAULT_HIVELOGIN = 'honeybee'
 _DEFAULT_HIVEPASS = None
-_DEFAULT_DB_BACKEND = "sqlite"
-_DEFAULT_DB_BACKENDS = ("sqlite", "postgresql")
-_DEFAULT_DB_PATH = "bots/honeypot.db"
-_DEFAULT_DB_PG_HOST = "localhost"
+_DEFAULT_DB_BACKEND = 'sqlite'
+_DEFAULT_DB_BACKENDS = ('sqlite', 'postgresql')
+_DEFAULT_DB_PATH = 'bots/honeypot.db'
+_DEFAULT_DB_PG_HOST = 'localhost'
 _DEFAULT_DB_PG_PORT = 5432
-_DEFAULT_DB_PG_DB = "honeypot"
-_DEFAULT_DB_PG_USER = "postgres"
-_DEFAULT_DB_PG_PASSWORD = "***"
+_DEFAULT_DB_PG_DB = 'honeypot'
+_DEFAULT_DB_PG_USER = 'postgres'
+_DEFAULT_DB_PG_PASSWORD = '***'
 _DEFAULT_AUTHORISEDBEARS_DEFAULTS: dict[str, str] = {}
 
 # ── port mode configuration ─────────────────────────────────────────────────
@@ -134,16 +134,16 @@ _TOP_50_PORTS = [
     5000,
 ]
 
-_PORT_MODES = ("single", "top", "all")
+_PORT_MODES = ('single', 'top', 'all')
 
 # ── Security defaults ───────────────────────────────────────────────────────
 
 _DEFAULT_DEFAULT_KEY = None
 _DEFAULT_LOG_FILE = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
+    os.path.expanduser('~'), '.local', 'share', 'manyfaced', 'honeypot.log'
 )
-_DEFAULT_DUMP_FILE = "/var/lib/manyfaced/dump.jsonl"
-_DEFAULT_LOCKFILE = os.path.join("/opt/manyfaced/bots", "lockfile")
+_DEFAULT_DUMP_FILE = '/var/lib/manyfaced/dump.jsonl'
+_DEFAULT_LOCKFILE = os.path.join('/opt/manyfaced/bots', 'lockfile')
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -151,15 +151,14 @@ _DEFAULT_LOCKFILE = os.path.join("/opt/manyfaced/bots", "lockfile")
 def _find_config_file() -> Path | None:
     """Return the first existing config file, or None if not found anywhere."""
     candidates: list[Path] = []
-    xdg = os.environ.get("XDG_CONFIG_HOME")
+    xdg = os.environ.get('XDG_CONFIG_HOME')
     if xdg:
-        candidates.append(Path(xdg) / "manyfaced" / "config.toml")
+        candidates.append(Path(xdg) / 'manyfaced' / 'config.toml')
     # Always check fallback paths (XDG is optional)
     candidates.extend(
         [
-            Path.home() / ".config" / "manyfaced" / "config.toml",
-            Path(__file__).resolve().parent.parent
-            / "settings.toml.example",  # in-package fallback
+            Path.home() / '.config' / 'manyfaced' / 'config.toml',
+            Path(__file__).resolve().parent.parent / 'settings.toml.example',  # in-package fallback
         ]
     )
     for c in candidates:
@@ -172,26 +171,26 @@ def _load_toml(path: Path) -> dict:
     """Load a TOML file and return a flat dict of section.key → value."""
     import tomllib
 
-    with open(path, "rb") as fh:
+    with open(path, 'rb') as fh:
         raw = tomllib.load(fh)
     result: dict = {}
     for section, values in raw.items():
         if isinstance(values, dict):
             for key, val in values.items():
-                result[f"{section}.{key}"] = val
+                result[f'{section}.{key}'] = val
     return result
 
 
 def _env_prefix() -> str:
-    return "HONEY_"
+    return 'HONEY_'
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 
 def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: str):
-    toml_key = f"{section}.{name}"
-    env_key = f"{env_prefix}{name.upper()}"
+    toml_key = f'{section}.{name}'
+    env_key = f'{env_prefix}{name.upper()}'
 
     # 3 – env var
     env_val = os.environ.get(env_key)
@@ -200,18 +199,18 @@ def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: st
         if isinstance(default, int):
             return int(env_val)
         if isinstance(default, bool):
-            return env_val.lower() in ("1", "true", "yes")
+            return env_val.lower() in ('1', 'true', 'yes')
         if isinstance(default, dict):
             # semicolon-separated key:value pairs
             d: dict = {}
-            for pair in (env_val or "").split(";"):
+            for pair in (env_val or '').split(';'):
                 pair = pair.strip()
-                if ":" in pair:
-                    k, v = pair.split(":", 1)
+                if ':' in pair:
+                    k, v = pair.split(':', 1)
                     d[k.strip()] = v.strip()
             return d or default
         if isinstance(default, (list, tuple)):
-            return [v.strip() for v in env_val.split(";") if v.strip()] or default
+            return [v.strip() for v in env_val.split(';') if v.strip()] or default
         return env_val
 
     # 2 – TOML
@@ -222,10 +221,10 @@ def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: st
         if isinstance(default, dict) and isinstance(val, str):
             # semicolon-separated key:value pairs (same as env var handling)
             d: dict = {}
-            for pair in (val or "").split(";"):
+            for pair in (val or '').split(';'):
                 pair = pair.strip()
-                if ":" in pair:
-                    k, v = pair.split(":", 1)
+                if ':' in pair:
+                    k, v = pair.split(':', 1)
                     d[k.strip()] = v.strip()
             return d or default
         return val
@@ -259,9 +258,7 @@ class Config:
 
     # Port mode configuration
     HONEY_PORT_MODE: str  # "single", "top", or "all"
-    HONEY_TOP_PORTS: (
-        str  # comma-separated port list (used when mode="top" and user customizes)
-    )
+    HONEY_TOP_PORTS: str  # comma-separated port list (used when mode="top" and user customizes)
 
     # Security
     DEFAULT_KEY: str  # default encryption key for unknown identifiers
@@ -288,120 +285,96 @@ class Config:
         prefix = _env_prefix()
 
         return Config(
-            HONEYPORT=int(
-                _resolve("honeyport", _DEFAULT_HONEYPORT, "honeypot", toml, prefix)
-            ),
+            HONEYPORT=int(_resolve('honeyport', _DEFAULT_HONEYPORT, 'honeypot', toml, prefix)),
             HONEYFOLDER=str(
-                _resolve("honeyfolder", _DEFAULT_HONEYFOLDER, "honeypot", toml, prefix)
+                _resolve('honeyfolder', _DEFAULT_HONEYFOLDER, 'honeypot', toml, prefix)
             ),
-            HIVEHOST=str(_resolve("hivehost", _DEFAULT_HIVEHOST, "hive", toml, prefix)),
-            HIVEPORT=int(_resolve("hiveport", _DEFAULT_HIVEPORT, "hive", toml, prefix)),
-            HIVELOGIN=str(
-                _resolve("hivelogin", _DEFAULT_HIVELOGIN, "hive", toml, prefix)
-            ),
-            HIVEPASS=str(_resolve("hivepass", _DEFAULT_HIVEPASS, "hive", toml, prefix)),
-            DB_BACKEND=str(
-                _resolve("backend", _DEFAULT_DB_BACKEND, "database", toml, prefix)
-            ),
-            DB_BACKENDS=tuple(
-                _resolve("backends", _DEFAULT_DB_BACKENDS, "database", toml, prefix)
-            ),
-            DB_PATH=str(_resolve("path", _DEFAULT_DB_PATH, "database", toml, prefix)),
-            DB_PG_HOST=str(
-                _resolve("pg_host", _DEFAULT_DB_PG_HOST, "database", toml, prefix)
-            ),
-            DB_PG_PORT=int(
-                _resolve("pg_port", _DEFAULT_DB_PG_PORT, "database", toml, prefix)
-            ),
-            DB_PG_DB=str(
-                _resolve("pg_db", _DEFAULT_DB_PG_DB, "database", toml, prefix)
-            ),
-            DB_PG_USER=str(
-                _resolve("pg_user", _DEFAULT_DB_PG_USER, "database", toml, prefix)
-            ),
+            HIVEHOST=str(_resolve('hivehost', _DEFAULT_HIVEHOST, 'hive', toml, prefix)),
+            HIVEPORT=int(_resolve('hiveport', _DEFAULT_HIVEPORT, 'hive', toml, prefix)),
+            HIVELOGIN=str(_resolve('hivelogin', _DEFAULT_HIVELOGIN, 'hive', toml, prefix)),
+            HIVEPASS=str(_resolve('hivepass', _DEFAULT_HIVEPASS, 'hive', toml, prefix)),
+            DB_BACKEND=str(_resolve('backend', _DEFAULT_DB_BACKEND, 'database', toml, prefix)),
+            DB_BACKENDS=tuple(_resolve('backends', _DEFAULT_DB_BACKENDS, 'database', toml, prefix)),
+            DB_PATH=str(_resolve('path', _DEFAULT_DB_PATH, 'database', toml, prefix)),
+            DB_PG_HOST=str(_resolve('pg_host', _DEFAULT_DB_PG_HOST, 'database', toml, prefix)),
+            DB_PG_PORT=int(_resolve('pg_port', _DEFAULT_DB_PG_PORT, 'database', toml, prefix)),
+            DB_PG_DB=str(_resolve('pg_db', _DEFAULT_DB_PG_DB, 'database', toml, prefix)),
+            DB_PG_USER=str(_resolve('pg_user', _DEFAULT_DB_PG_USER, 'database', toml, prefix)),
             DB_PG_PASSWORD=str(
-                _resolve(
-                    "pg_password", _DEFAULT_DB_PG_PASSWORD, "database", toml, prefix
-                )
+                _resolve('pg_password', _DEFAULT_DB_PG_PASSWORD, 'database', toml, prefix)
             ),
             AUTHORISEDBEARS=dict(
                 _resolve(
-                    "authorised_bears",
+                    'authorised_bears',
                     _DEFAULT_AUTHORISEDBEARS_DEFAULTS,
-                    "security",
+                    'security',
                     toml,
                     prefix,
                 )
             ),
-            HONEY_PORT_MODE=str(
-                _resolve("port_mode", "single", "honeypot", toml, prefix)
-            ),
-            HONEY_TOP_PORTS=str(_resolve("top_ports", "", "honeypot", toml, prefix)),
+            HONEY_PORT_MODE=str(_resolve('port_mode', 'single', 'honeypot', toml, prefix)),
+            HONEY_TOP_PORTS=str(_resolve('top_ports', '', 'honeypot', toml, prefix)),
             DEFAULT_KEY=str(
-                _resolve("default_key", _DEFAULT_DEFAULT_KEY, "security", toml, prefix)
+                _resolve('default_key', _DEFAULT_DEFAULT_KEY, 'security', toml, prefix)
             ),
-            LOG_FILE=str(_resolve("file", _DEFAULT_LOG_FILE, "logging", toml, prefix)),
-            DUMP_FILE=str(
-                _resolve("dump_file", _DEFAULT_DUMP_FILE, "dump", toml, prefix)
-            ),
-            LOCKFILE=str(
-                _resolve("lockfile", _DEFAULT_LOCKFILE, "lockfile", toml, prefix)
-            ),
+            LOG_FILE=str(_resolve('file', _DEFAULT_LOG_FILE, 'logging', toml, prefix)),
+            DUMP_FILE=str(_resolve('dump_file', _DEFAULT_DUMP_FILE, 'dump', toml, prefix)),
+            LOCKFILE=str(_resolve('lockfile', _DEFAULT_LOCKFILE, 'lockfile', toml, prefix)),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
         """Write a config file example at the XDG location and return the path."""
         if path is None:
-            path = Path.home() / ".config" / "manyfaced" / "config.toml"
+            path = Path.home() / '.config' / 'manyfaced' / 'config.toml'
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
-            "# manyfaced configuration file",
-            "# Generated by manyfaced at " + str(Path(__file__).resolve()),
-            "# Edit this file, or use environment variables (prefix HONEY_) to override.",
-            "# Environment variables always take precedence over this file.",
-            "",
-            "[honeypot]",
-            f"honeyport = {self.HONEYPORT}",
+            '# manyfaced configuration file',
+            '# Generated by manyfaced at ' + str(Path(__file__).resolve()),
+            '# Edit this file, or use environment variables (prefix HONEY_) to override.',
+            '# Environment variables always take precedence over this file.',
+            '',
+            '[honeypot]',
+            f'honeyport = {self.HONEYPORT}',
             f'honeyfolder = "{self.HONEYFOLDER}"',
             '# Port listening mode: "single", "top", or "all"',
             f'port_mode = "{self.HONEY_PORT_MODE}"',
-            "# Comma-separated ports for top mode (empty = use defaults)",
+            '# Comma-separated ports for top mode (empty = use defaults)',
             f'top_ports = "{self.HONEY_TOP_PORTS}"',
-            "",
-            "[hive]",
+            '',
+            '[hive]',
             f'  hivehost = "{self.HIVEHOST}"',
-            f"  hiveport = {self.HIVEPORT}",
+            f'  hiveport = {self.HIVEPORT}',
             f'  hivelogin = "{self.HIVELOGIN}"',
             f'  hivepass = "{self.HIVEPASS}"',
-            "",
-            "[database]",
+            '',
+            '[database]',
             f'  backend = "{self.DB_BACKEND}"',
             f'  path = "{self.DB_PATH}"',
             f'  pg_host = "{self.DB_PG_HOST}"',
-            f"  pg_port = {self.DB_PG_PORT}",
+            f'  pg_port = {self.DB_PG_PORT}',
             f'  pg_db = "{self.DB_PG_DB}"',
             f'  pg_user = "{self.DB_PG_USER}"',
             f'  pg_password = "{self.DB_PG_PASSWORD}"',
-            "",
-            "[security]",
+            '',
+            '[security]',
             '  # semicolon-separated bearid:key pairs; e.g. "bear1:key1;bear2:key2"',
             '  authorised_bears = ""',
-            "",
-            "[logging]",
-            "  # Path to the JSON log file",
+            '',
+            '[logging]',
+            '  # Path to the JSON log file',
             f'  file = "{self.LOG_FILE}"',
-            "",
-            "[dump]",
-            "  # Path to the JSONL dump file (fallback for failed DB writes)",
+            '',
+            '[dump]',
+            '  # Path to the JSONL dump file (fallback for failed DB writes)',
             f'  dump_file = "{self.DUMP_FILE}"',
-            "",
-            "[lockfile]",
-            "  # Path to the lockfile (prevents multiple instances)",
+            '',
+            '[lockfile]',
+            '  # Path to the lockfile (prevents multiple instances)',
             f'  lockfile = "{self.LOCKFILE}"',
-            "",
+            '',
         ]
-        path.write_text("\n".join(lines))
+        path.write_text('\n'.join(lines))
         return path
 
     def resolve_ports(self) -> list[int]:
@@ -412,21 +385,17 @@ class Config:
         """
         mode = self.HONEY_PORT_MODE.lower()
 
-        if mode == "top":
+        if mode == 'top':
             # Use custom top ports if provided, otherwise use defaults
             if self.HONEY_TOP_PORTS:
                 try:
                     return sorted(
-                        {
-                            int(p.strip())
-                            for p in self.HONEY_TOP_PORTS.split(",")
-                            if p.strip()
-                        }
+                        {int(p.strip()) for p in self.HONEY_TOP_PORTS.split(',') if p.strip()}
                     )
                 except ValueError:
                     pass
             return list(_TOP_50_PORTS)
-        elif mode == "all":
+        elif mode == 'all':
             return list(range(1, 65536))
         else:  # single (default)
             return [self.HONEYPORT]
@@ -444,9 +413,9 @@ if not settings.HIVEPASS:
     import logging
 
     logging.getLogger().critical(
-        "HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. "
-        "The honeypot cannot start without a secret encryption key. "
-        "Set it via the HONEY_HIVEPASS environment variable or in config.toml."
+        'HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. '
+        'The honeypot cannot start without a secret encryption key. '
+        'Set it via the HONEY_HIVEPASS environment variable or in config.toml.'
     )
     raise SystemExit(1)
 
@@ -454,8 +423,8 @@ if not settings.DEFAULT_KEY:
     import logging
 
     logging.getLogger().critical(
-        "security.default_key is not set and no [security]default_key was found in "
-        "config.toml. The honeypot cannot start without a default encryption key. "
-        "Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml."
+        'security.default_key is not set and no [security]default_key was found in '
+        'config.toml. The honeypot cannot start without a default encryption key. '
+        'Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml.'
     )
     raise SystemExit(1)
