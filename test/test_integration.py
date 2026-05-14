@@ -25,6 +25,10 @@ sys.modules['geoip.geolite2'] = MagicMock()
 sys.modules['GeoIP'] = MagicMock()
 
 
+# --- Resolve DB path for tests (must match what storage.py resolves) ---
+from manyfaced.db.storage import _resolve_db_path  # noqa: E402
+
+
 # --- Test key shared between encryptor and ServerHandler ---
 TEST_KEY = 'beehive123'
 BEE_IDENTIFIER = 'testbee'
@@ -48,7 +52,9 @@ def make_encrypted_message(identifier: str, data: dict, key: str) -> str:  # noq
 @pytest.fixture(autouse=True)
 def _clean_env_and_db():
     """Ensure clean DB and settings for every test."""
-    db_path = 'bots/honeypot.sqlite'
+    from manyfaced.db.storage import _resolve_db_path  # noqa: E402
+
+    db_path = _resolve_db_path()
     if Path(db_path).exists():
         Path(db_path).unlink(missing_ok=True)
     yield
@@ -158,7 +164,7 @@ class TestFullPathSocketToDatabase:
 
         _ = self._run_pipeline(bear_data)
 
-        _verify_record('bots/honeypot.sqlite', ip='10.1.2.3', path='/wp-login.php', detected=1)
+        _verify_record(_resolve_db_path(), ip='10.1.2.3', path='/wp-login.php', detected=1)
 
     def test_detects_webdav_scan_and_saves_to_sqlite(self):
         """A WebDAV PROPFIND-style scan should be detected and stored."""
@@ -184,7 +190,7 @@ class TestFullPathSocketToDatabase:
         _ = self._run_pipeline(bear_data)
 
         _verify_record(
-            'bots/honeypot.sqlite',
+            _resolve_db_path(),
             ip='192.168.99.99',
             path='/webdav/',
             field='request_command',
@@ -209,7 +215,7 @@ class TestFullPathSocketToDatabase:
         # Verify nothing was saved to the DB
         import sqlite3
 
-        conn = sqlite3.connect('bots/honeypot.sqlite')
+        conn = sqlite3.connect(_resolve_db_path())
         # Table may not exist if no valid request was processed yet
         tables = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='honeypot_bears'"
@@ -262,13 +268,13 @@ class TestFullPathSocketToDatabase:
         # Verify all 3 records exist
         import sqlite3
 
-        conn = sqlite3.connect('bots/honeypot.sqlite')
+        conn = sqlite3.connect(_resolve_db_path())
         count = conn.execute('SELECT COUNT(*) FROM honeypot_bears').fetchone()[0]
         conn.close()
         assert count == 3
 
         # Verify specific IPs exist
-        conn = sqlite3.connect('bots/honeypot.sqlite')
+        conn = sqlite3.connect(_resolve_db_path())
         ips = [r[0] for r in conn.execute('SELECT bot_ip FROM honeypot_bears').fetchall()]
         conn.close()
         assert '10.10.10.0' in ips
@@ -290,7 +296,7 @@ class TestFullPathSocketToDatabase:
         _ = self._run_pipeline(bear_data)
 
         _verify_record(
-            'bots/honeypot.sqlite',
+            _resolve_db_path(),
             ip='172.16.0.1',
             path='/wp-content/debug.log',
             field='request_raw',
@@ -310,7 +316,7 @@ class TestFullPathSocketToDatabase:
 
         _ = self._run_pipeline(bear_data)
 
-        _verify_record('bots/honeypot.sqlite', field='login', value='testuser123')
+        _verify_record(_resolve_db_path(), field='login', value='testuser123')
 
     def test_detected_field_preserved(self):
         """is_detected should store the correct value in detected_id."""
@@ -328,7 +334,7 @@ class TestFullPathSocketToDatabase:
         _ = self._run_pipeline(bear_data)
 
         _verify_record(
-            'bots/honeypot.sqlite',
+            _resolve_db_path(),
             ip='10.10.10.20',
             path='/unknown',
             detected=UNKNOWN_HTTP,
