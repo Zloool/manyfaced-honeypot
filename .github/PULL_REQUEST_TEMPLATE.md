@@ -1,18 +1,20 @@
-## Description
-<!-- Describe your changes in detail -->
+## Summary of changes
 
-## Type of change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
-- [ ] Deployment / infrastructure
+<!-- Brief description of what this PR does -->
 
-## Testing
-<!-- Describe the tests you ran and how to reproduce them -->
+## Linked issues
+
+<!-- Closes #NNN, Fixes #NNN, etc. (optional) -->
 
 ## Checklist
-- [ ] My code follows the project style guidelines
-- [ ] I have added tests that prove my fix/feature works
-- [ ] I have updated the documentation
-- [ ] I have run `make dev` and all checks pass
+
+- [ ] Tests pass locally (`pytest test/ -v`)
+- [ ] No hardcoded secrets, IPs, or dates introduced
+- [ ] No analysis output, DB files, or logs committed
+- [ ] Code formatted with `ruff format .` and linted with `ruff check .`
+
+## Post-merge deploy run
+
+<!-- After squash-merging, link the Actions deployment run below -->
+
+https://github.com/Zloool/manyfaced-honeypot/actions/runs/_______

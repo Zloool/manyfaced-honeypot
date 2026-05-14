@@ -102,7 +102,7 @@ def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | No
     try:
         # Set a longer timeout for SSH credential capture
         connection_socket.settimeout(30)
-        all_data = b""
+        all_data = b''
         while True:
             try:
                 data = connection_socket.recv(4096)
@@ -119,7 +119,7 @@ def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | No
 
         if all_data:
             # Decode the data
-            raw_str = all_data.decode("utf-8", errors="replace")
+            raw_str = all_data.decode('utf-8', errors='replace')
             # Look for username/password in the raw data
             # SSH auth messages contain username and password in plaintext
             # for password authentication
@@ -128,13 +128,13 @@ def _capture_ssh_credentials(connection_socket: socket, bot_ip: str) -> str | No
                 return creds
             # If no structured credentials found, log the raw data
             logger.debug(
-                "SSH raw data from %s: %s",
+                'SSH raw data from %s: %s',
                 bot_ip,
                 repr(all_data[:200]),
             )
-            return f"SSH data: {repr(all_data[:100])}"
+            return f'SSH data: {repr(all_data[:100])}'
     except Exception as e:
-        logger.debug("Error capturing SSH credentials from %s: %s", bot_ip, e)
+        logger.debug('Error capturing SSH credentials from %s: %s', bot_ip, e)
     return None
 
 
@@ -181,37 +181,37 @@ def _parse_ssh_auth_data(raw_data: str) -> str | None:
 
     # Try to parse SSH binary protocol
     try:
-        data_bytes = raw_data.encode("latin-1")
+        data_bytes = raw_data.encode('latin-1')
         # Look for SSH_MSG_USERAUTH_REQUEST (byte 50)
-        idx = data_bytes.find(b"\x32")  # 0x32 = 50
+        idx = data_bytes.find(b'\x32')  # 0x32 = 50
         if idx >= 0:
             # Skip message type and length
             # SSH binary protocol: length(4), type(1), data...
             # Look for the username string
             # The username is typically a string (length + content)
             # Try to find common username patterns
-            for pattern in [b"\x00", b"\x01", b"\x02"]:
+            for pattern in [b'\x00', b'\x01', b'\x02']:
                 # Look for username patterns
                 pass
     except Exception:
-        logger.debug("Failed to parse SSH binary protocol data")
+        logger.debug('Failed to parse SSH binary protocol data')
 
     # Fallback: look for plaintext username/password in the data
     # Some SSH clients send credentials in plaintext
-    username_match = re.search(r"username[=:\s]+(\w+)", raw_data, re.IGNORECASE)
+    username_match = re.search(r'username[=:\s]+(\w+)', raw_data, re.IGNORECASE)
     if username_match:
         username = username_match.group(1)
 
-    password_match = re.search(r"password[=:\s]+(\S+)", raw_data, re.IGNORECASE)
+    password_match = re.search(r'password[=:\s]+(\S+)', raw_data, re.IGNORECASE)
     if password_match:
         password = password_match.group(1)
 
     if username and password:
-        return f"user={username}, pass={password}"
+        return f'user={username}, pass={password}'
     elif username:
-        return f"user={username}"
+        return f'user={username}'
     elif password:
-        return f"pass={password}"
+        return f'pass={password}'
 
     return None
 
@@ -232,43 +232,41 @@ def send_report(data, client, password, server_host, server_port):
         server_port: Server port number
     """
     cypher = AESCipher(password)
-    parsed = data.parsed_request if hasattr(data, "parsed_request") else None
+    parsed = data.parsed_request if hasattr(data, 'parsed_request') else None
 
     # Extract user-agent from headers (case-insensitive lookup on HTTPMessage)
-    ua = ""
-    if hasattr(data, "ua"):
-        ua = data.ua or ""
-    elif hasattr(parsed, "headers") and parsed.headers:
+    ua = ''
+    if hasattr(data, 'ua'):
+        ua = data.ua or ''
+    elif hasattr(parsed, 'headers') and parsed.headers:
         # Try direct attribute first, then case-insensitive lookup
         ua = (
-            getattr(parsed, "user_agent", "")
-            or parsed.headers.get("User-Agent", "")
-            or parsed.headers.get("user-agent", "")
+            getattr(parsed, 'user_agent', '')
+            or parsed.headers.get('User-Agent', '')
+            or parsed.headers.get('user-agent', '')
         )
 
     data_dict = {
-        "ip": data.ip,
-        "raw_request": data.raw_request,
-        "timestamp": data.timestamp,
-        "parsed_request": {
-            "command": getattr(data, "command", ""),
-            "path": getattr(data, "path", ""),
-            "request_version": getattr(data, "version", ""),
-            "headers": dict(data.headers)
-            if hasattr(data, "headers") and isinstance(data.headers, dict)
+        'ip': data.ip,
+        'raw_request': data.raw_request,
+        'timestamp': data.timestamp,
+        'parsed_request': {
+            'command': getattr(data, 'command', ''),
+            'path': getattr(data, 'path', ''),
+            'request_version': getattr(data, 'version', ''),
+            'headers': dict(data.headers)
+            if hasattr(data, 'headers') and isinstance(data.headers, dict)
             else {},
         },
-        "is_detected": data.isDetected
-        if hasattr(data, "isDetected")
-        else data.is_detected,
-        "HIVELOGIN": data.hostname,
+        'is_detected': data.isDetected if hasattr(data, 'isDetected') else data.is_detected,
+        'HIVELOGIN': data.hostname,
         # Additional fields for better data quality
-        "ua": ua,
-        "dns_name": getattr(data, "dns_name", "") or "",
-        "country": getattr(data, "country", "") or "",
-        "continent": getattr(data, "continent", "") or "",
+        'ua': ua,
+        'dns_name': getattr(data, 'dns_name', '') or '',
+        'country': getattr(data, 'country', '') or '',
+        'continent': getattr(data, 'continent', '') or '',
     }
-    message = (client + ":").encode()
+    message = (client + ':').encode()
     message += cypher.encrypt(json.dumps(data_dict).encode()).encode()
 
     # Retry with exponential backoff to handle server restarts
@@ -280,21 +278,21 @@ def send_report(data, client, password, server_host, server_port):
             s.connect((server_host, server_port))
             s.sendall(message)
             response = s.recv(1024)
-            if not response.decode().startswith("200"):
+            if not response.decode().startswith('200'):
                 logger.warning(
-                    "Failed to send report: Non-200 response from server (attempt %d/%d)",
+                    'Failed to send report: Non-200 response from server (attempt %d/%d)',
                     attempt,
                     REPORT_SEND_MAX_RETRIES,
                 )
                 print(response)
             s.close()
-            logger.info("Report sent for %s", client)
+            logger.info('Report sent for %s', client)
             return  # success – stop retrying
         except socket_error:
             s.close()
             if attempt < REPORT_SEND_MAX_RETRIES:
                 logger.debug(
-                    "Report send failed for %s (attempt %d/%d), retrying in %ds",
+                    'Report send failed for %s (attempt %d/%d), retrying in %ds',
                     client,
                     attempt,
                     REPORT_SEND_MAX_RETRIES,
@@ -306,7 +304,7 @@ def send_report(data, client, password, server_host, server_port):
                 delay *= REPORT_SEND_BACKOFF_FACTOR
             else:
                 logger.error(
-                    "Socket error sending report for %s after %d attempts – dumping to file",
+                    'Socket error sending report for %s after %d attempts – dumping to file',
                     client,
                     REPORT_SEND_MAX_RETRIES,
                 )
@@ -331,20 +329,20 @@ def create_server(args, update_event: Event, port: int):
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     try:
-        server_socket.bind(("", port))
+        server_socket.bind(('', port))
     except PermissionError:
         logger.warning(
-            "Permission denied binding to port %d (try running as root or use a higher port)",
+            'Permission denied binding to port %d (try running as root or use a higher port)',
             port,
         )
         return False
     except OSError as e:
-        logger.warning("Failed to bind to port %d: %s", port, e)
+        logger.warning('Failed to bind to port %d: %s', port, e)
         return False
     server_socket.listen(1)
-    logger.info("Client honeypot listening on port %d", port)
+    logger.info('Client honeypot listening on port %d', port)
     if args.verbose:
-        print(f"Serving honey on port {port}")
+        print(f'Serving honey on port {port}')
     try:
         while True:
             if update_event.is_set():
@@ -358,33 +356,33 @@ def create_server(args, update_event: Event, port: int):
                 message = receive_timeout(connection_socket, BOT_TIMEOUT)
             except socket_error:
                 if args.verbose:
-                    print("Failed to receive data from bot")
+                    print('Failed to receive data from bot')
                 continue
-            bot_ip = bot_addr[0] if bot_addr else "127.0.0.1"
+            bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
             handler = HTTPHandler(args, update_event)
             output_data = handler.handle_request(message, bot_ip=bot_ip)
             try:
-                logger.debug("Sending response of length %d", len(output_data))
+                logger.debug('Sending response of length %d', len(output_data))
                 # output_data is already bytes from HTTPHandler
                 connection_socket.sendall(
                     output_data
                     if isinstance(output_data, bytes)
-                    else output_data.encode("iso-8859-1")
+                    else output_data.encode('iso-8859-1')
                 )
                 # For SSH connections, keep the connection open to capture credentials
-                if isinstance(output_data, bytes) and output_data.startswith(b"SSH-"):
+                if isinstance(output_data, bytes) and output_data.startswith(b'SSH-'):
                     # SSH connection - keep listening for auth attempts
                     ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
                     if ssh_creds:
                         logger.info(
-                            "Captured SSH credentials from %s: %s",
+                            'Captured SSH credentials from %s: %s',
                             bot_ip,
                             ssh_creds,
                         )
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
-                    print("Failed to send response to bot")
+                    print('Failed to send response to bot')
                 continue
     finally:
         server_socket.close()
@@ -402,7 +400,7 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
         ports: List of port numbers to listen on
     """
     # Filter out the server port to avoid "Address already in use" conflicts
-    server_port = getattr(args, "server", None)
+    server_port = getattr(args, 'server', None)
     if server_port is not None and server_port in ports:
         ports = [p for p in ports if p != server_port]
     threads: list[threading.Thread] = []
@@ -415,13 +413,13 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
         if result:
             successful_ports.append(port)
         else:
-            failed_ports.append((port, "bind failed"))
+            failed_ports.append((port, 'bind failed'))
 
     for port in ports:
         t = threading.Thread(
             target=_port_worker,
             args=(port,),
-            name=f"honeyport-{port}",
+            name=f'honeyport-{port}',
             daemon=True,
         )
         threads.append(t)
@@ -436,20 +434,18 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
 
     # Log summary
     if successful_ports:
-        port_list_str = ", ".join(str(p) for p in successful_ports)
+        port_list_str = ', '.join(str(p) for p in successful_ports)
         logger.info(
-            "Client honeypot listening on %d ports: %s",
+            'Client honeypot listening on %d ports: %s',
             len(successful_ports),
             port_list_str,
         )
         if args.verbose:
-            print(f"Serving honey on {len(successful_ports)} ports: {port_list_str}")
+            print(f'Serving honey on {len(successful_ports)} ports: {port_list_str}')
 
     if failed_ports:
-        failed_str = ", ".join(f"{p}" for p, _ in failed_ports)
-        logger.warning(
-            "Failed to bind on %d ports (skipped): %s", len(failed_ports), failed_str
-        )
+        failed_str = ', '.join(f'{p}' for p, _ in failed_ports)
+        logger.warning('Failed to bind on %d ports (skipped): %s', len(failed_ports), failed_str)
 
     # Wait for shutdown signal
     try:
@@ -462,7 +458,7 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
     for t in threads:
         t.join(timeout=5)
 
-    logger.info("All honeypot threads stopped")
+    logger.info('All honeypot threads stopped')
 
 
 def main(args, update_event):
@@ -474,23 +470,21 @@ def main(args, update_event):
         args: CLI arguments namespace
         update_event: Event to signal shutdown
     """
-    if getattr(signal, "SIGCHLD", None) is not None:
+    if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
-    port_mode = getattr(args, "port_mode", "single")
-    top_ports = getattr(args, "top_ports", "")
+    port_mode = getattr(args, 'port_mode', 'single')
+    top_ports = getattr(args, 'top_ports', '')
 
-    if port_mode == "all":
+    if port_mode == 'all':
         ports = list(range(1, 65536))
-        logger.warning("Listening on ALL 65535 ports – this may take time to start")
-        print("WARNING: Listening on all 65535 TCP ports...")
+        logger.warning('Listening on ALL 65535 ports – this may take time to start')
+        print('WARNING: Listening on all 65535 TCP ports...')
         create_multiport_server(args, update_event, ports)
-    elif port_mode == "top":
+    elif port_mode == 'top':
         if top_ports:
             try:
-                ports = sorted(
-                    {int(p.strip()) for p in top_ports.split(",") if p.strip()}
-                )
+                ports = sorted({int(p.strip()) for p in top_ports.split(',') if p.strip()})
             except ValueError:
                 # Invalid --top-ports value: error out instead of silently falling back
                 # This helps users catch typos (e.g., "80,443,xyz")
@@ -498,12 +492,11 @@ def main(args, update_event):
 
                 # Note: This will raise SystemExit if called from argparse, otherwise log error
                 logger.error(
-                    "Invalid --top-ports value: %s. Must be comma-separated integers.",
+                    'Invalid --top-ports value: %s. Must be comma-separated integers.',
                     top_ports,
                 )
                 raise ValueError(
-                    f"Invalid --top-ports value: {top_ports!r}. "
-                    "Must be comma-separated integers."
+                    f'Invalid --top-ports value: {top_ports!r}. Must be comma-separated integers.'
                 )
         else:
             # No --top-ports specified, use the default list

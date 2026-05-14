@@ -26,11 +26,11 @@ def Insert(bear: BearRequests) -> None:
     """Insert bear data into the configured storage backend."""
     storage = get_storage()
     record: dict[str, Any] = {
-        "ip": bear.ip,
-        "raw_request": bear.raw_request,
-        "timestamp": bear.timestamp,
-        "parsed_request": bear.parsed_request,
-        "is_detected": bear.is_detected,
-        "HIVELOGIN": bear.HIVELOGIN,
+        'ip': bear.ip,
+        'raw_request': bear.raw_request,
+        'timestamp': bear.timestamp,
+        'parsed_request': bear.parsed_request,
+        'is_detected': bear.is_detected,
+        'HIVELOGIN': bear.HIVELOGIN,
     }
     storage.insert(record)

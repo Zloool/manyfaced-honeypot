@@ -29,14 +29,14 @@ def _acquire_lockfile():
     global _lock_fd
     try:
         os.makedirs(os.path.dirname(settings.LOCKFILE), exist_ok=True)
-        _lock_fd = open(settings.LOCKFILE, "w")
+        _lock_fd = open(settings.LOCKFILE, 'w')
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_fd.write(str(os.getpid()))
         _lock_fd.flush()
-        logger.info("Lockfile acquired (PID %d)", os.getpid())
+        logger.info('Lockfile acquired (PID %d)', os.getpid())
     except (IOError, OSError) as e:
-        if "Text file busy" in str(e) or "Resource temporarily unavailable" in str(e):
-            logger.error("Another instance is already running (lockfile held)")
+        if 'Text file busy' in str(e) or 'Resource temporarily unavailable' in str(e):
+            logger.error('Another instance is already running (lockfile held)')
             sys.exit(1)
         raise
 
@@ -49,7 +49,7 @@ def _release_lockfile():
             fcntl.flock(_lock_fd, fcntl.LOCK_UN)
             _lock_fd.close()
             os.unlink(settings.LOCKFILE)
-            logger.info("Lockfile released")
+            logger.info('Lockfile released')
         except (IOError, OSError):
             pass
         _lock_fd = None
@@ -58,37 +58,33 @@ def _release_lockfile():
 def run() -> None:
     """CLI entry point – called by the ``manyfaced`` console_scripts command."""
     # Initialise system-wide logging early
-    setup_logging(level="DEBUG", log_file=settings.LOG_FILE)
+    setup_logging(level='DEBUG', log_file=settings.LOG_FILE)
 
     # Acquire lockfile to prevent multiple instances
     _acquire_lockfile()
 
     # Auto-generate XDG config file if none exists
     xdg_config = os.path.join(
-        os.environ.get(
-            "XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config")
-        ),
-        "manyfaced",
-        "config.toml",
+        os.environ.get('XDG_CONFIG_HOME', os.path.join(os.path.expanduser('~'), '.config')),
+        'manyfaced',
+        'config.toml',
     )
     if not os.path.isfile(xdg_config):
-        example = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "settings.toml.example"
-        )
+        example = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.toml.example')
         if os.path.isfile(example):
             import shutil
 
             os.makedirs(os.path.dirname(xdg_config), exist_ok=True)
             shutil.copy2(example, xdg_config)
             print(
-                f"[manyfaced] Generated config at {xdg_config} – edit it to customize.",
+                f'[manyfaced] Generated config at {xdg_config} – edit it to customize.',
                 file=sys.stderr,
             )
         else:
             new_cfg = Config.load()
             new_cfg.generate_config_file(xdg_config)
             print(
-                f"[manyfaced] Generated config at {xdg_config} – edit it to customize.",
+                f'[manyfaced] Generated config at {xdg_config} – edit it to customize.',
                 file=sys.stderr,
             )
 
@@ -104,14 +100,14 @@ def run() -> None:
         args.server = settings.HIVEPORT
         # Also apply port_mode and top_ports from config when starting client
         if (
-            getattr(args, "port_mode", "single") == "single"
-            and settings.HONEY_PORT_MODE != "single"
+            getattr(args, 'port_mode', 'single') == 'single'
+            and settings.HONEY_PORT_MODE != 'single'
         ):
             args.port_mode = settings.HONEY_PORT_MODE
             if settings.HONEY_TOP_PORTS:
                 args.top_ports = settings.HONEY_TOP_PORTS
         logger.info(
-            "No CLI args specified — starting client on port %d, server on port %d",
+            'No CLI args specified — starting client on port %d, server on port %d',
             args.client,
             args.server,
         )
@@ -120,14 +116,14 @@ def run() -> None:
     if args.generate_config:
         cfg = Config.load()
         path = cfg.generate_config_file()
-        print(f"[manyfaced] Generated config at {path}", file=sys.stderr)
+        print(f'[manyfaced] Generated config at {path}', file=sys.stderr)
         return
 
     update_event = Event()
 
     procs: dict[str, Process | None] = {
-        "client_proc": None,
-        "server_proc": None,
+        'client_proc': None,
+        'server_proc': None,
     }
 
     def _terminate(proc: Process | None) -> None:
@@ -136,20 +132,20 @@ def run() -> None:
             proc.join()
 
     if args.client is not None:
-        procs["client_proc"] = Process(
+        procs['client_proc'] = Process(
             args=(args, update_event),
-            name="client",
+            name='client',
             target=client.main,
         )
-        procs["client_proc"].start()
+        procs['client_proc'].start()
 
     if args.server is not None:
-        procs["server_proc"] = Process(
+        procs['server_proc'] = Process(
             args=(args, update_event),
-            name="server",
+            name='server',
             target=server.main,
         )
-        procs["server_proc"].start()
+        procs['server_proc'].start()
 
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
@@ -170,5 +166,5 @@ def run() -> None:
         _release_lockfile()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     run()

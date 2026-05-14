@@ -20,29 +20,29 @@ logger = logging.getLogger(__name__)
 class PhpMyAdminHandler(HTTPHandlerBase):
     """phpMyAdmin honeypot handler."""
 
-    domain = "phpmyadmin"
+    domain = 'phpmyadmin'
     PATH_PATTERNS = [
-        "/phpmyadmin",
-        "/phpmyadmin/",
-        "/phpmyadmin/index.php",
-        "/pma",
-        "/pma/",
-        "/pma/index.php",
-        "/mysql",
-        "/mysql/",
-        "/mysql/index.php",
-        "/db",
-        "/db/",
-        "/db/index.php",
-        "/database",
-        "/database/",
-        "/database/index.php",
+        '/phpmyadmin',
+        '/phpmyadmin/',
+        '/phpmyadmin/index.php',
+        '/pma',
+        '/pma/',
+        '/pma/index.php',
+        '/mysql',
+        '/mysql/',
+        '/mysql/index.php',
+        '/db',
+        '/db/',
+        '/db/index.php',
+        '/database',
+        '/database/',
+        '/database/index.php',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -56,11 +56,11 @@ class PhpMyAdminHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -68,7 +68,7 @@ class PhpMyAdminHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and ("index.php" in path_lower or path_lower.endswith("/")):
+        if method == 'POST' and ('index.php' in path_lower or path_lower.endswith('/')):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -78,14 +78,14 @@ class PhpMyAdminHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "index.php" in path_lower or path_lower.endswith("/"):
+        if 'index.php' in path_lower or path_lower.endswith('/'):
             body = self._login_page()
-        elif "export.php" in path_lower or "sql.php" in path_lower:
-            body = self._error_page("endpoint")
-        elif "server_status.php" in path_lower:
-            body = self._error_page("endpoint")
-        elif "db_structure.php" in path_lower or "db_sql.php" in path_lower:
-            body = self._error_page("database")
+        elif 'export.php' in path_lower or 'sql.php' in path_lower:
+            body = self._error_page('endpoint')
+        elif 'server_status.php' in path_lower:
+            body = self._error_page('endpoint')
+        elif 'db_structure.php' in path_lower or 'db_sql.php' in path_lower:
+            body = self._error_page('database')
         else:
             body = self._login_page()
 
@@ -203,11 +203,11 @@ class PhpMyAdminHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
-        return self._build_http_response(body, "/phpmyadmin/index.php")
+        return self._build_http_response(body, '/phpmyadmin/index.php')
 
-    def _error_page(self, error_type: str = "general") -> str:
+    def _error_page(self, error_type: str = 'general') -> str:
         """Generate a phpMyAdmin error page."""
-        if error_type == "endpoint":
+        if error_type == 'endpoint':
             return """\
 <!DOCTYPE html>
 <html>
@@ -251,27 +251,25 @@ class PhpMyAdminHandler(HTTPHandlerBase):
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n"
-            f"Set-Cookie: phpMyAdmin=abc123def456; path=/\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html; charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n'
+            f'Set-Cookie: phpMyAdmin=abc123def456; path=/\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html; charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"PhpMyAdminHandler(domain={self.domain!r})"
+        return f'PhpMyAdminHandler(domain={self.domain!r})'
