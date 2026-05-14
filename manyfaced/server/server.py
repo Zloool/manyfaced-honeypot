@@ -55,7 +55,11 @@ class ServerHandler(BaseHandler):
                 timestamp=data['timestamp'],
                 parsed_request=data['parsed_request'],
                 is_detected=data['is_detected'],
-                HIVELOGIN=data['HIVELOGIN'],
+                HIVELOGIN=data.get('HIVELOGIN', ''),
+                ua=data.get('ua', ''),
+                dns_name=data.get('dns_name', ''),
+                country=data.get('country', ''),
+                continent=data.get('continent', ''),
             )
             Insert(bear)
             logger.info('Data saved for %s', data['ip'])

@@ -39,6 +39,30 @@ class TestBearRequestsCreation:
         assert bear.parsed_request == {'path': '/admin', 'command': 'GET'}
         assert bear.is_detected == 1
         assert bear.HIVELOGIN == 'admin'
+        # Enrichment fields default to ''
+        assert bear.ua == ''
+        assert bear.dns_name == ''
+        assert bear.country == ''
+        assert bear.continent == ''
+
+    def test_create_with_enrichment_fields(self):
+        """BearRequests should carry enrichment data from the client payload."""
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='GET /admin HTTP/1.1',
+            timestamp='2024-01-15 10:30:00',
+            parsed_request={'path': '/admin', 'command': 'GET'},
+            is_detected=1,
+            HIVELOGIN='admin',
+            ua='Mozilla/5.0 (compatible; bot)',
+            dns_name='scan.example.com',
+            country='Russia',
+            continent='Europe',
+        )
+        assert bear.ua == 'Mozilla/5.0 (compatible; bot)'
+        assert bear.dns_name == 'scan.example.com'
+        assert bear.country == 'Russia'
+        assert bear.continent == 'Europe'
 
     def test_create_with_empty_fields(self):
         bear = BearRequests(
@@ -109,6 +133,10 @@ class TestBearRequestsDataclassRepr:
             'parsed_request',
             'is_detected',
             'HIVELOGIN',
+            'ua',
+            'dns_name',
+            'country',
+            'continent',
         ]
 
     def test_dataclass_repr(self):
@@ -306,7 +334,7 @@ class TestInsertFunction:
             mock_get.assert_called_once()
 
     def test_insert_record_has_all_keys(self):
-        """The record dict passed to storage.insert() must contain all 6 keys."""
+        """The record dict passed to storage.insert() must contain all 10 keys."""
         mock_storage = MagicMock()
 
         bear = BearRequests(
@@ -329,5 +357,57 @@ class TestInsertFunction:
             'parsed_request',
             'is_detected',
             'HIVELOGIN',
+            'ua',
+            'dns_name',
+            'country',
+            'continent',
         }
         assert set(record.keys()) == expected_keys
+
+    def test_insert_passes_enrichment_fields_through(self):
+        """Insert should carry ua/dns_name/country/continent into the record dict."""
+        mock_storage = MagicMock()
+
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='GET /admin HTTP/1.1',
+            timestamp='2024-06-01 12:00:00',
+            parsed_request={'path': '/admin'},
+            is_detected=1,
+            HIVELOGIN='root',
+            ua='Mozilla/5.0 (compatible; bot)',
+            dns_name='scan.example.com',
+            country='Russia',
+            continent='Europe',
+        )
+
+        with patch('manyfaced.db.dbconnect.get_storage', return_value=mock_storage):
+            Insert(bear)
+
+        record = mock_storage.insert.call_args[0][0]
+        assert record['ua'] == 'Mozilla/5.0 (compatible; bot)'
+        assert record['dns_name'] == 'scan.example.com'
+        assert record['country'] == 'Russia'
+        assert record['continent'] == 'Europe'
+
+    def test_insert_enrichment_defaults_to_empty(self):
+        """Enrichment fields should default to '' when not provided."""
+        mock_storage = MagicMock()
+
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='GET / HTTP/1.1',
+            timestamp='2024-06-01 12:00:00',
+            parsed_request={},
+            is_detected=0,
+            HIVELOGIN='',
+        )
+
+        with patch('manyfaced.db.dbconnect.get_storage', return_value=mock_storage):
+            Insert(bear)
+
+        record = mock_storage.insert.call_args[0][0]
+        assert record['ua'] == ''
+        assert record['dns_name'] == ''
+        assert record['country'] == ''
+        assert record['continent'] == ''
