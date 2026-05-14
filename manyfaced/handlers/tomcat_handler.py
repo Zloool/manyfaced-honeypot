@@ -21,30 +21,30 @@ logger = logging.getLogger(__name__)
 class TomcatHandler(HTTPHandlerBase):
     """Apache Tomcat honeypot handler."""
 
-    domain = "tomcat"
+    domain = 'tomcat'
     PATH_PATTERNS = [
-        "/manager",
-        "/manager/",
-        "/manager/html",
-        "/host-manager",
-        "/host-manager/",
-        "/host-manager/html",
-        "/tomcat",
-        "/tomcat/",
-        "/server-status",
-        "/server-info",
-        "/jmxproxy",
-        "/jmxproxy/",
-        "/examples",
-        "/examples/",
-        "/ROOT",
-        "/ROOT/",
+        '/manager',
+        '/manager/',
+        '/manager/html',
+        '/host-manager',
+        '/host-manager/',
+        '/host-manager/html',
+        '/tomcat',
+        '/tomcat/',
+        '/server-status',
+        '/server-info',
+        '/jmxproxy',
+        '/jmxproxy/',
+        '/examples',
+        '/examples/',
+        '/ROOT',
+        '/ROOT/',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -58,11 +58,11 @@ class TomcatHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -70,7 +70,7 @@ class TomcatHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and "j_security_check" in path_lower:
+        if method == 'POST' and 'j_security_check' in path_lower:
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -79,17 +79,17 @@ class TomcatHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "manager/html" in path_lower:
+        if 'manager/html' in path_lower:
             body = self._manager_page()
-        elif "host-manager/html" in path_lower:
+        elif 'host-manager/html' in path_lower:
             body = self._host_manager_page()
-        elif "server-status" in path_lower:
+        elif 'server-status' in path_lower:
             body = self._server_status()
-        elif "server-info" in path_lower:
+        elif 'server-info' in path_lower:
             body = self._server_info()
-        elif "examples" in path_lower:
+        elif 'examples' in path_lower:
             body = self._examples_page()
-        elif "jmxproxy" in path_lower:
+        elif 'jmxproxy' in path_lower:
             body = self._jmx_proxy()
         else:
             body = self._root_page()
@@ -196,7 +196,7 @@ class TomcatHandler(HTTPHandlerBase):
 
     def _server_status(self) -> str:
         """Generate the server status page."""
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         return f"""\
 <!DOCTYPE html>
 <html lang="en">
@@ -365,32 +365,30 @@ class TomcatHandler(HTTPHandlerBase):
     <p>Apache Tomcat/9.0.87</p>
 </body>
 </html>"""
-        return self._build_http_response(body, "/manager/html", "401 Unauthorized")
+        return self._build_http_response(body, '/manager/html', '401 Unauthorized')
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache-Coyote/1.1\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html;charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Apache-Coyote/1.1\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html;charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"TomcatHandler(domain={self.domain!r})"
+        return f'TomcatHandler(domain={self.domain!r})'

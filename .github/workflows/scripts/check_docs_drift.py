@@ -10,13 +10,13 @@ errors = []
 # Check 1: README's directory tree matches reality
 # This is a simplified check - just verify key files exist
 readme_paths = [
-    "manyfaced/mfh.py",
-    "manyfaced/common/config.py",
-    "manyfaced/server/server.py",
-    "manyfaced/client/client.py",
-    "test/test_config.py",
-    "pyproject.toml",
-    "README.md",
+    'manyfaced/mfh.py',
+    'manyfaced/common/config.py',
+    'manyfaced/server/server.py',
+    'manyfaced/client/client.py',
+    'test/test_config.py',
+    'pyproject.toml',
+    'README.md',
 ]
 
 for path in readme_paths:
@@ -25,34 +25,30 @@ for path in readme_paths:
 
 # Check 2: Config fields documented in CONFIG.md exist in Config dataclass
 # This is a simplified check - just verify the main config file exists
-config_file = "manyfaced/common/config.py"
+config_file = 'manyfaced/common/config.py'
 if not os.path.exists(config_file):
-    errors.append(
-        "CONFIG.md references manyfaced/common/config.py but it doesn't exist"
-    )
+    errors.append("CONFIG.md references manyfaced/common/config.py but it doesn't exist")
 
 # Check 3: CLI flags in arguments.py are documented in README
-args_file = "manyfaced/common/arguments.py"
+args_file = 'manyfaced/common/arguments.py'
 if os.path.exists(args_file):
-    with open(args_file, "r") as f:
+    with open(args_file, 'r') as f:
         args_content = f.read()
 
     # Extract --flag patterns, skip --help (auto-generated)
-    flags = re.findall(r"--([\w-]+)", args_content)
-    flags = [f for f in flags if f != "help"]
+    flags = re.findall(r'--([\w-]+)', args_content)
+    flags = [f for f in flags if f != 'help']
 
-    with open("README.md", "r") as f:
+    with open('README.md', 'r') as f:
         readme_content = f.read()
 
     for flag in flags:
         # Check if the full flag is documented
-        if f"--{flag}" not in readme_content:
+        if f'--{flag}' not in readme_content:
             # Also check if the short form is documented
-            short_form = f"-{flag[0]}"
+            short_form = f'-{flag[0]}'
             if short_form not in readme_content:
-                errors.append(
-                    f"CLI flag --{flag} in arguments.py not documented in README"
-                )
+                errors.append(f'CLI flag --{flag} in arguments.py not documented in README')
 
 # Check 4: File paths mentioned in README exist
 # Match paths that look like actual file references
@@ -63,7 +59,7 @@ for match in re.finditer(
 ):
     path = match.group(1)
     # Clean up trailing punctuation
-    path = path.rstrip("`,;'\"")
+    path = path.rstrip('`,;\'"')
     readme_paths_to_check.add(path)
 
 for path in readme_paths_to_check:
@@ -71,10 +67,10 @@ for path in readme_paths_to_check:
         errors.append(f"README references {path} but it doesn't exist")
 
 if errors:
-    print("Documentation drift detected:")
+    print('Documentation drift detected:')
     for error in errors:
-        print(f"  - {error}")
+        print(f'  - {error}')
     sys.exit(1)
 else:
-    print("No documentation drift detected")
+    print('No documentation drift detected')
     sys.exit(0)

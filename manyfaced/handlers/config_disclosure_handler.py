@@ -27,145 +27,145 @@ logger = logging.getLogger(__name__)
 class ConfigDisclosureHandler(HTTPHandlerBase):
     """Config file disclosure honeypot handler."""
 
-    domain = "config_disclosure"
+    domain = 'config_disclosure'
     PATH_PATTERNS = [
-        "/wp-config.php",
-        "/wp-config.php.bak",
-        "/wp-config.php.old",
-        "/wp-config.php.dist",
-        "/wp-config.php.txt",
-        "/config.php",
-        "/config.php.bak",
-        "/config.php.old",
-        "/configuration.php",
-        "/configuration.php.bak",
-        "/settings.py",
-        "/settings.py.bak",
-        "/settings.py.old",
-        "/database.yml",
-        "/database.yml.bak",
-        "/config.json",
-        "/config.json.bak",
-        "/.env",
-        "/.env.bak",
-        "/.env.local",
-        "/.env.prod",
-        "/.env.example",
-        "/.env.sample",
-        "/.htaccess",
-        "/.htaccess.bak",
-        "/.htaccess.old",
-        "/.htpasswd",
-        "/.htpasswd.bak",
-        "/xmlrpc.php",
-        "/xmlrpc.php.bak",
-        "/web.config",
-        "/web.config.bak",
-        "/conf.php",
-        "/conf.php.bak",
-        "/db.php",
-        "/db.php.bak",
-        "/local.php",
-        "/local.php.bak",
-        "/app.config",
-        "/app.config.bak",
-        "/application.ini",
-        "/application.ini.bak",
-        "/globals.php",
-        "/globals.php.bak",
-        "/initialize.php",
-        "/initialize.php.bak",
-        "/constants.php",
-        "/constants.php.bak",
-        "/parameters.yml",
-        "/parameters.yml.dist",
-        "/service.yml",
-        "/service.yml.bak",
-        "/doctrine.yml",
-        "/doctrine.yml.bak",
-        "/routing.yml",
-        "/routing.yml.bak",
-        "/security.yml",
-        "/security.yml.bak",
-        "/appsettings.json",
-        "/appsettings.json.bak",
-        "/package.json",
-        "/package.json.bak",
-        "/composer.json",
-        "/composer.json.bak",
-        "/Gemfile",
-        "/Gemfile.lock",
-        "/pip.conf",
-        "/pip.conf.bak",
-        "/requirements.txt",
-        "/requirements.txt.bak",
-        "/setup.cfg",
-        "/setup.cfg.bak",
-        "/tox.ini",
-        "/tox.ini.bak",
-        "/Makefile",
-        "/Makefile.bak",
-        "/Dockerfile",
-        "/Dockerfile.bak",
-        "/docker-compose.yml",
-        "/docker-compose.yml.bak",
-        "/nginx.conf",
-        "/nginx.conf.bak",
-        "/apache.conf",
-        "/apache.conf.bak",
-        "/httpd.conf",
-        "/httpd.conf.bak",
-        "/my.cnf",
-        "/my.cnf.bak",
-        "/mysqld.cnf",
-        "/postgresql.conf",
-        "/postgresql.conf.bak",
-        "/redis.conf",
-        "/redis.conf.bak",
-        "/php.ini",
-        "/php.ini.bak",
-        "/phpinfo.php",
-        "/phpinfo.php.bak",
-        "/info.php",
-        "/info.php.bak",
-        "/test.php",
-        "/test.php.bak",
-        "/debug.php",
-        "/debug.php.bak",
-        "/console.php",
-        "/console.php.bak",
-        "/cli.php",
-        "/cli.php.bak",
-        "/install.php",
-        "/install.php.bak",
-        "/upgrade.php",
-        "/upgrade.php.bak",
-        "/backup.sql",
-        "/backup.sql.bak",
-        "/dump.sql",
-        "/dump.sql.bak",
-        "/database.sql",
-        "/database.sql.bak",
-        "/db.sql",
-        "/db.sql.bak",
-        "/dump.sql.gz",
-        "/dump.sql.zip",
-        "/backup.tar.gz",
-        "/backup.zip",
-        "/sql/",
-        "/mysql/",
-        "/postgres/",
-        "/.git/config",
-        "/.git/head",
-        "/.git/index",
-        "/security.txt",
-        "/.well-known/security.txt",
+        '/wp-config.php',
+        '/wp-config.php.bak',
+        '/wp-config.php.old',
+        '/wp-config.php.dist',
+        '/wp-config.php.txt',
+        '/config.php',
+        '/config.php.bak',
+        '/config.php.old',
+        '/configuration.php',
+        '/configuration.php.bak',
+        '/settings.py',
+        '/settings.py.bak',
+        '/settings.py.old',
+        '/database.yml',
+        '/database.yml.bak',
+        '/config.json',
+        '/config.json.bak',
+        '/.env',
+        '/.env.bak',
+        '/.env.local',
+        '/.env.prod',
+        '/.env.example',
+        '/.env.sample',
+        '/.htaccess',
+        '/.htaccess.bak',
+        '/.htaccess.old',
+        '/.htpasswd',
+        '/.htpasswd.bak',
+        '/xmlrpc.php',
+        '/xmlrpc.php.bak',
+        '/web.config',
+        '/web.config.bak',
+        '/conf.php',
+        '/conf.php.bak',
+        '/db.php',
+        '/db.php.bak',
+        '/local.php',
+        '/local.php.bak',
+        '/app.config',
+        '/app.config.bak',
+        '/application.ini',
+        '/application.ini.bak',
+        '/globals.php',
+        '/globals.php.bak',
+        '/initialize.php',
+        '/initialize.php.bak',
+        '/constants.php',
+        '/constants.php.bak',
+        '/parameters.yml',
+        '/parameters.yml.dist',
+        '/service.yml',
+        '/service.yml.bak',
+        '/doctrine.yml',
+        '/doctrine.yml.bak',
+        '/routing.yml',
+        '/routing.yml.bak',
+        '/security.yml',
+        '/security.yml.bak',
+        '/appsettings.json',
+        '/appsettings.json.bak',
+        '/package.json',
+        '/package.json.bak',
+        '/composer.json',
+        '/composer.json.bak',
+        '/Gemfile',
+        '/Gemfile.lock',
+        '/pip.conf',
+        '/pip.conf.bak',
+        '/requirements.txt',
+        '/requirements.txt.bak',
+        '/setup.cfg',
+        '/setup.cfg.bak',
+        '/tox.ini',
+        '/tox.ini.bak',
+        '/Makefile',
+        '/Makefile.bak',
+        '/Dockerfile',
+        '/Dockerfile.bak',
+        '/docker-compose.yml',
+        '/docker-compose.yml.bak',
+        '/nginx.conf',
+        '/nginx.conf.bak',
+        '/apache.conf',
+        '/apache.conf.bak',
+        '/httpd.conf',
+        '/httpd.conf.bak',
+        '/my.cnf',
+        '/my.cnf.bak',
+        '/mysqld.cnf',
+        '/postgresql.conf',
+        '/postgresql.conf.bak',
+        '/redis.conf',
+        '/redis.conf.bak',
+        '/php.ini',
+        '/php.ini.bak',
+        '/phpinfo.php',
+        '/phpinfo.php.bak',
+        '/info.php',
+        '/info.php.bak',
+        '/test.php',
+        '/test.php.bak',
+        '/debug.php',
+        '/debug.php.bak',
+        '/console.php',
+        '/console.php.bak',
+        '/cli.php',
+        '/cli.php.bak',
+        '/install.php',
+        '/install.php.bak',
+        '/upgrade.php',
+        '/upgrade.php.bak',
+        '/backup.sql',
+        '/backup.sql.bak',
+        '/dump.sql',
+        '/dump.sql.bak',
+        '/database.sql',
+        '/database.sql.bak',
+        '/db.sql',
+        '/db.sql.bak',
+        '/dump.sql.gz',
+        '/dump.sql.zip',
+        '/backup.tar.gz',
+        '/backup.zip',
+        '/sql/',
+        '/mysql/',
+        '/postgres/',
+        '/.git/config',
+        '/.git/head',
+        '/.git/index',
+        '/security.txt',
+        '/.well-known/security.txt',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(
             path_lower.startswith(pattern) or path_lower == pattern
             for pattern in self.PATH_PATTERNS
@@ -182,11 +182,11 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -194,156 +194,152 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Escalate on config file access attempts
-        profile.escalation_label = "config_file_probe"
+        profile.escalation_label = 'config_file_probe'
 
         # Determine which config file to serve
-        if "/wp-config.php" in path_lower:
+        if '/wp-config.php' in path_lower:
             body = self._wp_config_php()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/x-httpd-php"}
+                body, 200, 'OK', {'Content-Type': 'application/x-httpd-php'}
             ), self.DETECTED_ID
 
-        if "/xmlrpc.php" in path_lower:
+        if '/xmlrpc.php' in path_lower:
             body = self._xmlrpc_php()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/x-httpd-php"}
+                body, 200, 'OK', {'Content-Type': 'application/x-httpd-php'}
             ), self.DETECTED_ID
 
-        if "/.env" in path_lower:
+        if '/.env' in path_lower:
             body = self._env_file()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/.htaccess" in path_lower:
+        if '/.htaccess' in path_lower:
             body = self._htaccess_file()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/.htpasswd" in path_lower:
+        if '/.htpasswd' in path_lower:
             body = self._htpasswd_file()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/config.php" in path_lower or "/configuration.php" in path_lower:
+        if '/config.php' in path_lower or '/configuration.php' in path_lower:
             body = self._config_php()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/x-httpd-php"}
+                body, 200, 'OK', {'Content-Type': 'application/x-httpd-php'}
             ), self.DETECTED_ID
 
-        if "/settings.py" in path_lower:
+        if '/settings.py' in path_lower:
             body = self._settings_py()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/x-python"}
+                body, 200, 'OK', {'Content-Type': 'text/x-python'}
             ), self.DETECTED_ID
 
-        if "/database.yml" in path_lower:
+        if '/database.yml' in path_lower:
             body = self._database_yml()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/x-yaml"}
+                body, 200, 'OK', {'Content-Type': 'text/x-yaml'}
             ), self.DETECTED_ID
 
-        if "/config.json" in path_lower:
+        if '/config.json' in path_lower:
             body = self._config_json()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/json"}
+                body, 200, 'OK', {'Content-Type': 'application/json'}
             ), self.DETECTED_ID
 
-        if "/web.config" in path_lower:
+        if '/web.config' in path_lower:
             body = self._web_config()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/xml"}
+                body, 200, 'OK', {'Content-Type': 'application/xml'}
             ), self.DETECTED_ID
 
-        if "/phpinfo.php" in path_lower or "/info.php" in path_lower:
+        if '/phpinfo.php' in path_lower or '/info.php' in path_lower:
             body = self._phpinfo_php()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/html"}
+                body, 200, 'OK', {'Content-Type': 'text/html'}
             ), self.DETECTED_ID
 
-        if "/php.ini" in path_lower:
+        if '/php.ini' in path_lower:
             body = self._php_ini()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/my.cnf" in path_lower or "/mysqld.cnf" in path_lower:
+        if '/my.cnf' in path_lower or '/mysqld.cnf' in path_lower:
             body = self._my_cnf()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/nginx.conf" in path_lower:
+        if '/nginx.conf' in path_lower:
             body = self._nginx_conf()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/docker-compose.yml" in path_lower:
+        if '/docker-compose.yml' in path_lower:
             body = self._docker_compose_yml()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/x-yaml"}
+                body, 200, 'OK', {'Content-Type': 'text/x-yaml'}
             ), self.DETECTED_ID
 
-        if "/Dockerfile" in path_lower:
+        if '/Dockerfile' in path_lower:
             body = self._dockerfile()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/composer.json" in path_lower:
+        if '/composer.json' in path_lower:
             body = self._composer_json()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/json"}
+                body, 200, 'OK', {'Content-Type': 'application/json'}
             ), self.DETECTED_ID
 
-        if "/package.json" in path_lower:
+        if '/package.json' in path_lower:
             body = self._package_json()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/json"}
+                body, 200, 'OK', {'Content-Type': 'application/json'}
             ), self.DETECTED_ID
 
         if (
-            "/backup.sql" in path_lower
-            or "/dump.sql" in path_lower
-            or "/database.sql" in path_lower
+            '/backup.sql' in path_lower
+            or '/dump.sql' in path_lower
+            or '/database.sql' in path_lower
         ):
             body = self._backup_sql()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "application/sql"}
+                body, 200, 'OK', {'Content-Type': 'application/sql'}
             ), self.DETECTED_ID
 
-        if (
-            "/db/" in path_lower
-            or "/mysql/" in path_lower
-            or "/postgres/" in path_lower
-        ):
+        if '/db/' in path_lower or '/mysql/' in path_lower or '/postgres/' in path_lower:
             body = self._db_directory()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/html"}
+                body, 200, 'OK', {'Content-Type': 'text/html'}
             ), self.DETECTED_ID
 
-        if "/.git/config" in path_lower or "/.git/head" in path_lower:
-            if "/.git/head" in path_lower:
+        if '/.git/config' in path_lower or '/.git/head' in path_lower:
+            if '/.git/head' in path_lower:
                 body = self._git_head()
             else:
                 body = self._git_config()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
-        if "/security.txt" in path_lower or "/.well-known/security.txt" in path_lower:
+        if '/security.txt' in path_lower or '/.well-known/security.txt' in path_lower:
             body = self._security_txt()
             return self._build_http_response(
-                body, 200, "OK", {"Content-Type": "text/plain"}
+                body, 200, 'OK', {'Content-Type': 'text/plain'}
             ), self.DETECTED_ID
 
         # Default: serve wp-config.php as the most common target
         body = self._wp_config_php()
         return self._build_http_response(
-            body, 200, "OK", {"Content-Type": "application/x-httpd-php"}
+            body, 200, 'OK', {'Content-Type': 'application/x-httpd-php'}
         ), self.DETECTED_ID
 
     def _wp_config_php(self) -> str:
@@ -842,43 +838,43 @@ aws:
 
         return json.dumps(
             {
-                "database": {
-                    "host": "localhost",
-                    "port": 3306,
-                    "name": "myapp_db",
-                    "username": "root",
-                    "password": "JSONDBP@ss!",
-                    "driver": "mysql",
+                'database': {
+                    'host': 'localhost',
+                    'port': 3306,
+                    'name': 'myapp_db',
+                    'username': 'root',
+                    'password': 'JSONDBP@ss!',
+                    'driver': 'mysql',
                 },
-                "redis": {
-                    "host": "127.0.0.1",
-                    "port": 6379,
-                    "password": "RedisP@ss!",
-                    "db": 0,
+                'redis': {
+                    'host': '127.0.0.1',
+                    'port': 6379,
+                    'password': 'RedisP@ss!',
+                    'db': 0,
                 },
-                "aws": {
-                    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
-                    "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-                    "region": "us-east-1",
-                    "bucket": "myapp-assets",
+                'aws': {
+                    'access_key_id': 'AKIAIOSFODNN7EXAMPLE',
+                    'secret_access_key': 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+                    'region': 'us-east-1',
+                    'bucket': 'myapp-assets',
                 },
-                "smtp": {
-                    "host": "smtp.example.com",
-                    "port": 587,
-                    "username": "noreply@example.com",
-                    "password": "SmtpP@ss!",
-                    "from": "noreply@example.com",
+                'smtp': {
+                    'host': 'smtp.example.com',
+                    'port': 587,
+                    'username': 'noreply@example.com',
+                    'password': 'SmtpP@ss!',
+                    'from': 'noreply@example.com',
                 },
-                "jwt": {
-                    "secret": "my-secret-jwt-key-should-not-be-here",
-                    "expiration": 3600,
+                'jwt': {
+                    'secret': 'my-secret-jwt-key-should-not-be-here',
+                    'expiration': 3600,
                 },
-                "app": {
-                    "name": "MyApp",
-                    "version": "1.0.0",
-                    "debug": False,
-                    "port": 8080,
-                    "host": "0.0.0.0",
+                'app': {
+                    'name': 'MyApp',
+                    'version': '1.0.0',
+                    'debug': False,
+                    'port': 8080,
+                    'host': '0.0.0.0',
                 },
             },
             indent=2,
@@ -1233,34 +1229,34 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:create_app"]
 
         return json.dumps(
             {
-                "name": "mycompany/myapp",
-                "description": "My Application",
-                "type": "project",
-                "license": "MIT",
-                "require": {
-                    "php": ">=8.1",
-                    "laravel/framework": "^10.0",
-                    "laravel/sanctum": "^3.2",
-                    "laravel/socialite": "^5.9",
-                    "laravel/ui": "^4.2",
-                    "guzzlehttp/guzzle": "^7.2",
-                    "doctrine/dbal": "^3.6",
-                    "predis/predis": "^2.1",
-                    "laravel/passport": "^11.6",
-                    "spatie/laravel-permission": "^5.9",
-                    "barryvdh/laravel-debugbar": "^3.8",
-                    "barryvdh/laravel-ide-helper": "^2.13",
-                    "fakerphp/faker": "^1.23",
-                    "phpunit/phpunit": "^10.0",
+                'name': 'mycompany/myapp',
+                'description': 'My Application',
+                'type': 'project',
+                'license': 'MIT',
+                'require': {
+                    'php': '>=8.1',
+                    'laravel/framework': '^10.0',
+                    'laravel/sanctum': '^3.2',
+                    'laravel/socialite': '^5.9',
+                    'laravel/ui': '^4.2',
+                    'guzzlehttp/guzzle': '^7.2',
+                    'doctrine/dbal': '^3.6',
+                    'predis/predis': '^2.1',
+                    'laravel/passport': '^11.6',
+                    'spatie/laravel-permission': '^5.9',
+                    'barryvdh/laravel-debugbar': '^3.8',
+                    'barryvdh/laravel-ide-helper': '^2.13',
+                    'fakerphp/faker': '^1.23',
+                    'phpunit/phpunit': '^10.0',
                 },
-                "config": {
-                    "optimize-autoloader": True,
-                    "preferred-install": "dist",
-                    "sort-packages": True,
+                'config': {
+                    'optimize-autoloader': True,
+                    'preferred-install': 'dist',
+                    'sort-packages': True,
                 },
-                "extra": {
-                    "laravel": {
-                        "dont-discover": [],
+                'extra': {
+                    'laravel': {
+                        'dont-discover': [],
                     },
                 },
             },
@@ -1273,39 +1269,39 @@ CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:create_app"]
 
         return json.dumps(
             {
-                "name": "myapp-frontend",
-                "version": "1.0.0",
-                "description": "My App Frontend",
-                "main": "index.js",
-                "scripts": {
-                    "dev": "vite",
-                    "build": "vite build",
-                    "preview": "vite preview",
-                    "test": "jest",
-                    "lint": "eslint .",
+                'name': 'myapp-frontend',
+                'version': '1.0.0',
+                'description': 'My App Frontend',
+                'main': 'index.js',
+                'scripts': {
+                    'dev': 'vite',
+                    'build': 'vite build',
+                    'preview': 'vite preview',
+                    'test': 'jest',
+                    'lint': 'eslint .',
                 },
-                "dependencies": {
-                    "react": "^18.2.0",
-                    "react-dom": "^18.2.0",
-                    "react-router-dom": "^6.14.0",
-                    "axios": "^1.4.0",
-                    "zustand": "^4.3.0",
-                    "tailwindcss": "^3.3.0",
-                    "lucide-react": "^0.263.0",
-                    "@tanstack/react-query": "^4.32.0",
-                    "react-hook-form": "^7.45.0",
-                    "yup": "^1.2.0",
+                'dependencies': {
+                    'react': '^18.2.0',
+                    'react-dom': '^18.2.0',
+                    'react-router-dom': '^6.14.0',
+                    'axios': '^1.4.0',
+                    'zustand': '^4.3.0',
+                    'tailwindcss': '^3.3.0',
+                    'lucide-react': '^0.263.0',
+                    '@tanstack/react-query': '^4.32.0',
+                    'react-hook-form': '^7.45.0',
+                    'yup': '^1.2.0',
                 },
-                "devDependencies": {
-                    "@types/react": "^18.2.0",
-                    "@types/react-dom": "^18.2.0",
-                    "@vitejs/plugin-react": "^4.0.0",
-                    "autoprefixer": "^10.4.0",
-                    "eslint": "^8.45.0",
-                    "jest": "^29.6.0",
-                    "postcss": "^8.4.0",
-                    "typescript": "^5.1.0",
-                    "vite": "^4.4.0",
+                'devDependencies': {
+                    '@types/react': '^18.2.0',
+                    '@types/react-dom': '^18.2.0',
+                    '@vitejs/plugin-react': '^4.0.0',
+                    'autoprefixer': '^10.4.0',
+                    'eslint': '^8.45.0',
+                    'jest': '^29.6.0',
+                    'postcss': '^8.4.0',
+                    'typescript': '^5.1.0',
+                    'vite': '^4.4.0',
                 },
             },
             indent=2,
@@ -1438,11 +1434,11 @@ INSERT INTO `api_keys` VALUES (2,2,'ak_test_abcdef1234567890','sk_test_fedcba098
 
     def _git_head(self) -> str:
         """Fake .git/HEAD file."""
-        return r"ref: refs/heads/main" + "\n"
+        return r'ref: refs/heads/main' + '\n'
 
     def _security_txt(self) -> str:
         """Fake security.txt following RFC 9116."""
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         return f"""Contact: mailto:security@example.com
 Contact: https://example.com/.well-known/security.txt
 Expires: {now}T23:59:59Z
@@ -1457,43 +1453,43 @@ Policy: https://example.com/security-policy
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
     def _build_http_response(
         self,
         body: str | bytes,
         status_code: int = 200,
-        status_text: str = "OK",
+        status_text: str = 'OK',
         headers: dict | None = None,
     ) -> bytes:
         """Build a complete HTTP response."""
         if isinstance(body, str):
-            body_bytes = body.encode("utf-8")
+            body_bytes = body.encode('utf-8')
         else:
             body_bytes = body
 
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         resp_headers = {
-            "Server": "Apache/2.4.57 (Ubuntu)",
-            "Date": now,
-            "Connection": "close",
+            'Server': 'Apache/2.4.57 (Ubuntu)',
+            'Date': now,
+            'Connection': 'close',
         }
         if headers:
             resp_headers.update(headers)
 
         header_lines = []
         for key, value in resp_headers.items():
-            header_lines.append(f"{key}: {value}")
+            header_lines.append(f'{key}: {value}')
 
         response = (
-            f"HTTP/1.1 {status_code} {status_text}\r\n"
-            + "\r\n".join(header_lines)
-            + "\r\n"
-            + "\r\n"
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
+            + '\r\n'.join(header_lines)
+            + '\r\n'
+            + '\r\n'
         )
 
-        return response.encode("iso-8859-1") + body_bytes
+        return response.encode('iso-8859-1') + body_bytes
 
     def __repr__(self) -> str:
-        return f"ConfigDisclosureHandler(domain={self.domain!r})"
+        return f'ConfigDisclosureHandler(domain={self.domain!r})'
