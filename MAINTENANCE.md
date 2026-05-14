@@ -44,7 +44,8 @@ git push origin master
 
 ## CI/CD
 - Branch: master
-- CI: pytest (3.11, 3.12, 3.13) + ruff lint
-- Deploy: workflow_run trigger on CI success
-- Deploy: rsync + pip install + systemctl restart
+- CI: ruff lint/format + pytest + basedpyright (Python 3.14) — all in a single `deploy.yml` workflow
+- Deploy: push-to-master trigger (CI passes first, same workflow, no workflow_run latency); manual dispatch from Actions tab for ad-hoc deploys
+- Deploy: rsync + pip install + systemctl restart + per-port ss health check
+- Concurrency: serialized deploys via `concurrency: deploy-droplet` group
 - .deploy_config in .gitignore
