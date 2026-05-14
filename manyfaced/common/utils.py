@@ -9,7 +9,7 @@ from manyfaced.common.status import CLIENT_TIMEOUT
 logger = get_logger(__name__)
 
 # Default JSONL dump path – overridable via settings.DUMP_FILE or env var
-_DUMP_FILE = os.environ.get('MANYFACED_DUMP_FILE', '/var/lib/manyfaced/dump.jsonl')
+_DUMP_FILE = os.environ.get('MANYFACED_DUMP_FILE', 'dump.jsonl')
 
 
 def dump_file(data):
