@@ -23,19 +23,15 @@ from typing import Any
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_LOG_LEVEL = 'INFO'
 DEFAULT_LOG_FILE = os.environ.get(
-    "HONEY_LOG_FILE",
-    os.path.join(
-        os.path.expanduser("~"), ".local", "share", "manyfaced", "honeypot.log"
-    ),
+    'HONEY_LOG_FILE',
+    os.path.join(os.path.expanduser('~'), '.local', 'share', 'manyfaced', 'honeypot.log'),
 )
 DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 DEFAULT_LOG_BACKUP_COUNT = 5
-DEFAULT_LOG_FORMAT = (
-    "%(asctime)s | %(levelname)-8s | %(name)s | %(processName)s | %(message)s"
-)
-DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+DEFAULT_LOG_FORMAT = '%(asctime)s | %(levelname)-8s | %(name)s | %(processName)s | %(message)s'
+DEFAULT_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # ---------------------------------------------------------------------------
 # Formatter classes
@@ -46,22 +42,22 @@ class ColouredFormatter(logging.Formatter):
     """Stderr formatter with ANSI colour codes for readability."""
 
     _COLOURS = {
-        "DEBUG": "\033[36m",  # cyan
-        "INFO": "\033[32m",  # green
-        "WARNING": "\033[33m",  # yellow
-        "ERROR": "\033[31m",  # red
-        "CRITICAL": "\033[1;31m",  # bold red
+        'DEBUG': '\033[36m',  # cyan
+        'INFO': '\033[32m',  # green
+        'WARNING': '\033[33m',  # yellow
+        'ERROR': '\033[31m',  # red
+        'CRITICAL': '\033[1;31m',  # bold red
     }
-    _RESET = "\033[0m"
+    _RESET = '\033[0m'
 
     def __init__(self, fmt: str | None = None, datefmt: str | None = None) -> None:
         super().__init__(fmt or DEFAULT_LOG_FORMAT, datefmt or DEFAULT_DATE_FORMAT)
 
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
-        colour = self._COLOURS.get(record.levelname, "")
+        colour = self._COLOURS.get(record.levelname, '')
         if colour:
-            return f"{colour}{msg}{self._RESET}"
+            return f'{colour}{msg}{self._RESET}'
         return msg
 
 
@@ -73,17 +69,15 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         extra: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(
-                record.created, tz=timezone.utc
-            ).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "process": record.process,
-            "processName": record.processName,
-            "message": record.getMessage(),
+            'timestamp': datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            'level': record.levelname,
+            'logger': record.name,
+            'process': record.process,
+            'processName': record.processName,
+            'message': record.getMessage(),
         }
         if record.exc_info and record.exc_info[0] is not None:
-            extra["exc_info"] = self.formatException(record.exc_info)
+            extra['exc_info'] = self.formatException(record.exc_info)
         return json.dumps(extra, default=str)
 
 
@@ -130,7 +124,7 @@ def setup_logging(
             filename=log_file,
             maxBytes=DEFAULT_LOG_MAX_BYTES,
             backupCount=DEFAULT_LOG_BACKUP_COUNT,
-            encoding="utf-8",
+            encoding='utf-8',
         )
         file_handler.setLevel(root.level)
         file_handler.setFormatter(JsonFormatter())
@@ -146,4 +140,4 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-__all__ = ["setup_logging", "get_logger"]
+__all__ = ['setup_logging', 'get_logger']

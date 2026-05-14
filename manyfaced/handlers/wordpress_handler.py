@@ -22,27 +22,27 @@ logger = logging.getLogger(__name__)
 class WordPressHandler(HTTPHandlerBase):
     """WordPress honeypot handler."""
 
-    domain = "wordpress"
+    domain = 'wordpress'
     PATH_PATTERNS = [
-        "/wp-login",
-        "/wp-login.php",
-        "/wp-admin",
-        "/wp-admin/",
-        "/wp-content",
-        "/wp-content/",
-        "/wp-includes",
-        "/wp-includes/",
-        "/xmlrpc.php",
-        "/wordpress",
-        "/wordpress/",
-        "/blog",
-        "/blog/",
+        '/wp-login',
+        '/wp-login.php',
+        '/wp-admin',
+        '/wp-admin/',
+        '/wp-content',
+        '/wp-content/',
+        '/wp-includes',
+        '/wp-includes/',
+        '/xmlrpc.php',
+        '/wordpress',
+        '/wordpress/',
+        '/blog',
+        '/blog/',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -57,11 +57,11 @@ class WordPressHandler(HTTPHandlerBase):
 
         # Record the request
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -69,7 +69,7 @@ class WordPressHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and "wp-login" in path_lower:
+        if method == 'POST' and 'wp-login' in path_lower:
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -79,20 +79,20 @@ class WordPressHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "wp-login" in path_lower:
+        if 'wp-login' in path_lower:
             body = self._login_page()
-        elif "xmlrpc" in path_lower:
-            if method == "POST":
+        elif 'xmlrpc' in path_lower:
+            if method == 'POST':
                 body = self._xmlrpc_response()
             else:
                 body = self._xmlrpc_get_response()
-        elif "wp-admin" in path_lower:
+        elif 'wp-admin' in path_lower:
             body = self._admin_redirect()
-        elif "wp-content" in path_lower:
+        elif 'wp-content' in path_lower:
             body = self._content_response()
-        elif "wp-includes" in path_lower:
+        elif 'wp-includes' in path_lower:
             body = self._includes_response()
-        elif path_lower == "/" or path_lower == "/index.php":
+        elif path_lower == '/' or path_lower == '/index.php':
             body = self._home_page()
         else:
             body = self._login_page()
@@ -171,7 +171,7 @@ class WordPressHandler(HTTPHandlerBase):
     <p class="version">WordPress 6.5.3</p>
 </body>
 </html>"""
-        return self._build_http_response(body, "/wp-login.php")
+        return self._build_http_response(body, '/wp-login.php')
 
     def _xmlrpc_response(self) -> str:
         """Generate an XML-RPC response for POST requests."""
@@ -287,30 +287,28 @@ class WordPressHandler(HTTPHandlerBase):
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
-        content_type = "text/html; charset=UTF-8"
-        if "xmlrpc" in path:
-            content_type = "text/xml; charset=UTF-8"
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        content_type = 'text/html; charset=UTF-8'
+        if 'xmlrpc' in path:
+            content_type = 'text/xml; charset=UTF-8'
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n'
             f'Link: <https://{path.split("/")[1] if "/" in path else "localhost"}>; rel="https://api.w.org/"\r\n'
-            f"Date: {now}\r\n"
-            f"Content-Type: {content_type}\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'Date: {now}\r\n'
+            f'Content-Type: {content_type}\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"WordPressHandler(domain={self.domain!r})"
+        return f'WordPressHandler(domain={self.domain!r})'

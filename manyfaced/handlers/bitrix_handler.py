@@ -22,50 +22,50 @@ logger = logging.getLogger(__name__)
 class BitrixHandler(HTTPHandlerBase):
     """Bitrix CMS honeypot handler."""
 
-    domain = "bitrix"
+    domain = 'bitrix'
     PATH_PATTERNS = [
-        "/bitrix/",
-        "/bitrix/",
-        "/bitrix/admin/",
-        "/bitrix/admin",
-        "/bitrix/auth/",
-        "/bitrix/auth",
-        "/bitrix/components/",
-        "/bitrix/components",
-        "/bitrix/templates/",
-        "/bitrix/templates",
-        "/bitrix/modules/",
-        "/bitrix/modules",
-        "/bitrix/cache/",
-        "/bitrix/cache",
-        "/bitrix/panels/",
-        "/bitrix/panels",
-        "/bitrix/admin/popup.php",
-        "/bitrix/admin/index.php",
-        "/bitrix/auth/fr/?backurl=",
-        "/bitrix/auth/fr/",
-        "/bitrix/auth/",
-        "/bitrix/404.php",
-        "/bitrix/error.php",
-        "/bitrix/setup/",
-        "/bitrix/setup",
-        "/bitrix/modules/main/include/",
-        "/bitrix/modules/main/classes/",
-        "/bitrix/modules/iblock/classes/",
-        "/bitrix/modules/search/classes/",
-        "/bitrix/modules/socialnetwork/",
-        "/bitrix/modules/catalog/",
-        "/bitrix/modules/iblock/",
-        "/bitrix/modules/seo/",
-        "/bitrix/modules/sale/",
-        "/bitrix/modules/forum/",
-        "/bitrix/modules/blog/",
+        '/bitrix/',
+        '/bitrix/',
+        '/bitrix/admin/',
+        '/bitrix/admin',
+        '/bitrix/auth/',
+        '/bitrix/auth',
+        '/bitrix/components/',
+        '/bitrix/components',
+        '/bitrix/templates/',
+        '/bitrix/templates',
+        '/bitrix/modules/',
+        '/bitrix/modules',
+        '/bitrix/cache/',
+        '/bitrix/cache',
+        '/bitrix/panels/',
+        '/bitrix/panels',
+        '/bitrix/admin/popup.php',
+        '/bitrix/admin/index.php',
+        '/bitrix/auth/fr/?backurl=',
+        '/bitrix/auth/fr/',
+        '/bitrix/auth/',
+        '/bitrix/404.php',
+        '/bitrix/error.php',
+        '/bitrix/setup/',
+        '/bitrix/setup',
+        '/bitrix/modules/main/include/',
+        '/bitrix/modules/main/classes/',
+        '/bitrix/modules/iblock/classes/',
+        '/bitrix/modules/search/classes/',
+        '/bitrix/modules/socialnetwork/',
+        '/bitrix/modules/catalog/',
+        '/bitrix/modules/iblock/',
+        '/bitrix/modules/seo/',
+        '/bitrix/modules/sale/',
+        '/bitrix/modules/forum/',
+        '/bitrix/modules/blog/',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -79,11 +79,11 @@ class BitrixHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -91,7 +91,7 @@ class BitrixHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and ("login" in path_lower or "admin" in path_lower):
+        if method == 'POST' and ('login' in path_lower or 'admin' in path_lower):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -100,16 +100,16 @@ class BitrixHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "/admin/" in path_lower or "/admin" == path_lower:
+        if '/admin/' in path_lower or '/admin' == path_lower:
             body = self._admin_login_page()
-        elif "/auth/" in path_lower:
+        elif '/auth/' in path_lower:
             body = self._auth_page()
-        elif "/setup/" in path_lower:
+        elif '/setup/' in path_lower:
             body = self._setup_page()
         else:
             body = self._bitrix_portal_page()
 
-        return self._build_http_response(body, 200, "OK"), self.DETECTED_ID
+        return self._build_http_response(body, 200, 'OK'), self.DETECTED_ID
 
     def _admin_login_page(self) -> str:
         """Bitrix admin login page."""
@@ -326,39 +326,39 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
 </div>
 </body>
 </html>"""
-        return self._build_http_response(body, 200, "OK")
+        return self._build_http_response(body, 200, 'OK')
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
     def _build_http_response(
         self,
         body: str,
         status_code: int = 200,
-        status_text: str = "OK",
-        content_type: str = "text/html; charset=windows-1251",
+        status_text: str = 'OK',
+        content_type: str = 'text/html; charset=windows-1251',
     ) -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status_code} {status_text}\r\n"
-            f"Server: bitrix/22.5.0\r\n"
-            f"X-Powered-By: PHP/8.2.15\r\n"
-            f"X-Frame-Options: SAMEORIGIN\r\n"
-            f"X-Content-Type-Options: nosniff\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: {content_type}\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
+            f'Server: bitrix/22.5.0\r\n'
+            f'X-Powered-By: PHP/8.2.15\r\n'
+            f'X-Frame-Options: SAMEORIGIN\r\n'
+            f'X-Content-Type-Options: nosniff\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: {content_type}\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"BitrixHandler(domain={self.domain!r})"
+        return f'BitrixHandler(domain={self.domain!r})'

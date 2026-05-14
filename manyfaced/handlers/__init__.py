@@ -47,21 +47,21 @@ from manyfaced.handlers.generic_handler import GenericHandler
 
 __all__ = [
     # Server-side
-    "BaseHandler",
+    'BaseHandler',
     # Client-side core
-    "HTTPHandler",
-    "HTTPHandlerBase",
-    "HandlerRegistry",
-    "BotProfile",
+    'HTTPHandler',
+    'HTTPHandlerBase',
+    'HandlerRegistry',
+    'BotProfile',
     # Service handlers
-    "WordPressHandler",
-    "PhpMyAdminHandler",
-    "JenkinsHandler",
-    "TomcatHandler",
-    "DrupalHandler",
-    "CPanelHandler",
-    "BitrixHandler",
-    "WebDAVHandler",
-    "ConfigDisclosureHandler",
-    "GenericHandler",
+    'WordPressHandler',
+    'PhpMyAdminHandler',
+    'JenkinsHandler',
+    'TomcatHandler',
+    'DrupalHandler',
+    'CPanelHandler',
+    'BitrixHandler',
+    'WebDAVHandler',
+    'ConfigDisclosureHandler',
+    'GenericHandler',
 ]

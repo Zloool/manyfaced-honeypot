@@ -14,7 +14,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Ensure project root is importable
 # ---------------------------------------------------------------------------
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -23,9 +23,9 @@ if project_root not in sys.path:
 # ---------------------------------------------------------------------------
 geoip_mock = MagicMock()
 geoip_mock.geolite2.geolite2 = geoip_mock.geolite2
-sys.modules["geoip"] = geoip_mock
-sys.modules["geoip.geolite2"] = geoip_mock.geolite2
-sys.modules["GeoIP"] = MagicMock()
+sys.modules['geoip'] = geoip_mock
+sys.modules['geoip.geolite2'] = geoip_mock.geolite2
+sys.modules['GeoIP'] = MagicMock()
 
 # ---------------------------------------------------------------------------
 # Import units under test
@@ -40,7 +40,7 @@ from manyfaced.common.arguments import parse
 
 def _parse_with_args(monkeypatch, argv):
     """Helper: set sys.argv and call parse()."""
-    monkeypatch.setattr("sys.argv", ["mfh.py"] + argv)
+    monkeypatch.setattr('sys.argv', ['mfh.py'] + argv)
     return parse()
 
 
@@ -56,15 +56,15 @@ class TestParseDefaults:
         assert args.verbose is False
         assert args.proxy is False
         assert args.generate_config is False
-        assert args.port_mode == "single"
-        assert args.top_ports == ""
+        assert args.port_mode == 'single'
+        assert args.top_ports == ''
 
 
 class TestParseClient:
     """-c 80 -> client=80."""
 
     def test_client_port(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-c", "80"])
+        args = _parse_with_args(monkeypatch, ['-c', '80'])
         assert args.client == 80
 
 
@@ -72,7 +72,7 @@ class TestParseServer:
     """-s 666 -> server=666."""
 
     def test_server_port(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-s", "666"])
+        args = _parse_with_args(monkeypatch, ['-s', '666'])
         assert args.server == 666
 
 
@@ -80,7 +80,7 @@ class TestParseClientServer:
     """-c 80 -s 666 -> both set."""
 
     def test_client_and_server(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-c", "80", "-s", "666"])
+        args = _parse_with_args(monkeypatch, ['-c', '80', '-s', '666'])
         assert args.client == 80
         assert args.server == 666
 
@@ -89,11 +89,11 @@ class TestParseVerbose:
     """-v -> verbose=True."""
 
     def test_verbose_short(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-v"])
+        args = _parse_with_args(monkeypatch, ['-v'])
         assert args.verbose is True
 
     def test_verbose_long(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--verbose"])
+        args = _parse_with_args(monkeypatch, ['--verbose'])
         assert args.verbose is True
 
 
@@ -101,11 +101,11 @@ class TestParseProxy:
     """-p -> proxy=True."""
 
     def test_proxy_short(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["-p"])
+        args = _parse_with_args(monkeypatch, ['-p'])
         assert args.proxy is True
 
     def test_proxy_long(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--proxy"])
+        args = _parse_with_args(monkeypatch, ['--proxy'])
         assert args.proxy is True
 
 
@@ -113,7 +113,7 @@ class TestParseGenerateConfig:
     """--generate-config -> generate_config=True."""
 
     def test_generate_config(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--generate-config"])
+        args = _parse_with_args(monkeypatch, ['--generate-config'])
         assert args.generate_config is True
 
 
@@ -123,7 +123,7 @@ class TestParseAllFlags:
     def test_all_flags(self, monkeypatch):
         args = _parse_with_args(
             monkeypatch,
-            ["-c", "80", "-s", "666", "-v", "-p", "--generate-config"],
+            ['-c', '80', '-s', '666', '-v', '-p', '--generate-config'],
         )
         assert args.client == 80
         assert args.server == 666
@@ -140,7 +140,7 @@ class TestParseClientNoPort:
 
         HONEYPORT = settings.HONEYPORT
 
-        args = _parse_with_args(monkeypatch, ["-c"])
+        args = _parse_with_args(monkeypatch, ['-c'])
         assert args.client == HONEYPORT
 
     def test_server_no_port_uses_default(self, monkeypatch):
@@ -148,7 +148,7 @@ class TestParseClientNoPort:
 
         HIVEPORT = settings.HIVEPORT
 
-        args = _parse_with_args(monkeypatch, ["-s"])
+        args = _parse_with_args(monkeypatch, ['-s'])
         assert args.server == HIVEPORT
 
 
@@ -162,23 +162,23 @@ class TestParsePortMode:
 
     def test_port_mode_single_default(self, monkeypatch):
         args = _parse_with_args(monkeypatch, [])
-        assert args.port_mode == "single"
+        assert args.port_mode == 'single'
 
     def test_port_mode_single_explicit(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--port-mode", "single"])
-        assert args.port_mode == "single"
+        args = _parse_with_args(monkeypatch, ['--port-mode', 'single'])
+        assert args.port_mode == 'single'
 
     def test_port_mode_top(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--port-mode", "top"])
-        assert args.port_mode == "top"
+        args = _parse_with_args(monkeypatch, ['--port-mode', 'top'])
+        assert args.port_mode == 'top'
 
     def test_port_mode_all(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--port-mode", "all"])
-        assert args.port_mode == "all"
+        args = _parse_with_args(monkeypatch, ['--port-mode', 'all'])
+        assert args.port_mode == 'all'
 
     def test_port_mode_invalid_raises(self, monkeypatch):
         with pytest.raises(SystemExit):
-            _parse_with_args(monkeypatch, ["--port-mode", "invalid"])
+            _parse_with_args(monkeypatch, ['--port-mode', 'invalid'])
 
 
 class TestParseTopPorts:
@@ -186,49 +186,45 @@ class TestParseTopPorts:
 
     def test_top_ports_default(self, monkeypatch):
         args = _parse_with_args(monkeypatch, [])
-        assert args.top_ports == ""
+        assert args.top_ports == ''
 
     def test_top_ports_custom(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--top-ports", "80,443,8080"])
-        assert args.top_ports == "80,443,8080"
+        args = _parse_with_args(monkeypatch, ['--top-ports', '80,443,8080'])
+        assert args.top_ports == '80,443,8080'
 
     def test_top_ports_with_space(self, monkeypatch):
-        args = _parse_with_args(monkeypatch, ["--top-ports", "80, 443, 8080"])
-        assert args.top_ports == "80, 443, 8080"
+        args = _parse_with_args(monkeypatch, ['--top-ports', '80, 443, 8080'])
+        assert args.top_ports == '80, 443, 8080'
 
 
 class TestParsePortModeCombined:
     """Combined port mode and top-ports flags."""
 
     def test_port_mode_top_with_top_ports(self, monkeypatch):
-        args = _parse_with_args(
-            monkeypatch, ["--port-mode", "top", "--top-ports", "80,443"]
-        )
-        assert args.port_mode == "top"
-        assert args.top_ports == "80,443"
+        args = _parse_with_args(monkeypatch, ['--port-mode', 'top', '--top-ports', '80,443'])
+        assert args.port_mode == 'top'
+        assert args.top_ports == '80,443'
 
     def test_port_mode_all_with_top_ports_ignored(self, monkeypatch):
-        args = _parse_with_args(
-            monkeypatch, ["--port-mode", "all", "--top-ports", "80"]
-        )
-        assert args.port_mode == "all"
-        assert args.top_ports == "80"  # still stored, but not used when mode=all
+        args = _parse_with_args(monkeypatch, ['--port-mode', 'all', '--top-ports', '80'])
+        assert args.port_mode == 'all'
+        assert args.top_ports == '80'  # still stored, but not used when mode=all
 
     def test_all_flags_with_port_mode(self, monkeypatch):
         args = _parse_with_args(
             monkeypatch,
             [
-                "-c",
-                "80",
-                "-s",
-                "666",
-                "-v",
-                "-p",
-                "--generate-config",
-                "--port-mode",
-                "top",
-                "--top-ports",
-                "80,443",
+                '-c',
+                '80',
+                '-s',
+                '666',
+                '-v',
+                '-p',
+                '--generate-config',
+                '--port-mode',
+                'top',
+                '--top-ports',
+                '80,443',
             ],
         )
         assert args.client == 80
@@ -236,8 +232,8 @@ class TestParsePortModeCombined:
         assert args.verbose is True
         assert args.proxy is True
         assert args.generate_config is True
-        assert args.port_mode == "top"
-        assert args.top_ports == "80,443"
+        assert args.port_mode == 'top'
+        assert args.top_ports == '80,443'
 
 
 # ===================================================================

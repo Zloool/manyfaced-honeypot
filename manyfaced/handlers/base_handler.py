@@ -83,9 +83,9 @@ class BaseHandler(abc.ABC):
         Raises:
             ValueError: If message format is invalid
         """
-        request = message.split(":", 1)
+        request = message.split(':', 1)
         if len(request) != 2:
-            raise ValueError("Invalid message format")
+            raise ValueError('Invalid message format')
         return request
 
     def decrypt_message(self, request) -> bytes:
@@ -96,10 +96,10 @@ class BaseHandler(abc.ABC):
 
     def parse_json(self, decrypted_data: bytes) -> dict[str, Any]:
         try:
-            data = json.loads(decrypted_data.decode("utf-8"))
+            data = json.loads(decrypted_data.decode('utf-8'))
             return data
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            raise ValueError(f"Invalid JSON format: {e}")
+            raise ValueError(f'Invalid JSON format: {e}')
 
     @abstractmethod
     def get_key(self, identifier) -> str:
@@ -120,7 +120,7 @@ class BaseHandler(abc.ABC):
         try:
             self._common_processing(data)
         except Exception as e:
-            print(f"Error processing request: {e}")
+            print(f'Error processing request: {e}')
 
 
 class BotProfile:
@@ -144,18 +144,18 @@ class BotProfile:
     DEEP_EXPLOIT = 5
 
     ESCALATION_LABELS = {
-        IDLE: "idle",
-        SCANNING: "scanning",
-        PROBE: "probing",
-        EXPLOIT_ATTEMPT: "exploiting",
-        COMPROMISE: "compromised",
-        DEEP_EXPLOIT: "deep_exploiting",
+        IDLE: 'idle',
+        SCANNING: 'scanning',
+        PROBE: 'probing',
+        EXPLOIT_ATTEMPT: 'exploiting',
+        COMPROMISE: 'compromised',
+        DEEP_EXPLOIT: 'deep_exploiting',
     }
 
     def __init__(self, bot_ip: str) -> None:
         self.bot_ip = bot_ip
         self.session_id = hashlib.sha256(
-            f"{bot_ip}:{datetime.now(timezone.utc).isoformat()}:{id(self)}".encode()
+            f'{bot_ip}:{datetime.now(timezone.utc).isoformat()}:{id(self)}'.encode()
         ).hexdigest()[:16]
         self.created_at = datetime.now(timezone.utc)
         self.last_updated = self.created_at
@@ -177,8 +177,8 @@ class BotProfile:
             self.last_updated = datetime.now(timezone.utc)
             self._analyze_request(request)
             # Extract metadata from first request
-            if not self.metadata and request.get("raw"):
-                self._extract_metadata(request["raw"])
+            if not self.metadata and request.get('raw'):
+                self._extract_metadata(request['raw'])
 
     def record_interaction(
         self,
@@ -198,49 +198,47 @@ class BotProfile:
         """
         with self._lock:
             # Truncate raw request/response for storage (keep first 5KB)
-            raw_req = request.get("raw", "")
+            raw_req = request.get('raw', '')
             max_raw = 5000
             if len(raw_req) > max_raw:
                 raw_req = (
                     raw_req[:max_raw]
-                    + f"\n... (truncated, {len(request.get('raw', ''))} total bytes)"
+                    + f'\n... (truncated, {len(request.get("raw", ""))} total bytes)'
                 )
 
             raw_resp = (
-                response.decode("iso-8859-1", errors="replace")
+                response.decode('iso-8859-1', errors='replace')
                 if isinstance(response, bytes)
                 else str(response)
             )
             if len(raw_resp) > max_raw:
                 raw_resp = (
                     raw_resp[:max_raw]
-                    + f"\n... (truncated, {len(response) if isinstance(response, bytes) else len(str(response))} total bytes)"
+                    + f'\n... (truncated, {len(response) if isinstance(response, bytes) else len(str(response))} total bytes)'
                 )
 
             dialogue_entry = {
-                "sequence": len(self.dialogue) + 1,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "request": {
-                    "path": request.get("path", ""),
-                    "method": request.get("method", ""),
-                    "raw": raw_req,
-                    "headers": request.get("headers", {}),
+                'sequence': len(self.dialogue) + 1,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'request': {
+                    'path': request.get('path', ''),
+                    'method': request.get('method', ''),
+                    'raw': raw_req,
+                    'headers': request.get('headers', {}),
                 },
-                "response": {
-                    "raw": raw_resp,
-                    "size": len(response)
-                    if isinstance(response, bytes)
-                    else len(str(response)),
-                    "detected": detected,
+                'response': {
+                    'raw': raw_resp,
+                    'size': len(response) if isinstance(response, bytes) else len(str(response)),
+                    'detected': detected,
                 },
             }
             self.dialogue.append(dialogue_entry)
             logger.info(
-                "Recorded dialogue entry #%d for %s (path=%s, method=%s)",
-                dialogue_entry["sequence"],
+                'Recorded dialogue entry #%d for %s (path=%s, method=%s)',
+                dialogue_entry['sequence'],
                 self.bot_ip,
-                request.get("path", ""),
-                request.get("method", ""),
+                request.get('path', ''),
+                request.get('method', ''),
             )
 
     def _extract_metadata(self, raw_request: str) -> None:
@@ -249,186 +247,184 @@ class BotProfile:
         Parses the HTTP request to extract User-Agent, Host, Accept,
         Content-Type, and other useful headers.
         """
-        lines = raw_request.split("\r\n")
+        lines = raw_request.split('\r\n')
         if not lines:
             return
 
         # First line is the request line
         request_line = lines[0]
-        parts = request_line.split(" ", 2)
+        parts = request_line.split(' ', 2)
         if len(parts) >= 2:
-            self.metadata["method"] = parts[0]
-            self.metadata["path"] = parts[1]
+            self.metadata['method'] = parts[0]
+            self.metadata['path'] = parts[1]
             if len(parts) >= 3:
-                self.metadata["http_version"] = parts[2]
+                self.metadata['http_version'] = parts[2]
 
         # Parse headers
         for line in lines[1:]:
-            if ":" in line:
-                key, value = line.split(":", 1)
+            if ':' in line:
+                key, value = line.split(':', 1)
                 key = key.strip()
                 value = value.strip()
-                if key.lower() == "user-agent":
-                    self.metadata["user_agent"] = value
-                elif key.lower() == "host":
-                    self.metadata["host"] = value
-                elif key.lower() == "accept":
-                    self.metadata["accept"] = value
-                elif key.lower() == "content-type":
-                    self.metadata["content_type"] = value
-                elif key.lower() == "content-length":
-                    self.metadata["content_length"] = value
-                elif key.lower() == "referer":
-                    self.metadata["referer"] = value
-                elif key.lower() == "x-forwarded-for":
-                    self.metadata["x_forwarded_for"] = value
-                elif key.lower() == "x-real-ip":
-                    self.metadata["x_real_ip"] = value
+                if key.lower() == 'user-agent':
+                    self.metadata['user_agent'] = value
+                elif key.lower() == 'host':
+                    self.metadata['host'] = value
+                elif key.lower() == 'accept':
+                    self.metadata['accept'] = value
+                elif key.lower() == 'content-type':
+                    self.metadata['content_type'] = value
+                elif key.lower() == 'content-length':
+                    self.metadata['content_length'] = value
+                elif key.lower() == 'referer':
+                    self.metadata['referer'] = value
+                elif key.lower() == 'x-forwarded-for':
+                    self.metadata['x_forwarded_for'] = value
+                elif key.lower() == 'x-real-ip':
+                    self.metadata['x_real_ip'] = value
 
         # Detect if it looks like a known scanner/tool
-        ua = self.metadata.get("user_agent", "").lower()
+        ua = self.metadata.get('user_agent', '').lower()
         if any(
             kw in ua
             for kw in [
-                "nikto",
-                "sqlmap",
-                "nmap",
-                "dirbuster",
-                "gobuster",
-                "wfuzz",
-                "burp",
-                "hydra",
-                "medusa",
-                "masscan",
+                'nikto',
+                'sqlmap',
+                'nmap',
+                'dirbuster',
+                'gobuster',
+                'wfuzz',
+                'burp',
+                'hydra',
+                'medusa',
+                'masscan',
             ]
         ):
-            self.metadata["scanner_detected"] = True
-            self.metadata["scanner_name"] = ua
-        elif any(
-            kw in ua for kw in ["python-requests", "curl", "wget", "java", "go-http"]
-        ):
-            self.metadata["tool_detected"] = True
-            self.metadata["tool_name"] = ua
+            self.metadata['scanner_detected'] = True
+            self.metadata['scanner_name'] = ua
+        elif any(kw in ua for kw in ['python-requests', 'curl', 'wget', 'java', 'go-http']):
+            self.metadata['tool_detected'] = True
+            self.metadata['tool_name'] = ua
 
     def _analyze_request(self, request: dict[str, Any]) -> None:
         """Analyze a request to detect attack patterns."""
-        path = str(request.get("path", "")).lower()
-        method = str(request.get("method", "GET")).upper()
-        raw = str(request.get("raw", "")).lower()
+        path = str(request.get('path', '')).lower()
+        method = str(request.get('method', 'GET')).upper()
+        raw = str(request.get('raw', '')).lower()
 
         # Detect SQL injection patterns
         sqli_patterns = [
-            "union",
-            "select",
-            "drop",
-            "insert",
-            "delete",
-            "update",
-            "or 1=1",
-            "and 1=1",
-            "sleep(",
-            "benchmark(",
-            "or+1=1",
-            "and+1=1",
+            'union',
+            'select',
+            'drop',
+            'insert',
+            'delete',
+            'update',
+            'or 1=1',
+            'and 1=1',
+            'sleep(',
+            'benchmark(',
+            'or+1=1',
+            'and+1=1',
             "admin'--",
-            "1=1--",
+            '1=1--',
         ]
         for pattern in sqli_patterns:
             if pattern in path or pattern in raw:
-                self.detected_behaviors.add("sql_injection")
+                self.detected_behaviors.add('sql_injection')
                 break
 
         # Detect LFI/RFI patterns
         lfi_patterns = [
-            "../",
-            "..\\",
-            "/etc/passwd",
-            "/etc/shadow",
-            "php://",
-            "expect://",
-            "data://",
+            '../',
+            '..\\',
+            '/etc/passwd',
+            '/etc/shadow',
+            'php://',
+            'expect://',
+            'data://',
         ]
         for pattern in lfi_patterns:
             if pattern in path or pattern in raw:
-                self.detected_behaviors.add("lfi_rfi")
+                self.detected_behaviors.add('lfi_rfi')
                 break
 
         # Detect RCE patterns
         rce_patterns = [
-            "; ls",
-            "| cat",
-            "&& wget",
-            "$(curl",
-            "`nc`",
-            "eval(",
-            "exec(",
-            "| cat ",
-            "; cat ",
-            "&& cat ",
-            "cat /etc",
-            "wget http",
-            "curl http",
+            '; ls',
+            '| cat',
+            '&& wget',
+            '$(curl',
+            '`nc`',
+            'eval(',
+            'exec(',
+            '| cat ',
+            '; cat ',
+            '&& cat ',
+            'cat /etc',
+            'wget http',
+            'curl http',
         ]
         for pattern in rce_patterns:
             if pattern in raw:
-                self.detected_behaviors.add("rce")
+                self.detected_behaviors.add('rce')
                 break
 
         # Detect directory traversal
-        if path.count("..") >= 2:
-            self.detected_behaviors.add("directory_traversal")
+        if path.count('..') >= 2:
+            self.detected_behaviors.add('directory_traversal')
 
         # Detect credential stuffing
-        if method == "POST" and any(
-            kw in path for kw in ["login", "admin", "auth", "wp-login", "index.php"]
+        if method == 'POST' and any(
+            kw in path for kw in ['login', 'admin', 'auth', 'wp-login', 'index.php']
         ):
-            self.detected_behaviors.add("credential_stuffing")
+            self.detected_behaviors.add('credential_stuffing')
 
         # Detect enumeration
         enum_paths = [
-            "/admin",
-            "/wp-admin",
-            "/phpmyadmin",
-            "/server-status",
-            "/.git",
-            "/.env",
-            "/config",
-            "/backup",
-            "/manager",
+            '/admin',
+            '/wp-admin',
+            '/phpmyadmin',
+            '/server-status',
+            '/.git',
+            '/.env',
+            '/config',
+            '/backup',
+            '/manager',
         ]
         if any(path.startswith(p) for p in enum_paths):
-            self.detected_behaviors.add("enumeration")
+            self.detected_behaviors.add('enumeration')
 
         self._update_escalation()
 
     def _update_escalation(self) -> None:
         """Update escalation level based on detected behaviors."""
-        if "rce" in self.detected_behaviors:
+        if 'rce' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.DEEP_EXPLOIT)
-        elif "sql_injection" in self.detected_behaviors:
+        elif 'sql_injection' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.EXPLOIT_ATTEMPT)
-        elif "lfi_rfi" in self.detected_behaviors:
+        elif 'lfi_rfi' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.EXPLOIT_ATTEMPT)
-        elif "credential_stuffing" in self.detected_behaviors:
+        elif 'credential_stuffing' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.EXPLOIT_ATTEMPT)
-        elif "directory_traversal" in self.detected_behaviors:
+        elif 'directory_traversal' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.PROBE)
-        elif "enumeration" in self.detected_behaviors:
+        elif 'enumeration' in self.detected_behaviors:
             self.escalation_level = max(self.escalation_level, self.SCANNING)
 
     def capture_credentials(self, credentials: dict[str, str]) -> None:
         """Capture login credentials from a bot."""
         with self._lock:
-            credentials["captured_at"] = datetime.now(timezone.utc).isoformat()
-            credentials["session_id"] = self.session_id
+            credentials['captured_at'] = datetime.now(timezone.utc).isoformat()
+            credentials['session_id'] = self.session_id
             self.captured_credentials.append(credentials)
-            self.detected_behaviors.add("credential_stuffing")
+            self.detected_behaviors.add('credential_stuffing')
             self.escalation_level = max(self.escalation_level, self.EXPLOIT_ATTEMPT)
             logger.info(
-                "Captured credentials from %s (session=%s): %s",
+                'Captured credentials from %s (session=%s): %s',
                 self.bot_ip,
                 self.session_id,
-                {k: "***" if k == "password" else v for k, v in credentials.items()},
+                {k: '***' if k == 'password' else v for k, v in credentials.items()},
             )
 
     def get_dialogue(self) -> list[dict[str, Any]]:
@@ -448,46 +444,42 @@ class BotProfile:
         """
         with self._lock:
             return {
-                "bot_ip": self.bot_ip,
-                "session_id": self.session_id,
-                "created_at": self.created_at.isoformat(),
-                "last_updated": self.last_updated.isoformat(),
-                "metadata": dict(self.metadata),
-                "escalation_level": self.escalation_level,
-                "escalation_label": self.ESCALATION_LABELS.get(
-                    self.escalation_level, "unknown"
-                ),
-                "detected_behaviors": list(self.detected_behaviors),
-                "request_count": len(self.request_history),
-                "dialogue_count": len(self.dialogue),
-                "credential_attempts": len(self.captured_credentials),
-                "captured_credentials": list(self.captured_credentials),
-                "explored_paths": [r.get("path", "") for r in self.request_history],
-                "dialogue": list(self.dialogue),
+                'bot_ip': self.bot_ip,
+                'session_id': self.session_id,
+                'created_at': self.created_at.isoformat(),
+                'last_updated': self.last_updated.isoformat(),
+                'metadata': dict(self.metadata),
+                'escalation_level': self.escalation_level,
+                'escalation_label': self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
+                'detected_behaviors': list(self.detected_behaviors),
+                'request_count': len(self.request_history),
+                'dialogue_count': len(self.dialogue),
+                'credential_attempts': len(self.captured_credentials),
+                'captured_credentials': list(self.captured_credentials),
+                'explored_paths': [r.get('path', '') for r in self.request_history],
+                'dialogue': list(self.dialogue),
             }
 
     def get_stats(self) -> dict[str, Any]:
         """Get handler statistics for this bot."""
         with self._lock:
             return {
-                "bot_ip": self.bot_ip,
-                "session_id": self.session_id,
-                "escalation_level": self.escalation_level,
-                "escalation_label": self.ESCALATION_LABELS.get(
-                    self.escalation_level, "unknown"
-                ),
-                "detected_behaviors": list(self.detected_behaviors),
-                "request_count": len(self.request_history),
-                "dialogue_count": len(self.dialogue),
-                "credential_attempts": len(self.captured_credentials),
-                "explored_paths": [r.get("path", "") for r in self.request_history],
+                'bot_ip': self.bot_ip,
+                'session_id': self.session_id,
+                'escalation_level': self.escalation_level,
+                'escalation_label': self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
+                'detected_behaviors': list(self.detected_behaviors),
+                'request_count': len(self.request_history),
+                'dialogue_count': len(self.dialogue),
+                'credential_attempts': len(self.captured_credentials),
+                'explored_paths': [r.get('path', '') for r in self.request_history],
             }
 
     def __repr__(self) -> str:
         return (
-            f"BotProfile(bot_ip={self.bot_ip!r}, session={self.session_id!r}, "
-            f"level={self.ESCALATION_LABELS.get(self.escalation_level, '?')}, "
-            f"behaviors={len(self.detected_behaviors)}, dialogue={len(self.dialogue)})"
+            f'BotProfile(bot_ip={self.bot_ip!r}, session={self.session_id!r}, '
+            f'level={self.ESCALATION_LABELS.get(self.escalation_level, "?")}, '
+            f'behaviors={len(self.detected_behaviors)}, dialogue={len(self.dialogue)})'
         )
 
 
@@ -501,7 +493,7 @@ class HTTPHandlerBase(abc.ABC):
     """
 
     # Service domain identifier (e.g., "wordpress", "phpmyadmin")
-    domain: str = "base"
+    domain: str = 'base'
 
     # Path patterns this handler responds to (checked in order)
     PATH_PATTERNS: list[str] = []
@@ -552,7 +544,7 @@ class HTTPHandlerBase(abc.ABC):
                 profile = BotProfile(bot_ip=bot_ip)
                 self.bot_profiles[bot_ip] = profile
                 logger.info(
-                    "Created new BotProfile for %s (session=%s, domain=%s)",
+                    'Created new BotProfile for %s (session=%s, domain=%s)',
                     bot_ip,
                     profile.session_id,
                     self.domain,
@@ -586,7 +578,7 @@ class HTTPHandlerBase(abc.ABC):
             # Return a "success" response to encourage further probing
             response = self._login_success_response()
             return credentials, response, self.DETECTED_ID
-        return None, b"", self.DETECTED_ID
+        return None, b'', self.DETECTED_ID
 
     def _extract_credentials(
         self,
@@ -605,7 +597,7 @@ class HTTPHandlerBase(abc.ABC):
             Dict with 'username' and 'password' keys, or None
         """
         # Split headers from body
-        parts = raw_request.split("\r\n\r\n", 1)
+        parts = raw_request.split('\r\n\r\n', 1)
         if len(parts) < 2:
             return None
         body = parts[1]
@@ -613,70 +605,70 @@ class HTTPHandlerBase(abc.ABC):
         # Normalize field names: strip trailing '=' so we can append it once
         # This fixes the bug where fields like "log=" became "log=="
         username_fields = [
-            "log",
-            "user",
-            "username",
-            "login",
-            "user_login",
-            "USER_LOGIN",
-            "j_username",
-            "uid",
-            "email",
-            "pma_username",
-            "server[0][user]",
+            'log',
+            'user',
+            'username',
+            'login',
+            'user_login',
+            'USER_LOGIN',
+            'j_username',
+            'uid',
+            'email',
+            'pma_username',
+            'server[0][user]',
         ]
         password_fields = [
-            "pwd",
-            "pass",
-            "password",
-            "login_password",
-            "j_password",
-            "passwort",
-            "user_pass",
-            "USER_PASSWORD",
-            "pma_password",
-            "server[0][password]",
+            'pwd',
+            'pass',
+            'password',
+            'login_password',
+            'j_password',
+            'passwort',
+            'user_pass',
+            'USER_PASSWORD',
+            'pma_password',
+            'server[0][password]',
         ]
 
         # URL-decode the body
-        body = body.replace("+", " ")
-        body = body.replace("%40", "@")
-        body = body.replace("%3D", "=")
-        body = body.replace("%26", "&")
-        body = body.replace("%23", "#")
-        body = body.replace("%25", "%")
-        body = body.replace("%27", "'")
-        body = body.replace("%22", '"')
-        body = body.replace("%2F", "/")
-        body = body.replace("%3A", ":")
-        body = body.replace("%3F", "?")
+        body = body.replace('+', ' ')
+        body = body.replace('%40', '@')
+        body = body.replace('%3D', '=')
+        body = body.replace('%26', '&')
+        body = body.replace('%23', '#')
+        body = body.replace('%25', '%')
+        body = body.replace('%27', "'")
+        body = body.replace('%22', '"')
+        body = body.replace('%2F', '/')
+        body = body.replace('%3A', ':')
+        body = body.replace('%3F', '?')
 
         username = None
         password = None
 
         for field in username_fields:
-            prefix = field + "="
+            prefix = field + '='
             if prefix in body:
-                value = body.split(prefix, 1)[1].split("&", 1)[0]
+                value = body.split(prefix, 1)[1].split('&', 1)[0]
                 if value:
                     username = value
                     break
 
         for field in password_fields:
-            prefix = field + "="
+            prefix = field + '='
             if prefix in body:
-                value = body.split(prefix, 1)[1].split("&", 1)[0]
+                value = body.split(prefix, 1)[1].split('&', 1)[0]
                 if value:
                     password = value
                     break
 
         if username and password:
-            return {"username": username, "password": password}
+            return {'username': username, 'password': password}
         return None
 
     def _login_success_response(self) -> bytes:
         """Return a fake login success response."""
-        return b"HTTP/1.1 302 Found\r\nLocation: /wp-admin/\r\n\r\n"
+        return b'HTTP/1.1 302 Found\r\nLocation: /wp-admin/\r\n\r\n'
 
     def get_profile(self, bot_ip: str) -> BotProfile | None:
         """Get the bot's profile, or None if not found."""
@@ -693,20 +685,20 @@ class HTTPHandlerBase(abc.ABC):
         with self._lock:
             if bot_ip in self.bot_profiles:
                 del self.bot_profiles[bot_ip]
-                logger.info("Cleared profile for %s (domain=%s)", bot_ip, self.domain)
+                logger.info('Cleared profile for %s (domain=%s)', bot_ip, self.domain)
 
     def get_stats(self) -> dict[str, Any]:
         """Get handler statistics."""
         with self._lock:
             return {
-                "domain": self.domain,
-                "active_profiles": len(self.bot_profiles),
-                "total_responses": self._response_count,
-                "total_credential_captures": sum(
+                'domain': self.domain,
+                'active_profiles': len(self.bot_profiles),
+                'total_responses': self._response_count,
+                'total_credential_captures': sum(
                     len(p.captured_credentials) for p in self.bot_profiles.values()
                 ),
-                "profiles": {ip: p.get_stats() for ip, p in self.bot_profiles.items()},
+                'profiles': {ip: p.get_stats() for ip, p in self.bot_profiles.items()},
             }
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(domain={self.domain!r})"
+        return f'{self.__class__.__name__}(domain={self.domain!r})'

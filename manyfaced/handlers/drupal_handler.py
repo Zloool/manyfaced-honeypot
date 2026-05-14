@@ -20,34 +20,34 @@ logger = logging.getLogger(__name__)
 class DrupalHandler(HTTPHandlerBase):
     """Drupal CMS honeypot handler."""
 
-    domain = "drupal"
+    domain = 'drupal'
     PATH_PATTERNS = [
-        "/user",
-        "/user/",
-        "/user/login",
-        "/user/register",
-        "/admin",
-        "/admin/",
-        "/admin/config",
-        "/node",
-        "/node/",
-        "/node/",
-        "/sites",
-        "/sites/",
-        "/sites/default",
-        "/xmlrpc.php",
-        "/drupal",
-        "/drupal/",
-        "/cgi-bin",
-        "/cgi-bin/",
-        "/files",
-        "/files/",
+        '/user',
+        '/user/',
+        '/user/login',
+        '/user/register',
+        '/admin',
+        '/admin/',
+        '/admin/config',
+        '/node',
+        '/node/',
+        '/node/',
+        '/sites',
+        '/sites/',
+        '/sites/default',
+        '/xmlrpc.php',
+        '/drupal',
+        '/drupal/',
+        '/cgi-bin',
+        '/cgi-bin/',
+        '/files',
+        '/files/',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -61,11 +61,11 @@ class DrupalHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -73,7 +73,7 @@ class DrupalHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Handle login POST requests
-        if method == "POST" and "user/login" in path_lower:
+        if method == 'POST' and 'user/login' in path_lower:
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -82,19 +82,19 @@ class DrupalHandler(HTTPHandlerBase):
                 return response, detected
 
         # Route to appropriate response
-        if "user/login" in path_lower:
+        if 'user/login' in path_lower:
             body = self._login_page()
-        elif "user/register" in path_lower:
+        elif 'user/register' in path_lower:
             body = self._register_page()
-        elif "admin" in path_lower:
+        elif 'admin' in path_lower:
             body = self._admin_page()
-        elif "xmlrpc" in path_lower:
+        elif 'xmlrpc' in path_lower:
             body = self._xmlrpc_response()
-        elif "sites/default" in path_lower:
+        elif 'sites/default' in path_lower:
             body = self._sites_default()
-        elif "node" in path_lower:
+        elif 'node' in path_lower:
             body = self._node_page()
-        elif path_lower == "/" or path_lower == "/index.php":
+        elif path_lower == '/' or path_lower == '/index.php':
             body = self._home_page()
         else:
             body = self._login_page()
@@ -188,7 +188,7 @@ class DrupalHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
-        return self._build_http_response(body, "/user/login")
+        return self._build_http_response(body, '/user/login')
 
     def _register_page(self) -> str:
         """Generate a Drupal registration page."""
@@ -395,28 +395,26 @@ $databases['default']['default'] = [
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
-    def _build_http_response(
-        self, body: str, path: str, status: str = "200 OK"
-    ) -> bytes:
+    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
         """Build a complete HTTP response."""
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n"
-            f"X-Drupal-Cache: HIT\r\n"
-            f"X-Content-Type-Options: nosniff\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html; charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
+            f'HTTP/1.1 {status}\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n'
+            f'X-Drupal-Cache: HIT\r\n'
+            f'X-Content-Type-Options: nosniff\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: text/html; charset=UTF-8\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
         )
 
-        return response.encode("iso-8859-1")
+        return response.encode('iso-8859-1')
 
     def __repr__(self) -> str:
-        return f"DrupalHandler(domain={self.domain!r})"
+        return f'DrupalHandler(domain={self.domain!r})'

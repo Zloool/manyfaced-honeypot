@@ -23,64 +23,64 @@ logger = logging.getLogger(__name__)
 class WebDAVHandler(HTTPHandlerBase):
     """WebDAV honeypot handler."""
 
-    domain = "webdav"
+    domain = 'webdav'
     PATH_PATTERNS = [
-        "/webdav/",
-        "/webdav",
-        "/dav/",
-        "/dav",
-        "/files/",
-        "/files",
-        "/uploads/",
-        "/uploads",
-        "/share/",
-        "/share",
-        "/public/",
-        "/public",
-        "/remote/",
-        "/remote",
-        "/remote.php/",
-        "/remote.php",
-        "/caldav/",
-        "/caldav",
-        "/carddav/",
-        "/carddav",
-        "/.well-known/webdav",
-        "/webdav/server.php",
-        "/webdav/index.php",
-        "/webdav/upload.php",
-        "/webdav/download.php",
-        "/webdav/list.php",
-        "/webdav/proxy.php",
-        "/webdav/dav.php",
-        "/webdav/propfind.php",
-        "/webdav/mkcol.php",
-        "/webdav/put.php",
-        "/webdav/delete.php",
-        "/webdav/move.php",
-        "/webdav/copy.php",
-        "/webdav/lock.php",
-        "/webdav/unlock.php",
-        "/webdav/checkout.php",
-        "/webdav/checkin.php",
-        "/webdav/working_copy/",
-        "/webdav/version.xml",
-        "/webdav/lockdiscovery/",
-        "/webdav/locks/",
-        "/webdav/temp/",
-        "/webdav/.htaccess",
-        "/webdav/.htpasswd",
-        "/webdav/config.php",
-        "/webdav/setup.php",
-        "/webdav/admin/",
-        "/webdav/login/",
-        "/webdav/auth/",
+        '/webdav/',
+        '/webdav',
+        '/dav/',
+        '/dav',
+        '/files/',
+        '/files',
+        '/uploads/',
+        '/uploads',
+        '/share/',
+        '/share',
+        '/public/',
+        '/public',
+        '/remote/',
+        '/remote',
+        '/remote.php/',
+        '/remote.php',
+        '/caldav/',
+        '/caldav',
+        '/carddav/',
+        '/carddav',
+        '/.well-known/webdav',
+        '/webdav/server.php',
+        '/webdav/index.php',
+        '/webdav/upload.php',
+        '/webdav/download.php',
+        '/webdav/list.php',
+        '/webdav/proxy.php',
+        '/webdav/dav.php',
+        '/webdav/propfind.php',
+        '/webdav/mkcol.php',
+        '/webdav/put.php',
+        '/webdav/delete.php',
+        '/webdav/move.php',
+        '/webdav/copy.php',
+        '/webdav/lock.php',
+        '/webdav/unlock.php',
+        '/webdav/checkout.php',
+        '/webdav/checkin.php',
+        '/webdav/working_copy/',
+        '/webdav/version.xml',
+        '/webdav/lockdiscovery/',
+        '/webdav/locks/',
+        '/webdav/temp/',
+        '/webdav/.htaccess',
+        '/webdav/.htpasswd',
+        '/webdav/config.php',
+        '/webdav/setup.php',
+        '/webdav/admin/',
+        '/webdav/login/',
+        '/webdav/auth/',
     ]
     DETECTED_ID = 1
 
     def matches_path(self, path: str) -> bool:
         """Check if this handler should handle the given path."""
-        path_lower = path.lower().split("?")[0]
+        path_lower = path.lower().split('?')[0]
         return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
@@ -94,11 +94,11 @@ class WebDAVHandler(HTTPHandlerBase):
         profile = self.get_or_create_profile(bot_ip)
 
         request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
@@ -107,113 +107,101 @@ class WebDAVHandler(HTTPHandlerBase):
         headers_dict = dict(headers) if headers else {}
 
         # Extract Basic Auth credentials if present
-        auth_header = headers_dict.get("Authorization", "")
-        if auth_header.startswith("Basic "):
+        auth_header = headers_dict.get('Authorization', '')
+        if auth_header.startswith('Basic '):
             import base64
 
             try:
-                decoded = base64.b64decode(auth_header[6:]).decode(
-                    "utf-8", errors="replace"
-                )
-                if ":" in decoded:
-                    username, password = decoded.split(":", 1)
-                    profile.capture_credentials(
-                        {"username": username, "password": password}
-                    )
+                decoded = base64.b64decode(auth_header[6:]).decode('utf-8', errors='replace')
+                if ':' in decoded:
+                    username, password = decoded.split(':', 1)
+                    profile.capture_credentials({'username': username, 'password': password})
             except Exception:
-                logger.debug("Failed to parse WebDAV Basic Auth header")
+                logger.debug('Failed to parse WebDAV Basic Auth header')
 
         # Handle PROPFIND requests (WebDAV directory listing)
-        if method == "PROPFIND":
+        if method == 'PROPFIND':
             body = self._propfind_response(path)
             return self._build_http_response(
                 body,
                 207,
-                "Multi-Status",
+                'Multi-Status',
                 {
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "DAV": "1, 2",
+                    'Content-Type': 'application/xml; charset=utf-8',
+                    'DAV': '1, 2',
                 },
             ), self.DETECTED_ID
 
         # Handle OPTIONS requests (WebDAV capabilities probe)
-        if method == "OPTIONS":
+        if method == 'OPTIONS':
             return self._options_response()
 
         # Handle MKCOL requests (create directory)
-        if method == "MKCOL":
-            return self._build_http_response(b"", 201, "Created"), self.DETECTED_ID
+        if method == 'MKCOL':
+            return self._build_http_response(b'', 201, 'Created'), self.DETECTED_ID
 
         # Handle DELETE requests
-        if method == "DELETE":
-            return self._build_http_response(b"", 204, "No Content"), self.DETECTED_ID
+        if method == 'DELETE':
+            return self._build_http_response(b'', 204, 'No Content'), self.DETECTED_ID
 
         # Handle PUT requests (file upload attempt)
-        if method == "PUT":
+        if method == 'PUT':
             profile.record_request(
                 {
-                    "path": path,
-                    "method": method,
-                    "headers": headers_dict,
-                    "raw": raw_request[:5000]
-                    + (" [truncated]" if len(raw_request) > 5000 else ""),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    'path': path,
+                    'method': method,
+                    'headers': headers_dict,
+                    'raw': raw_request[:5000] + (' [truncated]' if len(raw_request) > 5000 else ''),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
                 }
             )
-            profile.escalation_label = "file_upload_attempt"
+            profile.escalation_label = 'file_upload_attempt'
             return self._build_http_response(
-                b"",
+                b'',
                 201,
-                "Created",
-                {"Content-Type": "text/html; charset=utf-8"},
+                'Created',
+                {'Content-Type': 'text/html; charset=utf-8'},
             ), self.DETECTED_ID
 
         # Handle POST requests (upload, login, etc.)
-        if method == "POST":
+        if method == 'POST':
             # Check for login POST
-            if "login" in path_lower or "auth" in path_lower:
+            if 'login' in path_lower or 'auth' in path_lower:
                 credentials, response, detected = self.handle_login(
                     path, raw_request, bot_ip, headers_dict
                 )
                 if credentials:
                     return self._login_failed_response()
             # Check for file upload POST
-            content_type = headers_dict.get("Content-Type", "")
-            if (
-                "multipart/form-data" in content_type
-                or "application/octet-stream" in content_type
-            ):
+            content_type = headers_dict.get('Content-Type', '')
+            if 'multipart/form-data' in content_type or 'application/octet-stream' in content_type:
                 profile.record_request(
                     {
-                        "path": path,
-                        "method": method,
-                        "headers": headers_dict,
-                        "raw": raw_request[:5000]
-                        + (" [truncated]" if len(raw_request) > 5000 else ""),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        'path': path,
+                        'method': method,
+                        'headers': headers_dict,
+                        'raw': raw_request[:5000]
+                        + (' [truncated]' if len(raw_request) > 5000 else ''),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                     }
                 )
-                profile.escalation_label = "file_upload_attempt"
+                profile.escalation_label = 'file_upload_attempt'
                 return self._build_http_response(
-                    b"",
+                    b'',
                     201,
-                    "Created",
-                    {"Content-Type": "text/html; charset=utf-8"},
+                    'Created',
+                    {'Content-Type': 'text/html; charset=utf-8'},
                 ), self.DETECTED_ID
 
         # Handle GET requests (directory listing)
-        if method == "GET":
-            if "/server.php" in path_lower or "/index.php" in path_lower:
+        if method == 'GET':
+            if '/server.php' in path_lower or '/index.php' in path_lower:
                 body = self._webdav_portal_page()
-            elif "/.htaccess" in path_lower or "/.htpasswd" in path_lower:
+            elif '/.htaccess' in path_lower or '/.htpasswd' in path_lower:
                 return self._forbidden_response()
-            elif "/config.php" in path_lower or "/setup.php" in path_lower:
+            elif '/config.php' in path_lower or '/setup.php' in path_lower:
                 return self._forbidden_response()
-            elif (
-                "/admin/" in path_lower
-                or "/login/" in path_lower
-                or "/auth/" in path_lower
-            ):
+            elif '/admin/' in path_lower or '/login/' in path_lower or '/auth/' in path_lower:
                 body = self._webdav_login_page()
             else:
                 body = self._directory_listing(path)
@@ -221,33 +209,33 @@ class WebDAVHandler(HTTPHandlerBase):
             return self._build_http_response(
                 body,
                 200,
-                "OK",
+                'OK',
                 {
-                    "Content-Type": "text/html; charset=utf-8",
-                    "DAV": "1, 2",
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'DAV': '1, 2',
                 },
             ), self.DETECTED_ID
 
         # Handle other methods (HEAD, PATCH, COPY, MOVE, LOCK, UNLOCK)
-        if method in ("HEAD", "PATCH", "COPY", "MOVE", "LOCK", "UNLOCK"):
-            profile.escalation_label = f"webdav_{method.lower()}_attempt"
-            return self._build_http_response(b"", 200, "OK"), self.DETECTED_ID
+        if method in ('HEAD', 'PATCH', 'COPY', 'MOVE', 'LOCK', 'UNLOCK'):
+            profile.escalation_label = f'webdav_{method.lower()}_attempt'
+            return self._build_http_response(b'', 200, 'OK'), self.DETECTED_ID
 
         # Default: 405 Method Not Allowed
         return self._build_http_response(
-            b"",
+            b'',
             405,
-            "Method Not Allowed",
+            'Method Not Allowed',
             {
-                "Allow": "GET, HEAD, POST, OPTIONS, PROPFIND, MKCOL, PUT, DELETE, MOVE, COPY",
+                'Allow': 'GET, HEAD, POST, OPTIONS, PROPFIND, MKCOL, PUT, DELETE, MOVE, COPY',
             },
         ), self.DETECTED_ID
 
     def _directory_listing(self, path: str) -> str:
         """Generate a WebDAV directory listing page."""
         # Extract the directory name from the path
-        dir_name = path.rstrip("/").split("/")[-1] or "webdav"
-        now = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M:%S GMT")
+        dir_name = path.rstrip('/').split('/')[-1] or 'webdav'
+        now = datetime.now(timezone.utc).strftime('%d %b %Y %H:%M:%S GMT')
 
         return f"""<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
 <html>
@@ -278,8 +266,8 @@ class WebDAVHandler(HTTPHandlerBase):
 
     def _propfind_response(self, path: str) -> str:
         """Generate a WebDAV PROPFIND XML response."""
-        dir_name = path.rstrip("/").split("/")[-1] or "webdav"
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        dir_name = path.rstrip('/').split('/')[-1] or 'webdav'
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         return f"""<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:" xmlns:ns0="http://apache.org/dav/props/" xmlns:ns1="DAV:">
@@ -288,7 +276,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}</d:creationdate>
         <d:displayname>webdav</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -324,7 +312,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}</d:creationdate>
         <d:displayname>documents</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -339,7 +327,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}</d:creationdate>
         <d:displayname>uploads</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -354,7 +342,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}</d:creationdate>
         <d:displayname>shared</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -369,7 +357,7 @@ class WebDAVHandler(HTTPHandlerBase):
     <d:propstat>
       <d:status>HTTP/1.1 200 OK</d:status>
       <d:prop>
-        <d:creationdate>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}</d:creationdate>
+        <d:creationdate>{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}</d:creationdate>
         <d:displayname>config</d:displayname>
         <d:getcontentlength>0</d:getcontentlength>
         <d:getlastmodified>{now}</d:getlastmodified>
@@ -384,13 +372,13 @@ class WebDAVHandler(HTTPHandlerBase):
     def _options_response(self) -> bytes:
         """Generate WebDAV OPTIONS response (capabilities probe)."""
         return self._build_http_response(
-            b"",
+            b'',
             200,
-            "OK",
+            'OK',
             {
-                "DAV": "1, 2",
-                "MS-Author-Via": "DAV",
-                "Allow": "GET, HEAD, POST, OPTIONS, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK, PUT, DELETE",
+                'DAV': '1, 2',
+                'MS-Author-Via': 'DAV',
+                'Allow': 'GET, HEAD, POST, OPTIONS, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK, PUT, DELETE',
             },
         ), self.DETECTED_ID
 
@@ -461,7 +449,7 @@ class WebDAVHandler(HTTPHandlerBase):
 <p><a href="/webdav/">Return to WebDAV</a></p>
 </body>
 </html>"""
-        return self._build_http_response(body, 401, "Unauthorized"), self.DETECTED_ID[0]
+        return self._build_http_response(body, 401, 'Unauthorized'), self.DETECTED_ID[0]
 
     def _forbidden_response(self) -> bytes:
         """Return 403 Forbidden for sensitive files."""
@@ -475,50 +463,50 @@ class WebDAVHandler(HTTPHandlerBase):
 <p>You don't have permission to access this file.</p>
 </body>
 </html>"""
-        return self._build_http_response(body, 403, "Forbidden"), self.DETECTED_ID
+        return self._build_http_response(body, 403, 'Forbidden'), self.DETECTED_ID
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
         parts = raw_request.split()
         if parts and len(parts) >= 1:
             return parts[0].upper()
-        return "GET"
+        return 'GET'
 
     def _build_http_response(
         self,
         body: str | bytes,
         status_code: int = 200,
-        status_text: str = "OK",
+        status_text: str = 'OK',
         headers: dict | None = None,
     ) -> bytes:
         """Build a complete HTTP response."""
         if isinstance(body, str):
-            body_bytes = body.encode("utf-8")
+            body_bytes = body.encode('utf-8')
         else:
             body_bytes = body
 
-        now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
         resp_headers = {
-            "Server": "Apache/2.4.57 (Ubuntu)",
-            "Date": now,
-            "Connection": "close",
+            'Server': 'Apache/2.4.57 (Ubuntu)',
+            'Date': now,
+            'Connection': 'close',
         }
         if headers:
             resp_headers.update(headers)
 
         header_lines = []
         for key, value in resp_headers.items():
-            header_lines.append(f"{key}: {value}")
+            header_lines.append(f'{key}: {value}')
 
         response = (
-            f"HTTP/1.1 {status_code} {status_text}\r\n"
-            + "\r\n".join(header_lines)
-            + "\r\n"
-            + "\r\n"
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
+            + '\r\n'.join(header_lines)
+            + '\r\n'
+            + '\r\n'
         )
 
-        return response.encode("iso-8859-1") + body_bytes
+        return response.encode('iso-8859-1') + body_bytes
 
     def __repr__(self) -> str:
-        return f"WebDAVHandler(domain={self.domain!r})"
+        return f'WebDAVHandler(domain={self.domain!r})'

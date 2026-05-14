@@ -22,35 +22,35 @@ class BearStorage:
         self.ip = ip
         self.raw_request = raw_request
         self.timestamp = timestamp
-        self.path = ""
-        self.command = ""
-        self.version = ""
-        self.ua = ""
-        self.headers = ""  # type: ignore[assignment]
-        self.country = ""
-        self.continent = ""
-        self.timezone = ""
-        self.dns_name = ""
-        self.tracert = ""  # TODO
-        if hasattr(parsed_request, "path"):
+        self.path = ''
+        self.command = ''
+        self.version = ''
+        self.ua = ''
+        self.headers = ''  # type: ignore[assignment]
+        self.country = ''
+        self.continent = ''
+        self.timezone = ''
+        self.dns_name = ''
+        self.tracert = ''  # TODO
+        if hasattr(parsed_request, 'path'):
             self.path = parsed_request.path
-        if getattr(parsed_request, "command", None) is not None:
+        if getattr(parsed_request, 'command', None) is not None:
             self.command = parsed_request.command
-        if hasattr(parsed_request, "request_version"):
+        if hasattr(parsed_request, 'request_version'):
             self.version = parsed_request.request_version
-        if hasattr(parsed_request, "headers"):
+        if hasattr(parsed_request, 'headers'):
             self.headers = parsed_request.headers
             # HTTPMessage supports case-insensitive lookups via .get()
             ua_val = None
             if isinstance(parsed_request.headers, dict):
-                ua_val = parsed_request.headers.get(
-                    "user-agent"
-                ) or parsed_request.headers.get("User-Agent", "")
+                ua_val = parsed_request.headers.get('user-agent') or parsed_request.headers.get(
+                    'User-Agent', ''
+                )
             else:
                 # http.client.HTTPMessage — use get() for case-insensitive lookup
-                ua_val = parsed_request.headers.get(
-                    "user-agent"
-                ) or parsed_request.headers.get("User-Agent", "")
+                ua_val = parsed_request.headers.get('user-agent') or parsed_request.headers.get(
+                    'User-Agent', ''
+                )
             if ua_val:
                 self.ua = ua_val
         self.isDetected = is_detected
@@ -66,7 +66,7 @@ class BearStorage:
             socket.setdefaulttimeout(timeout)
             return socket.gethostbyaddr(ip)[0]
         except (socket.herror, socket.timeout, socket.gaierror, OSError):
-            return ""
+            return ''
         finally:
             socket.setdefaulttimeout(None)
 
@@ -91,33 +91,33 @@ class BearStorage:
             self.continent = continent
             return (country, continent)
         except Exception as e:
-            logger.debug("Geo resolution failed for %s: %s", ip, e)
-            return ("", "")
+            logger.debug('Geo resolution failed for %s: %s', ip, e)
+            return ('', '')
 
     def __str__(self) -> str:
-        if self.path != "":
+        if self.path != '':
             output = (
-                "hostname: " + self.hostname + "\r\n"
-                "IP: " + self.ip + "\r\n"
-                "timestamp: " + self.timestamp + "\r\n"
-                "User-Agent: " + self.ua + "\r\n"
-                "datected: " + str(self.isDetected) + "\r\n"
-                "path: " + self.path + "\r\n"
-                "command: " + self.command + "\r\n"
-                "version: " + self.version + "\r\n"
-                "country: " + self.country + "\r\n"
+                'hostname: ' + self.hostname + '\r\n'
+                'IP: ' + self.ip + '\r\n'
+                'timestamp: ' + self.timestamp + '\r\n'
+                'User-Agent: ' + self.ua + '\r\n'
+                'datected: ' + str(self.isDetected) + '\r\n'
+                'path: ' + self.path + '\r\n'
+                'command: ' + self.command + '\r\n'
+                'version: ' + self.version + '\r\n'
+                'country: ' + self.country + '\r\n'
             )
             if self.isDetected != 4294967295 - 3:
-                output += "Detected: Yes" + "\r\n"
+                output += 'Detected: Yes' + '\r\n'
             else:
-                output += "Detected: No" + "\r\n"
+                output += 'Detected: No' + '\r\n'
         else:
             output = (
-                "hostname: " + self.hostname + "\r\n"
-                "IP: " + self.ip + "\r\n"
-                "timestamp: " + self.timestamp + "\r\n"
-                "raw_request: " + self.raw_request + "\r\n"
-                "country: " + self.country + "\r\n"
+                'hostname: ' + self.hostname + '\r\n'
+                'IP: ' + self.ip + '\r\n'
+                'timestamp: ' + self.timestamp + '\r\n'
+                'raw_request: ' + self.raw_request + '\r\n'
+                'country: ' + self.country + '\r\n'
             )
         return output
 
