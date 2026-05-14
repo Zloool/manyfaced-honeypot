@@ -107,9 +107,9 @@ jobs:
           ssh -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             PORTS=\$(grep '^HONEY_TOP_PORTS=' /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2) && \
             if [ -z \"\$PORTS\" ]; then echo 'ERROR: HONEY_TOP_PORTS not found in honeypot.env'; exit 1; fi && \
-            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '\d+(?= )' | sort -u) && \
+            LISTENING=\$(ss -tlnp 2>/dev/null | grep -oP '(?<=:)\d+(?= )' | sort -u) && \
             MISSING=0 && \
-            for p in \$PORTS; do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
+            for p in \$(echo \$PORTS | tr ',' '\n'); do echo \"\$LISTENING\" | grep -q \"^\$p\$\" || { echo \"Port \$p NOT listening\"; MISSING=\$((MISSING+1)); }; done && \
             if [ \$MISSING -gt 0 ]; then echo \"FAIL: \$MISSING of \$PORTS ports not listening\"; exit 1; fi && \
             echo \"Health check OK: honeypot listening on all configured ports\""
 
