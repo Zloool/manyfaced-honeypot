@@ -342,8 +342,10 @@ class TestEmptyConnection:
             handler.handle_request('\r\n', bot_ip='5.6.7.8')
 
         # The "failed to parse" message SHOULD appear for non-empty unparseable input
-        assert 'HTTPRequest failed to parse path' in caplog.text or \
-               'Failed to parse HTTP request' in caplog.text
+        assert (
+            'HTTPRequest failed to parse path' in caplog.text
+            or 'Failed to parse HTTP request' in caplog.text
+        )
 
 
 if __name__ == '__main__':

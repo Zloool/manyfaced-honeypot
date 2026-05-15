@@ -505,6 +505,7 @@ class HTTPHandler:
         Returns:
             Honeypot response bytes (generic fallback).
         """
+
         class _ParsedEmpty:
             command = ''
             path = ''
