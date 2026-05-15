@@ -348,5 +348,154 @@ class TestEmptyConnection:
         )
 
 
+class TestSSHEnrichment:
+    """Tests for SSH probe DNS and geo enrichment."""
+
+    @pytest.fixture
+    def handler(self):
+        args = MagicMock()
+        args.verbose = False
+        args.server = 9999
+        args.server_host = '127.0.0.1'
+        update_event = MagicMock()
+        return HTTPHandler(args, update_event)
+
+    def test_ssh_probe_enriched_with_dns_and_geo(self, handler):
+        """SSH probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        from manyfaced.common.status import SSH_CLIENT
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            output = handler.handle_request(
+                b'SSH-2.0-OpenSSH_8.9\r\n',
+                bot_ip='1.2.3.4',
+            )
+
+        # Should get SSH banner response
+        assert isinstance(output, bytes)
+        assert output.startswith(b'SSH-2.0')
+
+        # Verify BearStorage was created with correct args
+        call_args = MockBS.call_args
+        assert call_args[0][0] == '1.2.3.4'  # bot_ip
+        assert call_args[0][4] == SSH_CLIENT  # detected_id
+
+        # Verify enrichment methods were called on the BearStorage instance
+        mock_bs.resolve_dns_name.assert_called_once_with('1.2.3.4', timeout=1.0)
+        mock_bs.resolve_geo.assert_called_once_with('1.2.3.4', timeout=2.0)
+
+    def test_ssh_probe_enrichment_failure_does_not_crash(self, handler):
+        """Enrichment failure (exception) should not crash the SSH handler."""
+        from manyfaced.common.status import SSH_CLIENT
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+        # Make resolve_dns_name raise an exception
+        mock_bs.resolve_dns_name.side_effect = Exception('DNS lookup failed')
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
+            output = handler.handle_request(
+                b'SSH-2.0-OpenSSH_8.9\r\n',
+                bot_ip='1.2.3.4',
+            )
+
+        # Should still get SSH banner response (no crash)
+        assert isinstance(output, bytes)
+        assert output.startswith(b'SSH-2.0')
+
+        # resolve_geo should still be called even after DNS failure
+        mock_bs.resolve_geo.assert_called_once_with('1.2.3.4', timeout=2.0)
+
+
+class TestNonHTTPEnrichment:
+    """Tests for non-HTTP (Telnet/RDP/FTP/VNC/etc.) probe DNS and geo enrichment."""
+
+    @pytest.fixture
+    def handler(self):
+        args = MagicMock()
+        args.verbose = False
+        args.server = 9999
+        args.server_host = '127.0.0.1'
+        update_event = MagicMock()
+        return HTTPHandler(args, update_event)
+
+    def test_telnet_probe_enriched_with_dns_and_geo(self, handler):
+        """Telnet probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        from manyfaced.common.status import UNKNOWN_NON_HTTP
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        # Telnet probes start with three null bytes per protocol.py detection
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            output = handler.handle_request(
+                b'\x00\x00\x00\xff\xfb\x01',  # Telnet probe bytes (null prefix per protocol.py)
+                bot_ip='5.6.7.8',
+            )
+
+        # Should get telnet response
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+        # Verify BearStorage was created with correct args
+        call_args = MockBS.call_args
+        assert call_args[0][0] == '5.6.7.8'  # bot_ip
+        assert call_args[0][4] == UNKNOWN_NON_HTTP  # detected_id
+
+        # Verify enrichment methods were called on the BearStorage instance
+        mock_bs.resolve_dns_name.assert_called_once_with('5.6.7.8', timeout=1.0)
+        mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
+
+    def test_rdp_probe_enriched_with_dns_and_geo(self, handler):
+        """RDP probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        from manyfaced.common.status import UNKNOWN_NON_HTTP
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            output = handler.handle_request(
+                b'\x03\x00\x00\x1f\x0e\xe0',  # RDP probe bytes
+                bot_ip='9.10.11.12',
+            )
+
+        assert isinstance(output, bytes)
+        call_args = MockBS.call_args
+        assert call_args[0][0] == '9.10.11.12'  # bot_ip
+        mock_bs.resolve_dns_name.assert_called_once_with('9.10.11.12', timeout=1.0)
+        mock_bs.resolve_geo.assert_called_once_with('9.10.11.12', timeout=2.0)
+
+    def test_non_http_probe_enrichment_failure_does_not_crash(self, handler):
+        """Enrichment failure (exception) should not crash the non-HTTP handler."""
+        from manyfaced.common.status import UNKNOWN_NON_HTTP
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+        # Make resolve_geo raise an exception
+        mock_bs.resolve_geo.side_effect = Exception('Geo lookup failed')
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
+            output = handler.handle_request(
+                b'\x00\x00\x00\xff\xfb\x01',  # Telnet probe bytes (null prefix per protocol.py)
+                bot_ip='5.6.7.8',
+            )
+
+        # Should still get response (no crash)
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
