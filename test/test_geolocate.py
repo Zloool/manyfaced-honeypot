@@ -12,7 +12,8 @@ import pytest
 # ---------------------------------------------------------------------------
 # Ensure project root is importable
 # ---------------------------------------------------------------------------
-import os, sys
+import os
+import sys
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -24,6 +25,7 @@ from manyfaced.common.geolocate import lookup_ip_geolocation, clear_geo_cache
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
@@ -37,9 +39,10 @@ def _clear_cache():
 # Test 1: field-restricted success response (no status key) extracts correctly
 # ===================================================================
 
+
 def test_field_restricted_success_no_status_key():
     """ip-api.com omits 'status' from successful responses when fields= is used.
-    
+
     The code must treat a missing status as success and extract country/continent.
     Response shape: {"country": "United States", "continent": "North America"}
     """
@@ -61,6 +64,7 @@ def test_field_restricted_success_no_status_key():
 # ===================================================================
 # Test 2: explicit failure response returns ('', '') and logs WARNING
 # ===================================================================
+
 
 def test_failure_response_logs_warning():
     """When ip-api.com returns status='fail', the function should log a warning,
@@ -88,6 +92,7 @@ def test_failure_response_logs_warning():
 # Test 3: full-status success response still works (backward compat)
 # ===================================================================
 
+
 def test_full_status_success_response():
     """When ip-api.com returns a full response with status='success', the function
     should extract country and continent correctly. This covers any non-field-restricted
@@ -110,6 +115,7 @@ def test_full_status_success_response():
 # ===================================================================
 # Additional edge-case tests
 # ===================================================================
+
 
 def test_empty_response_returns_empty():
     """ip-api.com returns {} for invalid IPs — no status key, no data."""
