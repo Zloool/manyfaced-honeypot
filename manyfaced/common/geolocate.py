@@ -32,7 +32,7 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
         timeout: HTTP request timeout in seconds.
 
     Returns:
-        Tuple of (country_name, continent_code), e.g. ("United States", "NA").
+        Tuple of (country_name, continent_name), e.g. ("United States", "North America").
         Returns ("", "") on any failure.
     """
     global _last_geo_lookup_time
@@ -57,17 +57,21 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
     try:
         import urllib.request
 
-        url = f'http://ip-api.com/json/{ip}?fields=country,continentName'
+        url = f'http://ip-api.com/json/{ip}?fields=country,continent'
         req = urllib.request.Request(url, headers={'User-Agent': 'manyfaced-honeypot'})
         with urllib.request.urlopen(req, timeout=timeout) as response:
             data = json.loads(response.read().decode())
 
-        if data.get('status') == 'success':
-            country = data.get('country', '')
-            continent = data.get('continentName', '')
-            _geo_cache[ip] = {'country': country, 'continent': continent}
-            _last_geo_lookup_time = time.monotonic()
-            return (country, continent)
+        if data.get('status') == 'fail':
+            logger.warning('Geo lookup returned failure for %s: %s', ip, data.get('message', ''))
+            _geo_cache[ip] = {'country': '', 'continent': ''}
+            return ('', '')
+
+        country = data.get('country', '')
+        continent = data.get('continent', '')
+        _geo_cache[ip] = {'country': country, 'continent': continent}
+        _last_geo_lookup_time = time.monotonic()
+        return (country, continent)
 
     except Exception as e:
         logger.warning('Geo lookup failed for %s: %s', ip, e)
