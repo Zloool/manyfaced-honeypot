@@ -158,14 +158,16 @@ def get_protocol_info(raw_data: bytes) -> dict:
     # DNS-over-TCP detection
     if len(raw_data) >= 4:
         import struct
+
         dns_len = struct.unpack('!H', raw_data[:2])[0]
-        if 4 <= dns_len <= len(raw_data) - 2 and raw_data[2] in range(0x01, 0xc0):
+        if 4 <= dns_len <= len(raw_data) - 2 and raw_data[2] in range(0x01, 0xC0):
             info['protocol'] = 'dns'
             return info
 
     # MongoDB wire protocol detection
     if len(raw_data) >= 24:
         import struct
+
         msg_len = struct.unpack('<I', raw_data[:4])[0]
         opcode = struct.unpack('<I', raw_data[20:24])[0]
         valid_opcodes = {0, 1, 3, 4, 1000, 2001, 2002, 2004, 2005}
