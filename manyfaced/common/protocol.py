@@ -34,9 +34,17 @@ _PROTOCOL_SIGNATURES = [
         re.compile(rb'^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE)\s', re.IGNORECASE),
         b'GET / HTTP/1.1',
     ),
+    # HTTP/2 connection preface — must be checked before DNS to avoid false positives,
+    # since the ASCII text at offset 12 can match DNS label patterns.
+    (
+        'http2',
+        re.compile(rb'^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n'),
+        b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n',
+    ),
     # DNS-over-TCP: conservative detection requiring valid domain label structure.
-    # After 2-byte length field, require at least one complete label (length byte + content).
-    ('dns', re.compile(rb'^.{2}(?:[\x01-\xbf][\x20-\xff](?:[\x20-\xff]|\x00))'), None),
+    # After 12-byte DNS header, require a label length byte (0x01-0x3f) followed by
+    # alphanumeric or hyphen — excludes HTTP/2 PRI and other noise.
+    ('dns', re.compile(rb'^.{12}(?:[\x01-\x3f][\x2d\x30-\x39\x41-\x5a\x61-\x7a])'), None),
     # MongoDB wire protocol: opcode at offset 20 in {length(4)+flags(4)+cursor_id(8)+response_to(4)+opcode(4)}
     ('mongodb', re.compile(rb'^.{20}(?:\xd4\x07\x00\x00|\xe8\x03\x00\x00|\x01\x00\x00\x00)'), None),
 ]
