@@ -240,17 +240,31 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
 
-        # Resolve reverse-DNS off the hot path (with short timeout)
-        try:
-            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
-        except Exception:
-            logger.debug('DNS resolution failed for %s', bot_ip)
+        q = _get_report_queue()
+        q.put(
+            (
+                send_report,
+                (bs, bot_ip, settings.HIVEPASS, server_host, server_port, settings.HIVELOGIN),
+            )
+        )
 
-        # Resolve geolocation off the hot path (with short timeout)
-        try:
-            bs.resolve_geo(bot_ip, timeout=2.0)
-        except Exception:
-            logger.debug('Geo resolution failed for %s', bot_ip)
+    def _send_report_enriched(self, bs: BearStorage, bot_ip: str) -> None:
+        """Send an already-enriched report to the server.
+
+        Used by SSH and non-HTTP handlers that perform their own enrichment
+        before calling this method (matching the HTTP path ordering in process_request).
+
+        Args:
+            bs: BearStorage instance with dns_name, country, continent already populated.
+            bot_ip: Bot IP address.
+        """
+        from manyfaced.client.client import send_report
+
+        server_host = getattr(self.args, 'server_host', '127.0.0.1')
+        server_port = getattr(self.args, 'server', None)
+
+        if server_port is None:
+            return
 
         q = _get_report_queue()
         q.put(
@@ -285,8 +299,7 @@ class HTTPHandler:
 
         logger.debug('Sent SSH banner to %s (client=%s)', bot_ip, client)
 
-        # Send report for SSH probe
-        # Create a minimal parsed object for reporting
+        # Enrich with DNS and geo data (same pattern as HTTP path in process_request)
         class _ParsedSSH:
             command = 'SSH'
             path = '/'
@@ -294,13 +307,29 @@ class HTTPHandler:
             user_agent = client or 'unknown'
             request_version = version or 'SSH-2.0'
 
-        self._send_report(
+        bs = BearStorage(
             bot_ip,
             protocol_info.get('raw', 'SSH-2.0-PUTTY'),
+            str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
             _ParsedSSH(),
             SSH_CLIENT,
-            protocol='ssh',
+            settings.HIVELOGIN,
         )
+
+        # Resolve reverse-DNS off the hot path (with short timeout)
+        try:
+            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+        except Exception:
+            logger.debug('DNS resolution failed for %s', bot_ip)
+
+        # Resolve geolocation off the hot path (with short timeout)
+        try:
+            bs.resolve_geo(bot_ip, timeout=2.0)
+        except Exception:
+            logger.debug('Geo resolution failed for %s', bot_ip)
+
+        # Send enriched report for SSH probe
+        self._send_report_enriched(bs, bot_ip)
         return banner.encode('utf-8')
 
     def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
@@ -357,7 +386,7 @@ class HTTPHandler:
             response = b''
 
         if response:
-            # Send report for non-HTTP probe
+            # Enrich with DNS and geo data (same pattern as HTTP path in process_request)
             class _ParsedNonHTTP:
                 command = protocol.upper()
                 path = '/'
@@ -365,13 +394,29 @@ class HTTPHandler:
                 headers = {}
                 user_agent = protocol_info.get('client', protocol)
 
-            self._send_report(
+            bs = BearStorage(
                 bot_ip,
                 protocol_info.get('raw', ''),
+                str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
                 _ParsedNonHTTP(),
                 detected_id,
-                protocol=protocol,
+                settings.HIVELOGIN,
             )
+
+            # Resolve reverse-DNS off the hot path (with short timeout)
+            try:
+                bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+            except Exception:
+                logger.debug('DNS resolution failed for %s', bot_ip)
+
+            # Resolve geolocation off the hot path (with short timeout)
+            try:
+                bs.resolve_geo(bot_ip, timeout=2.0)
+            except Exception:
+                logger.debug('Geo resolution failed for %s', bot_ip)
+
+            # Send enriched report for non-HTTP probe
+            self._send_report_enriched(bs, bot_ip)
 
         return response
 
