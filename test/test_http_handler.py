@@ -266,5 +266,85 @@ class TestHandlerRouting:
             assert len(output) > 0, f'Empty response for path: {path}'
 
 
+class TestEmptyConnection:
+    """Tests for zero-byte (empty-input) connection handling."""
+
+    @pytest.fixture
+    def handler(self):
+        args = MagicMock()
+        args.verbose = False
+        args.server = None
+        update_event = MagicMock()
+        return HTTPHandler(args, update_event)
+
+    def test_empty_string_uses_empty_connection_id(self, handler):
+        """Empty string input should produce a record with EMPTY_CONNECTION detected_id."""
+        from manyfaced.common.status import EMPTY_CONNECTION
+
+        with patch.object(handler, '_send_report') as mock_send:
+            output = handler.handle_request('', bot_ip='5.6.7.8')
+
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+        # Verify _send_report was called with EMPTY_CONNECTION
+        call_args = mock_send.call_args
+        assert call_args[0][3] == EMPTY_CONNECTION  # detected_id is the 4th positional arg
+
+    def test_empty_bytes_uses_empty_connection_id(self, handler):
+        """Empty bytes input should produce a record with EMPTY_CONNECTION detected_id."""
+        from manyfaced.common.status import EMPTY_CONNECTION
+
+        with patch.object(handler, '_send_report') as mock_send:
+            output = handler.handle_request(b'', bot_ip='5.6.7.8')
+
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+        call_args = mock_send.call_args
+        assert call_args[0][3] == EMPTY_CONNECTION
+
+    def test_empty_connection_has_empty_raw_request(self, handler):
+        """Empty connection record should have empty request_raw."""
+        with patch.object(handler, '_send_report') as mock_send:
+            handler.handle_request('', bot_ip='5.6.7.8')
+
+        call_args = mock_send.call_args
+        assert call_args[0][1] == ''  # raw_request is the 2nd positional arg
+
+    def test_empty_connection_no_parse_failure_log(self, handler, caplog):
+        """Empty input should NOT emit 'HTTPRequest failed to parse path' log line."""
+        import logging
+
+        with patch.object(handler, '_send_report'):
+            handler.handle_request('', bot_ip='5.6.7.8')
+
+        # The "failed to parse" message should not appear in logs for empty input
+        assert 'HTTPRequest failed to parse path' not in caplog.text
+        assert 'Failed to parse HTTP request' not in caplog.text
+
+    def test_normal_get_still_works(self, handler):
+        """Normal GET / request should still be processed normally (regression guard)."""
+        output = handler.handle_request(
+            'GET / HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            bot_ip='5.6.7.8',
+        )
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+    def test_non_empty_unparseable_still_emits_parse_failure_log(self, handler, caplog):
+        """Non-empty but unparseable input should still emit the existing log line."""
+        import logging
+
+        # Ensure debug-level logs are captured
+        caplog.set_level(logging.DEBUG)
+
+        with patch.object(handler, 'process_request') as mock_process:
+            mock_process.return_value = b'HTTP/1.1 200 OK\r\n\r\n'
+            handler.handle_request('\r\n', bot_ip='5.6.7.8')
+
+        # The "failed to parse" message SHOULD appear for non-empty unparseable input
+        assert 'HTTPRequest failed to parse path' in caplog.text or \
+               'Failed to parse HTTP request' in caplog.text
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
