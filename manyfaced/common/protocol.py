@@ -36,7 +36,11 @@ _PROTOCOL_SIGNATURES = [
     ),
     # HTTP/2 connection preface — must be checked before DNS to avoid false positives,
     # since the ASCII text at offset 12 can match DNS label patterns.
-    ('http2', re.compile(rb'^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n'), b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'),
+    (
+        'http2',
+        re.compile(rb'^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n'),
+        b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n',
+    ),
     # DNS-over-TCP: conservative detection requiring valid domain label structure.
     # After 12-byte DNS header, require a label length byte (0x01-0x3f) followed by
     # alphanumeric or hyphen — excludes HTTP/2 PRI and other noise.

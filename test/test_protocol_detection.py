@@ -48,7 +48,10 @@ class TestDetectProtocolNewProtocols:
     def test_dns_over_tcp_long_query(self):
         """Longer DNS query should still be detected as 'dns'."""
         # Full 12-byte header + longer domain
-        raw = b'\xab\xcd\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01' + b'\x00' * 10
+        raw = (
+            b'\xab\xcd\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
+            + b'\x00' * 10
+        )
         assert detect_protocol(raw) == 'dns'
 
     def test_http2_preface_not_dns(self):
