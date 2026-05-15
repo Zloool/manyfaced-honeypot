@@ -133,6 +133,10 @@ def analyze_logs(log_path):
             4294967292: "Unknown Telnet/RDP Probe",
             4294967293: "SSH Probe",
             4294967294: "Generic/Monster Page",
+            4294967285: "TLS ClientHello",
+            4294967286: "DNS-over-TCP Query",
+            4294967287: "MongoDB Wire Protocol",
+            4294967288: "Redis RESP Command",
         }
         for flag, count in detected_counter.most_common():
             name = detected_names.get(flag, f"Unknown({flag})")
@@ -289,6 +293,10 @@ def analyze_db(db_path):
             4294967292: "Unknown Telnet/RDP Probe",
             4294967293: "SSH Probe",
             4294967294: "Generic/Monster Page",
+            4294967285: "TLS ClientHello",
+            4294967286: "DNS-over-TCP Query",
+            4294967287: "MongoDB Wire Protocol",
+            4294967288: "Redis RESP Command",
         }
         for row in det_rows:
             name = det_names.get(row[0], f"Unknown({row[0]})")
