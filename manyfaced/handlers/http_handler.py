@@ -538,11 +538,12 @@ class HTTPHandler:
     def _handle_empty_connection(self, bot_ip: str) -> bytes:
         """Handle a zero-byte connection (port scan with no data sent).
 
-        Constructs a minimal parsed object and sends a report directly
-        with EMPTY_CONNECTION as detected_id. DNS reverse-lookup and geo
-        enrichment run via BearStorage in _send_report. No user-agent
-        extraction occurs since there is no input to parse. The record
-        stores empty request_raw, making it distinct from real GET / probes.
+        Constructs a minimal parsed object and sends an enriched report
+        directly with EMPTY_CONNECTION as detected_id. DNS reverse-lookup
+        and geo enrichment run inline (same pattern as SSH/non-HTTP probes),
+        not via _send_report. No user-agent extraction occurs since there
+        is no input to parse. The record stores empty request_raw, making
+        it distinct from real GET / probes.
 
         Args:
             bot_ip: IP address of the connecting bot.
@@ -559,12 +560,30 @@ class HTTPHandler:
             user_agent = ''
             request_version = ''
 
-        self._send_report(
+        # Create BearStorage for reporting
+        bs = BearStorage(
             bot_ip,
             '',  # empty raw_request — no data was received
+            str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
             _ParsedEmpty(),
             EMPTY_CONNECTION,
+            settings.HIVELOGIN,
         )
+
+        # Resolve reverse-DNS off the hot path (with short timeout)
+        try:
+            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+        except Exception:
+            logger.debug('DNS resolution failed for %s', bot_ip)
+
+        # Resolve geolocation off the hot path (with short timeout)
+        try:
+            bs.resolve_geo(bot_ip, timeout=2.0)
+        except Exception:
+            logger.debug('Geo resolution failed for %s', bot_ip)
+
+        # Send enriched report for empty connection
+        self._send_report_enriched(bs, bot_ip)
         return self._fallback_response('')
 
     @staticmethod

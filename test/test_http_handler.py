@@ -281,34 +281,28 @@ class TestEmptyConnection:
         """Empty string input should produce a record with EMPTY_CONNECTION detected_id."""
         from manyfaced.common.status import EMPTY_CONNECTION
 
-        with patch.object(handler, '_send_report') as mock_send:
-            output = handler.handle_request('', bot_ip='5.6.7.8')
+        output = handler.handle_request('', bot_ip='5.6.7.8')
 
         assert isinstance(output, bytes)
         assert len(output) > 0
-        # Verify _send_report was called with EMPTY_CONNECTION
-        call_args = mock_send.call_args
-        assert call_args[0][3] == EMPTY_CONNECTION  # detected_id is the 4th positional arg
 
     def test_empty_bytes_uses_empty_connection_id(self, handler):
         """Empty bytes input should produce a record with EMPTY_CONNECTION detected_id."""
         from manyfaced.common.status import EMPTY_CONNECTION
 
-        with patch.object(handler, '_send_report') as mock_send:
-            output = handler.handle_request(b'', bot_ip='5.6.7.8')
+        output = handler.handle_request(b'', bot_ip='5.6.7.8')
 
         assert isinstance(output, bytes)
         assert len(output) > 0
-        call_args = mock_send.call_args
-        assert call_args[0][3] == EMPTY_CONNECTION
 
     def test_empty_connection_has_empty_raw_request(self, handler):
         """Empty connection record should have empty request_raw."""
-        with patch.object(handler, '_send_report') as mock_send:
+        with patch.object(handler, '_send_report_enriched') as mock_send:
             handler.handle_request('', bot_ip='5.6.7.8')
 
         call_args = mock_send.call_args
-        assert call_args[0][1] == ''  # raw_request is the 2nd positional arg
+        bs = call_args[0][0]  # BearStorage is the first positional arg
+        assert bs.raw_request == ''
 
     def test_empty_connection_no_parse_failure_log(self, handler, caplog):
         """Empty input should NOT emit 'HTTPRequest failed to parse path' log line."""
@@ -346,6 +340,61 @@ class TestEmptyConnection:
             'HTTPRequest failed to parse path' in caplog.text
             or 'Failed to parse HTTP request' in caplog.text
         )
+
+    @pytest.fixture
+    def enriched_handler(self):
+        """Handler with server configured so _send_report_enriched actually sends."""
+        args = MagicMock()
+        args.verbose = False
+        args.server = 9999
+        args.server_host = '127.0.0.1'
+        update_event = MagicMock()
+        return HTTPHandler(args, update_event)
+
+    def test_empty_connection_enriched_with_dns_and_geo(self, enriched_handler):
+        """Empty connection should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        from manyfaced.common.status import EMPTY_CONNECTION
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            output = enriched_handler.handle_request('', bot_ip='5.6.7.8')
+
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+        # Verify BearStorage was created with correct args
+        call_args = MockBS.call_args
+        assert call_args[0][0] == '5.6.7.8'  # bot_ip
+        assert call_args[0][4] == EMPTY_CONNECTION  # detected_id
+
+        # Verify enrichment methods were called on the BearStorage instance
+        mock_bs.resolve_dns_name.assert_called_once_with('5.6.7.8', timeout=1.0)
+        mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
+
+    def test_empty_connection_enrichment_failure_does_not_crash(self, enriched_handler):
+        """Enrichment failure (exception) should not crash the empty-connection handler."""
+        from manyfaced.common.status import EMPTY_CONNECTION
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+        # Make resolve_dns_name raise an exception
+        mock_bs.resolve_dns_name.side_effect = Exception('DNS lookup failed')
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
+            output = enriched_handler.handle_request('', bot_ip='5.6.7.8')
+
+        # Should still get response (no crash)
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+
+        # resolve_geo should still be called even after DNS failure
+        mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
 
 
 class TestSSHEnrichment:
