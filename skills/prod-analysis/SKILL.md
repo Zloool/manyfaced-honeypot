@@ -238,10 +238,17 @@ When analyzing, check these fields for emptiness:
 
 ## Common Analysis Findings & Interpretation
 
+<!-- Canonical detected_id values: manyfaced/common/status.py
+  UNKNOWN_HTTP = 4294967294   (Generic/Monster Page)
+  SSH_CLIENT     = 4294967293  (Unknown SSH Probe)
+  UNKNOWN_NON_HTTP = 4294967292 (Unknown Telnet/RDP Probe)
+  EMPTY_CONNECTION = 4294967291 (Zero-byte TCP connection, port scan) -->
+
 | Finding | Severity | Meaning |
 |---------|----------|---------|
 | All `detected_id=4294967294` (UNKNOWN_HTTP) | Medium | Non-HTTP traffic overwhelming HTTP parser — protocol detection layer needed |
 | SSH Probe (`detected_id=4294967293`) present | Good | Protocol detection is working for SSH |
+| Empty Connection (`detected_id=4294967291`) present | Low | Zero-byte TCP connections (port scan behavior, no data sent) — expected from aggressive scanners |
 | Process count > 3 | Critical | Process explosion — child processes crashing and restarting (see LimitNOFILE fix) |
 | Empty `bot_country` (100%) | High | Geolocation not implemented/configured |
 | Empty `request_raw` (>50%) | Medium | Request capture pipeline has gaps |
