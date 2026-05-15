@@ -23,7 +23,7 @@ from manyfaced.common.config import settings
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
-from manyfaced.common.status import SSH_CLIENT, UNKNOWN_NON_HTTP
+from manyfaced.common.status import EMPTY_CONNECTION, SSH_CLIENT, UNKNOWN_NON_HTTP
 
 from .config_disclosure_handler import ConfigDisclosureHandler
 from .cpanel_handler import CPanelHandler
@@ -163,6 +163,9 @@ class HTTPHandler:
         """
         # Detect protocol before attempting HTTP parsing
         raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
+        if not raw_bytes:
+            return self._handle_empty_connection(bot_ip)
+
         protocol = detect_protocol(raw_bytes)
         protocol_info = get_protocol_info(raw_bytes) if protocol else {}
 
@@ -486,6 +489,37 @@ class HTTPHandler:
             logger.debug('No server port configured, skipping report for %s', bot_ip)
 
         return output_data
+
+    def _handle_empty_connection(self, bot_ip: str) -> bytes:
+        """Handle a zero-byte connection (port scan with no data sent).
+
+        Constructs a minimal parsed object and sends a report directly
+        with EMPTY_CONNECTION as detected_id. DNS reverse-lookup and geo
+        enrichment run via BearStorage in _send_report. No user-agent
+        extraction occurs since there is no input to parse. The record
+        stores empty request_raw, making it distinct from real GET / probes.
+
+        Args:
+            bot_ip: IP address of the connecting bot.
+
+        Returns:
+            Honeypot response bytes (generic fallback).
+        """
+        class _ParsedEmpty:
+            command = ''
+            path = ''
+            version = ''
+            headers = {}
+            user_agent = ''
+            request_version = ''
+
+        self._send_report(
+            bot_ip,
+            '',  # empty raw_request — no data was received
+            _ParsedEmpty(),
+            EMPTY_CONNECTION,
+        )
+        return self._fallback_response('')
 
     @staticmethod
     def _extract_method(raw_request: str) -> str:
