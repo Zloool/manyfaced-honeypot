@@ -23,7 +23,15 @@ from manyfaced.common.config import settings
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
-from manyfaced.common.status import EMPTY_CONNECTION, SSH_CLIENT, UNKNOWN_NON_HTTP
+from manyfaced.common.status import (
+    EMPTY_CONNECTION,
+    SSH_CLIENT,
+    UNKNOWN_DNS,
+    UNKNOWN_MONGODB,
+    UNKNOWN_NON_HTTP,
+    UNKNOWN_REDIS,
+    UNKNOWN_TLS,
+)
 
 from .config_disclosure_handler import ConfigDisclosureHandler
 from .cpanel_handler import CPanelHandler
@@ -335,6 +343,10 @@ class HTTPHandler:
     def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
         """Handle non-HTTP protocol probes.
 
+        Routes each recognized non-HTTP protocol to its own detected_id so
+        future work can build per-protocol response handlers. Classification
+        only — all protocols still get the generic monster page back.
+
         Args:
             bot_ip: IP address of the connecting bot.
             protocol: Detected protocol name.
@@ -343,7 +355,19 @@ class HTTPHandler:
         Returns:
             Appropriate response bytes for the protocol.
         """
-        detected_id = UNKNOWN_NON_HTTP
+        # Per-protocol detected_id mapping
+        if protocol == 'tls':
+            detected_id = UNKNOWN_TLS
+        elif protocol == 'dns':
+            detected_id = UNKNOWN_DNS
+        elif protocol == 'mongodb':
+            detected_id = UNKNOWN_MONGODB
+        elif protocol == 'redis':
+            detected_id = UNKNOWN_REDIS
+        else:
+            # Existing protocols (ftp, telnet, rdp, vnc, smtp, pop3, imap)
+            detected_id = UNKNOWN_NON_HTTP
+
         response = None
 
         # FTP: respond with a fake FTP banner
@@ -385,38 +409,37 @@ class HTTPHandler:
             # Unknown protocol: just close (empty response)
             response = b''
 
-        if response:
-            # Enrich with DNS and geo data (same pattern as HTTP path in process_request)
-            class _ParsedNonHTTP:
-                command = protocol.upper()
-                path = '/'
-                version = protocol_info.get('version', protocol)
-                headers = {}
-                user_agent = protocol_info.get('client', protocol)
+        # Enrich with DNS and geo data for all recognized non-HTTP protocols
+        class _ParsedNonHTTP:
+            command = protocol.upper()
+            path = '/'
+            version = protocol_info.get('version', protocol)
+            headers = {}
+            user_agent = protocol_info.get('client', protocol)
 
-            bs = BearStorage(
-                bot_ip,
-                protocol_info.get('raw', ''),
-                str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
-                _ParsedNonHTTP(),
-                detected_id,
-                settings.HIVELOGIN,
-            )
+        bs = BearStorage(
+            bot_ip,
+            protocol_info.get('raw', ''),
+            str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
+            _ParsedNonHTTP(),
+            detected_id,
+            settings.HIVELOGIN,
+        )
 
-            # Resolve reverse-DNS off the hot path (with short timeout)
-            try:
-                bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
-            except Exception:
-                logger.debug('DNS resolution failed for %s', bot_ip)
+        # Resolve reverse-DNS off the hot path (with short timeout)
+        try:
+            bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+        except Exception:
+            logger.debug('DNS resolution failed for %s', bot_ip)
 
-            # Resolve geolocation off the hot path (with short timeout)
-            try:
-                bs.resolve_geo(bot_ip, timeout=2.0)
-            except Exception:
-                logger.debug('Geo resolution failed for %s', bot_ip)
+        # Resolve geolocation off the hot path (with short timeout)
+        try:
+            bs.resolve_geo(bot_ip, timeout=2.0)
+        except Exception:
+            logger.debug('Geo resolution failed for %s', bot_ip)
 
-            # Send enriched report for non-HTTP probe
-            self._send_report_enriched(bs, bot_ip)
+        # Send enriched report for non-HTTP probe
+        self._send_report_enriched(bs, bot_ip)
 
         return response
 
