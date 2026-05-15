@@ -40,16 +40,24 @@ class TestDetectProtocolNewProtocols:
         assert detect_protocol(raw) == 'tls'
 
     def test_dns_over_tcp_detected(self):
-        """DNS-over-TCP (2-byte length + domain label byte 0x03) should be detected as 'dns'."""
-        # Length=14, then "www.example.com" query with type A = 16 bytes total
-        raw = b'\x00\x10\x03www\x07example\x03com\x00\x00\x01\x00\x01'
+        """DNS-over-TCP (full 12-byte header + domain label) should be detected as 'dns'."""
+        # Full DNS query: txn_id(2)+flags(2)+counts(6)=12 byte header, then labels
+        raw = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03www\x07example\x03com\x00\x00\x01\x00\x01'
         assert detect_protocol(raw) == 'dns'
 
     def test_dns_over_tcp_long_query(self):
         """Longer DNS query should still be detected as 'dns'."""
-        # Length=28, domain "example.com" with type/class
-        raw = b'\x00\x1c\x07example\x03com\x00\x00\x01\x00\x01' + b'\x00' * 10
+        # Full 12-byte header + longer domain
+        raw = (
+            b'\xab\xcd\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
+            + b'\x00' * 10
+        )
         assert detect_protocol(raw) == 'dns'
+
+    def test_http2_preface_not_dns(self):
+        """HTTP/2 connection preface should be detected as 'http2', not 'dns'."""
+        raw = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x18\x04\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x04\x00\x00Bh\x00\x06\x00\x04\x00\x00\x00\x03\x00\x00\x00\n'
+        assert detect_protocol(raw) == 'http2'
 
     def test_mongodb_wire_protocol_detected(self):
         """MongoDB wire protocol (valid length + OP_QUERY opcode at offset 20) should be detected."""
@@ -239,7 +247,7 @@ class TestHandlerRouting:
         mock_bs.country = ''
         mock_bs.continent = ''
 
-        raw = b'\x00\x10\x03www\x07example\x03com\x00\x00\x01\x00\x01'
+        raw = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03www\x07example\x03com\x00\x00\x01\x00\x01'
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
             handler.handle_request(raw, bot_ip='2.3.4.5')
 
