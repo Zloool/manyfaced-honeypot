@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
 geoip = ["geoip2>=4.0"]
-dev = ["pytest>=7.0", "ruff>=0.1", "pytest-cov>=4.0", "basedpyright>=1.39"]
+dev = ["pytest>=7.0", "ruff==0.15.13", "pytest-cov>=4.0", "basedpyright>=1.39"]
 
 [project.scripts]
 manyfaced = "manyfaced.mfh:run"
