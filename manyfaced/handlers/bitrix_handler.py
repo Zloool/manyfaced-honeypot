@@ -23,50 +23,7 @@ class BitrixHandler(HTTPHandlerBase):
     """Bitrix CMS honeypot handler."""
 
     domain = 'bitrix'
-    PATH_PATTERNS = [
-        '/bitrix/',
-        '/bitrix/',
-        '/bitrix/admin/',
-        '/bitrix/admin',
-        '/bitrix/auth/',
-        '/bitrix/auth',
-        '/bitrix/components/',
-        '/bitrix/components',
-        '/bitrix/templates/',
-        '/bitrix/templates',
-        '/bitrix/modules/',
-        '/bitrix/modules',
-        '/bitrix/cache/',
-        '/bitrix/cache',
-        '/bitrix/panels/',
-        '/bitrix/panels',
-        '/bitrix/admin/popup.php',
-        '/bitrix/admin/index.php',
-        '/bitrix/auth/fr/?backurl=',
-        '/bitrix/auth/fr/',
-        '/bitrix/auth/',
-        '/bitrix/404.php',
-        '/bitrix/error.php',
-        '/bitrix/setup/',
-        '/bitrix/setup',
-        '/bitrix/modules/main/include/',
-        '/bitrix/modules/main/classes/',
-        '/bitrix/modules/iblock/classes/',
-        '/bitrix/modules/search/classes/',
-        '/bitrix/modules/socialnetwork/',
-        '/bitrix/modules/catalog/',
-        '/bitrix/modules/iblock/',
-        '/bitrix/modules/seo/',
-        '/bitrix/modules/sale/',
-        '/bitrix/modules/forum/',
-        '/bitrix/modules/blog/',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,

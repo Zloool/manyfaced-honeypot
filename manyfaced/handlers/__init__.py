@@ -8,8 +8,8 @@ Two handler hierarchies exist:
 
 **Client-side (raw HTTP from bots):**
     - HTTPHandlerBase: Abstract base for service-specific HTTP handlers
-    - HTTPHandler: Main entry point, routes to service handlers
-    - HandlerRegistry: Routes requests to the appropriate handler
+    - HTTPHandler: Main entry point, routes to service handlers via Router
+    - Router + Route: Explicit ordered route table for HTTP dispatch
     - BotProfile: Per-bot state tracking for each handler
 
 **Service handlers (client-side):**
@@ -23,6 +23,11 @@ Two handler hierarchies exist:
     - WebDAVHandler: WebDAV responses
     - ConfigDisclosureHandler: Fake config file disclosures
     - GenericHandler: Default handler for unknown paths (monster page)
+
+**Routing:**
+    - Router: Ordered route table, first match wins
+    - Route: (matcher, handler_cls, detected_id, name)
+    - PathPrefix/PathExact/Any: Matcher implementations
 """
 
 from manyfaced.handlers.base_handler import (
@@ -30,8 +35,8 @@ from manyfaced.handlers.base_handler import (
     HTTPHandlerBase,
     BotProfile,
 )
-from manyfaced.handlers.registry import HandlerRegistry
 from manyfaced.handlers.http_handler import HTTPHandler
+from manyfaced.handlers.router import Router, Route, PathPrefix, PathExact, Any
 
 # Service handlers
 from manyfaced.handlers.wordpress_handler import WordPressHandler
@@ -51,7 +56,11 @@ __all__ = [
     # Client-side core
     'HTTPHandler',
     'HTTPHandlerBase',
-    'HandlerRegistry',
+    'Router',
+    'Route',
+    'PathPrefix',
+    'PathExact',
+    'Any',
     'BotProfile',
     # Service handlers
     'WordPressHandler',

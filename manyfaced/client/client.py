@@ -8,8 +8,8 @@ TCP connections.
 Architecture::
 
     Bot connects → create_server() → HTTPHandler.handle_request()
-                                          → HandlerRegistry.generate_response()
-                                          → ServiceHandler (WordPress, phpMyAdmin, etc.)
+                                          → Router.dispatch() (first match wins)
+                                          → ServiceHandler.generate_response()
                                           → send_report() (encrypted to server)
 """
 

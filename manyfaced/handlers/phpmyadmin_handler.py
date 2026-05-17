@@ -21,29 +21,7 @@ class PhpMyAdminHandler(HTTPHandlerBase):
     """phpMyAdmin honeypot handler."""
 
     domain = 'phpmyadmin'
-    PATH_PATTERNS = [
-        '/phpmyadmin',
-        '/phpmyadmin/',
-        '/phpmyadmin/index.php',
-        '/pma',
-        '/pma/',
-        '/pma/index.php',
-        '/mysql',
-        '/mysql/',
-        '/mysql/index.php',
-        '/db',
-        '/db/',
-        '/db/index.php',
-        '/database',
-        '/database/',
-        '/database/index.php',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,

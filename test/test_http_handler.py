@@ -1,8 +1,8 @@
 """
 Comprehensive pytest tests for HTTPHandler and HTTPRequest modules.
 
-Tests the new handler registry architecture:
-- HTTPHandler routes requests through HandlerRegistry
+Tests the new router architecture:
+- HTTPHandler routes requests through an explicit Router with ordered route table
 - Service handlers generate realistic honeypot responses
 - BotProfile tracks per-bot state
 """
@@ -245,6 +245,20 @@ class TestHandlerRouting:
                 bot_ip='1.2.3.4',
             )
             assert b'phpMyAdmin' in output, f'Failed for path: {path}'
+
+    def test_bitrix_paths(self, handler):
+        paths = [
+            '/bitrix/admin/',
+            '/bitrix/auth/',
+            '/bitrix/setup/',
+            '/bitrix/',
+        ]
+        for path in paths:
+            output = handler.handle_request(
+                f'GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n',
+                bot_ip='1.2.3.4',
+            )
+            assert b'Bitrix' in output, f'Failed for path: {path}'
 
     def test_response_is_bytes(self, handler):
         """All responses should be bytes."""
