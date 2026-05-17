@@ -11,7 +11,6 @@ import logging
 import os
 import sqlite3
 from abc import ABC, abstractmethod
-from datetime import datetime
 from threading import Lock
 from typing import Any
 
@@ -96,35 +95,11 @@ def _resolve_backend() -> str:
 # SQLite backend
 # ---------------------------------------------------------------------------
 
-_CREATE_TABLE_SQL = """\
-CREATE TABLE IF NOT EXISTS honeypot_bears (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    bot_ip       TEXT NOT NULL,
-    hostname     TEXT NOT NULL,
-    timestamp    TEXT NOT NULL,
-    request_path TEXT,
-    request_command TEXT,
-    request_version TEXT,
-    request_raw  TEXT,
-    bot_user_agent TEXT,
-    bot_country  TEXT,
-    bot_continent TEXT,
-    bot_tracert  TEXT,
-    bot_dns_name TEXT,
-    detected_id  INTEGER,
-    hive_id      INTEGER,
-    login        TEXT
+from manyfaced.db.sql_builder import (  # noqa: E402, F401
+    CREATE_TABLE_SQL as _CREATE_TABLE_SQL,
+    INSERT_SQL as _INSERT_SQL,
 )
-"""
-
-_INSERT_SQL = """\
-INSERT INTO honeypot_bears
-    (bot_ip, hostname, timestamp, request_path, request_command,
-     request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
-VALUES
-    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+from manyfaced.db.sql_builder import extract_record_fields as _extract_record_fields  # noqa: E402
 
 
 class SQLiteStorage(StorageBackend):
@@ -160,60 +135,10 @@ class SQLiteStorage(StorageBackend):
             return
 
         try:
-            # Map the record dict to individual fields (extract safely)
-            parsed = record.get('parsed_request') or {}
-
-            bot_ip = record.get('ip') or ''
-            hostname = record.get('hostname') or record.get('HIVELOGIN') or ''
-            timestamp = record.get('timestamp') or ''
-            request_path = parsed.get('path') or record.get('request_path') or ''
-            request_command = parsed.get('command') or record.get('request_command') or ''
-            request_version = (
-                parsed.get('request_version')
-                or parsed.get('version')
-                or record.get('request_version')
-                or ''
-            )
-            request_raw = record.get('raw_request') or ''
-            bot_user_agent = parsed.get('user_agent') or record.get('ua') or ''
-            bot_country = record.get('country') or ''
-            bot_continent = record.get('continent') or ''
-            bot_tracert = record.get('tracert') or ''
-            bot_dns_name = record.get('dns_name') or ''
-            detected_id = record.get('is_detected')
-            if detected_id is None:
-                detected_id = record.get('isDetected')
-            hive_id = record.get('hive_id')
-            login = record.get('login') or record.get('HIVELOGIN') or ''
-
-            # Convert timestamps to text if needed
-            if isinstance(timestamp, datetime):
-                timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')
-            timestamp = str(timestamp)
-
+            fields = _extract_record_fields(record)
             with self._lock:
-                self._conn.execute(
-                    _INSERT_SQL,
-                    (
-                        bot_ip,
-                        hostname,
-                        timestamp,
-                        request_path,
-                        request_command,
-                        request_version,
-                        request_raw,
-                        bot_user_agent,
-                        bot_country,
-                        bot_continent,
-                        bot_tracert,
-                        bot_dns_name,
-                        int(detected_id) if detected_id is not None else None,
-                        int(hive_id) if hive_id is not None else None,
-                        login,
-                    ),
-                )
+                self._conn.execute(_INSERT_SQL, fields)
                 self._conn.commit()
-
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Error inserting record into SQLite storage')
 
@@ -241,35 +166,10 @@ class SQLiteStorage(StorageBackend):
 # PostgreSQL backend
 # ---------------------------------------------------------------------------
 
-_CREATE_TABLE_PG_SQL = """\
-CREATE TABLE IF NOT EXISTS honeypot_bears (
-    id           SERIAL PRIMARY KEY,
-    bot_ip       VARCHAR(45) NOT NULL,
-    hostname     VARCHAR(255),
-    timestamp    TEXT NOT NULL,
-    request_path VARCHAR(4096),
-    request_command VARCHAR(10),
-    request_version TEXT,
-    request_raw  TEXT,
-    bot_user_agent TEXT,
-    bot_country  VARCHAR(100),
-    bot_continent VARCHAR(100),
-    bot_tracert  TEXT,
-    bot_dns_name VARCHAR(512),
-    detected_id  INTEGER,
-    hive_id      INTEGER,
-    login        VARCHAR(255)
+from manyfaced.db.sql_builder import (  # noqa: E402, F401
+    CREATE_TABLE_PG_SQL as _CREATE_TABLE_PG_SQL,
+    INSERT_PG_SQL as _INSERT_PG_SQL,
 )
-"""
-
-_INSERT_PG_SQL = """\
-INSERT INTO honeypot_bears
-    (bot_ip, hostname, timestamp, request_path, request_command,
-     request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
-VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-"""
 
 
 class PostgreSQLStorage(StorageBackend):
@@ -295,7 +195,7 @@ class PostgreSQLStorage(StorageBackend):
     def _init_db(self) -> None:
         """Connect to PostgreSQL and create the table if it does not exist."""
         try:
-            import psycopg2
+            import psycopg2  # noqa: PLC0415
         except ImportError:
             raise ImportError(
                 'psycopg2 is required for PostgreSQL backend. '
@@ -325,59 +225,11 @@ class PostgreSQLStorage(StorageBackend):
             return
 
         try:
-            parsed = record.get('parsed_request') or {}
-
-            bot_ip = record.get('ip') or ''
-            hostname = record.get('hostname') or record.get('HIVELOGIN') or ''
-            timestamp = record.get('timestamp') or ''
-            request_path = parsed.get('path') or record.get('request_path') or ''
-            request_command = parsed.get('command') or record.get('request_command') or ''
-            request_version = (
-                parsed.get('request_version')
-                or parsed.get('version')
-                or record.get('request_version')
-                or ''
-            )
-            request_raw = record.get('raw_request') or ''
-            bot_user_agent = parsed.get('user_agent') or record.get('ua') or ''
-            bot_country = record.get('country') or ''
-            bot_continent = record.get('continent') or ''
-            bot_tracert = record.get('tracert') or ''
-            bot_dns_name = record.get('dns_name') or ''
-            detected_id = record.get('is_detected')
-            if detected_id is None:
-                detected_id = record.get('isDetected')
-            hive_id = record.get('hive_id')
-            login = record.get('login') or record.get('HIVELOGIN') or ''
-
-            if isinstance(timestamp, datetime):
-                timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')
-            timestamp = str(timestamp)
-
+            fields = _extract_record_fields(record)
             with self._lock:
                 with self._conn.cursor() as cur:
-                    cur.execute(
-                        _INSERT_PG_SQL,
-                        (
-                            bot_ip,
-                            hostname,
-                            timestamp,
-                            request_path,
-                            request_command,
-                            request_version,
-                            request_raw,
-                            bot_user_agent,
-                            bot_country,
-                            bot_continent,
-                            bot_tracert,
-                            bot_dns_name,
-                            int(detected_id) if detected_id is not None else None,
-                            int(hive_id) if hive_id is not None else None,
-                            login,
-                        ),
-                    )
+                    cur.execute(_INSERT_PG_SQL, fields)
                 self._conn.commit()
-
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Error inserting record into PostgreSQL storage')
 
@@ -423,8 +275,6 @@ def get_storage() -> StorageBackend:
 # Type aliases for clarity
 # ---------------------------------------------------------------------------
 
-# SQLiteStorage and PostgreSQLStorage are defined above directly.
-# These aliases help with static type checkers when importing.
 SQLiteStorageType = SQLiteStorage
 PostgreSQLStorageType = PostgreSQLStorage
 
