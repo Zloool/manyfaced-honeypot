@@ -487,16 +487,15 @@ class HTTPHandlerBase(abc.ABC):
     """Abstract base class for HTTP honeypot handlers.
 
     Each handler manages a specific service/domain. Subclasses implement:
-    - matches_path(): Check if this handler should handle the request
     - generate_response(): Generate a realistic HTTP response
     - handle_login(): (Optional) Process login attempts and capture credentials
+
+    Path matching is handled by the Router / route table — individual
+    handlers are pure response generators with no routing logic.
     """
 
     # Service domain identifier (e.g., "wordpress", "phpmyadmin")
     domain: str = 'base'
-
-    # Path patterns this handler responds to (checked in order)
-    PATH_PATTERNS: list[str] = []
 
     # Detected ID value for this service
     DETECTED_ID: int = 1
@@ -505,17 +504,6 @@ class HTTPHandlerBase(abc.ABC):
         self.bot_profiles: dict[str, BotProfile] = {}
         self._lock = threading.RLock()
         self._response_count: int = 0
-
-    @abc.abstractmethod
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path.
-
-        Args:
-            path: The URL path from the bot's request
-
-        Returns:
-            True if this handler should handle the request
-        """
 
     @abc.abstractmethod
     def generate_response(

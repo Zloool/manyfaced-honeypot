@@ -1,12 +1,12 @@
 """HTTPHandler – handles raw HTTP requests from bots.
 
 This handler receives raw HTTP data from connecting bots, routes requests
-to the appropriate service handler via the HandlerRegistry, generates
+to the appropriate service handler via an explicit Router, generates
 realistic honeypot responses, and spawns processes to send reports to
 the server.
 
-The handler system replaces the old "faces" dict approach with specialized
-handlers for each service (WordPress, phpMyAdmin, Jenkins, Tomcat, etc.).
+The router walks an ordered route table and returns on first match — no
+more response concatenation across multiple handlers.
 """
 
 from __future__ import annotations
@@ -39,15 +39,15 @@ from .drupal_handler import DrupalHandler
 from .generic_handler import GenericHandler
 from .jenkins_handler import JenkinsHandler
 from .phpmyadmin_handler import PhpMyAdminHandler
-from .registry import HandlerRegistry
+from .router import Router
 from .tomcat_handler import TomcatHandler
 from .wordpress_handler import WordPressHandler
 
 logger = get_logger(__name__)
 
 
-# Singleton registry – initialized on first use
-_registry: HandlerRegistry | None = None
+# Singleton router – initialized on first use
+_router: Router | None = None
 
 # Bounded work queue for sending reports (replaces per-request subprocess spawning).
 # Uses a queue.Queue with maxsize for backpressure: when the queue is full,
@@ -114,28 +114,15 @@ def shutdown_report_executor():
             _report_workers.clear()
 
 
-def _get_registry() -> HandlerRegistry:
-    """Get or create the handler registry (singleton)."""
-    global _registry
-    if _registry is None:
-        _registry = HandlerRegistry()
-        # Register all handlers in order of priority (most specific first)
-        # Handlers are checked in registration order; first match wins.
-        _registry.register(WordPressHandler())
-        _registry.register(PhpMyAdminHandler())
-        _registry.register(JenkinsHandler())
-        _registry.register(TomcatHandler())
-        _registry.register(DrupalHandler())
-        _registry.register(CPanelHandler())
-        # Config disclosure handler – catches config file probes before generic fallback
-        _registry.register(ConfigDisclosureHandler())
-        # Generic handler is last – catches everything else
-        _registry.register(GenericHandler())
-        logger.info(
-            'HandlerRegistry initialized with %d handlers',
-            len(_registry.get_all_handlers()),
-        )
-    return _registry
+def _get_router() -> Router:
+    """Get or create the module-level router (singleton)."""
+    global _router
+    if _router is None:
+        from .routes import ROUTES  # noqa: F811
+
+        _router = Router(ROUTES)
+        logger.info('Router initialized with %d routes', len(_router.routes))
+    return _router
 
 
 class HTTPHandler:
@@ -472,37 +459,30 @@ class HTTPHandler:
             except Exception:
                 logger.debug('Failed to parse request headers for %s', bot_ip)
 
-        # Route through the handler registry
-        handler = _get_registry()
+        # Route through the router (first match wins)
+        router = _get_router()
         path = getattr(parsed, 'path', '/')
 
-        # Try handler registry first
-        result = handler.generate_response(
-            path=path,
-            raw_request=raw_request,
-            bot_ip=bot_ip,
-            headers=headers,
-        )
+        # Try router dispatch
+        result = router.dispatch(path, raw_request, bot_ip, headers or {})
 
         if result is not None:
             output_data, detected = result
             logger.debug(
-                'Handler registry returned response for %s (detected=%s)',
+                'Router returned response for %s (detected=%s)',
                 bot_ip,
                 detected,
             )
 
-            # Record the full interaction in the dialogue for all matching handlers
+            # Record the full interaction in the dialogue for the matched handler
             request_data = {
                 'path': path,
                 'method': self._extract_method(raw_request),
                 'raw': raw_request,
                 'headers': headers,
             }
-            matching_handlers = handler.get_all_matching_handlers(path)
-            for h in matching_handlers:
-                profile = h.get_or_create_profile(bot_ip)
-                profile.record_interaction(request_data, output_data, detected)
+            # The router dispatch already called generate_response() which records
+            # the interaction via profile.record_interaction(). No need to iterate.
         else:
             output_data, detected = self._fallback_response(path), 1
 

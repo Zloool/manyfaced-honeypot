@@ -24,64 +24,7 @@ class WebDAVHandler(HTTPHandlerBase):
     """WebDAV honeypot handler."""
 
     domain = 'webdav'
-    PATH_PATTERNS = [
-        '/webdav/',
-        '/webdav',
-        '/dav/',
-        '/dav',
-        '/files/',
-        '/files',
-        '/uploads/',
-        '/uploads',
-        '/share/',
-        '/share',
-        '/public/',
-        '/public',
-        '/remote/',
-        '/remote',
-        '/remote.php/',
-        '/remote.php',
-        '/caldav/',
-        '/caldav',
-        '/carddav/',
-        '/carddav',
-        '/.well-known/webdav',
-        '/webdav/server.php',
-        '/webdav/index.php',
-        '/webdav/upload.php',
-        '/webdav/download.php',
-        '/webdav/list.php',
-        '/webdav/proxy.php',
-        '/webdav/dav.php',
-        '/webdav/propfind.php',
-        '/webdav/mkcol.php',
-        '/webdav/put.php',
-        '/webdav/delete.php',
-        '/webdav/move.php',
-        '/webdav/copy.php',
-        '/webdav/lock.php',
-        '/webdav/unlock.php',
-        '/webdav/checkout.php',
-        '/webdav/checkin.php',
-        '/webdav/working_copy/',
-        '/webdav/version.xml',
-        '/webdav/lockdiscovery/',
-        '/webdav/locks/',
-        '/webdav/temp/',
-        '/webdav/.htaccess',
-        '/webdav/.htpasswd',
-        '/webdav/config.php',
-        '/webdav/setup.php',
-        '/webdav/admin/',
-        '/webdav/login/',
-        '/webdav/auth/',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,

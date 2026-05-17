@@ -21,34 +21,7 @@ class DrupalHandler(HTTPHandlerBase):
     """Drupal CMS honeypot handler."""
 
     domain = 'drupal'
-    PATH_PATTERNS = [
-        '/user',
-        '/user/',
-        '/user/login',
-        '/user/register',
-        '/admin',
-        '/admin/',
-        '/admin/config',
-        '/node',
-        '/node/',
-        '/node/',
-        '/sites',
-        '/sites/',
-        '/sites/default',
-        '/xmlrpc.php',
-        '/drupal',
-        '/drupal/',
-        '/cgi-bin',
-        '/cgi-bin/',
-        '/files',
-        '/files/',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,

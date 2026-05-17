@@ -22,33 +22,7 @@ class CPanelHandler(HTTPHandlerBase):
     """cPanel/WHM honeypot handler."""
 
     domain = 'cpanel'
-    PATH_PATTERNS = [
-        '/cpanel',
-        '/cpanel/',
-        '/cpanel/hotlinkprotect',
-        '/whm',
-        '/whm/',
-        '/whm/login',
-        '/webmail',
-        '/webmail/',
-        '/webmail/login',
-        '/mail',
-        '/mail/',
-        '/webdisk',
-        '/webdisk/',
-        '/cpsess',
-        '/cpsess',
-        '/setup1',
-        '/setup1/',
-        '/~',
-        '/~',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,
