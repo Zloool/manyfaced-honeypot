@@ -7,8 +7,7 @@ attract probing bots and encourage deeper exploration.
 Also handles path traversal, file inclusion, and other exploit attempts
 by returning realistic-looking error pages with debug information.
 
-The monster page dynamically imports PATH_PATTERNS from all registered
-handlers so it always reflects the current service landscape.
+The monster page uses a static service catalogue for service discovery.
 """
 
 from __future__ import annotations
@@ -22,11 +21,11 @@ from manyfaced.handlers.base_handler import HTTPHandlerBase
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Dynamic keyword collection from all handlers
+# Static service catalogue for the monster page
 # ---------------------------------------------------------------------------
 
-# Map of handler domain -> (display_name, version, status) for the monster page
 _SERVICE_INFO: dict[str, tuple[str, str, str]] = {
     'wordpress': ('WordPress CMS', '6.5.3', 'Running (v6.5.3)'),
     'phpmyadmin': ('phpMyAdmin', '5.2.1', 'Running (v5.2.1)'),
@@ -40,73 +39,48 @@ _SERVICE_INFO: dict[str, tuple[str, str, str]] = {
     'redis': ('Redis', '7.2.3', 'Running (v7.2.3)'),
 }
 
+# Representative paths per service – mirrors the route table for display
+_SERVICE_PATHS: dict[str, list[str]] = {
+    'wordpress': ['/wp-login.php', '/wp-admin/', '/xmlrpc.php'],
+    'phpmyadmin': ['/phpmyadmin/', '/pma/', '/mysql/'],
+    'jenkins': ['/jenkins/', '/jenkins/login', '/hudson/'],
+    'tomcat': ['/manager/html', '/host-manager/html', '/server-status'],
+    'drupal': ['/user/login', '/admin', '/node'],
+    'cpanel': ['/cpanel/', '/whm/', '/webmail/'],
+}
+
 
 def _collect_handler_keywords() -> list[dict[str, Any]]:
-    """Collect PATH_PATTERNS and service info from all registered handlers.
+    """Collect service info and representative paths for the monster page.
 
     Returns a list of dicts with keys:
         - domain: handler domain name
         - name: display name (from _SERVICE_INFO or domain)
         - version: version string
         - status: status string
-        - patterns: list of PATH_PATTERNS
+        - patterns: list of representative service paths
         - login_paths: subset of patterns that look like login paths
     """
     keywords = []
 
-    # Import other handlers dynamically
-    handler_modules = {
-        'wordpress': 'WordPressHandler',
-        'phpmyadmin': 'PhpMyAdminHandler',
-        'jenkins': 'JenkinsHandler',
-        'tomcat': 'TomcatHandler',
-        'drupal': 'DrupalHandler',
-        'cpanel': 'CPanelHandler',
-    }
+    for domain, info in _SERVICE_INFO.items():
+        display_name, version, status = info
+        patterns = _SERVICE_PATHS.get(domain, [])
 
-    for domain, class_name in handler_modules.items():
-        try:
-            module = __import__(
-                f'manyfaced.handlers.{domain}_handler',
-                fromlist=[class_name],
-            )
-            handler_class = getattr(module, class_name)
-            handler = handler_class()
-            patterns = handler.PATH_PATTERNS if hasattr(handler, 'PATH_PATTERNS') else []
+        # Determine login paths (paths containing "login", "admin", "manage", etc.)
+        login_keywords = ['login', 'admin', 'manage', 'console', 'dashboard']
+        login_paths = [p for p in patterns if any(kw in p.lower() for kw in login_keywords)]
 
-            # Determine login paths (paths containing "login", "admin", "manage", etc.)
-            login_keywords = ['login', 'admin', 'manage', 'console', 'dashboard']
-            login_paths = [p for p in patterns if any(kw in p.lower() for kw in login_keywords)]
-
-            # Get service info
-            info = _SERVICE_INFO.get(domain, (domain, 'unknown', 'Unknown'))
-            display_name, version, status = info
-
-            keywords.append(
-                {
-                    'domain': domain,
-                    'name': display_name,
-                    'version': version,
-                    'status': status,
-                    'patterns': patterns,
-                    'login_paths': login_paths,
-                }
-            )
-        except (ImportError, AttributeError) as e:
-            logger.debug("Could not load handler for domain '%s': %s", domain, e)
-            # Still add a placeholder entry
-            info = _SERVICE_INFO.get(domain, (domain, 'unknown', 'Unknown'))
-            display_name, version, status = info
-            keywords.append(
-                {
-                    'domain': domain,
-                    'name': display_name,
-                    'version': version,
-                    'status': status,
-                    'patterns': [],
-                    'login_paths': [],
-                }
-            )
+        keywords.append(
+            {
+                'domain': domain,
+                'name': display_name,
+                'version': version,
+                'status': status,
+                'patterns': patterns,
+                'login_paths': login_paths,
+            }
+        )
 
     return keywords
 
@@ -252,17 +226,16 @@ Config: /etc/apache2/apache2.conf
 class GenericHandler(HTTPHandlerBase):
     """Default handler for unknown/unmatched paths.
 
-    Serves a "monster page" packed with keywords and links about popular
-    services to attract probing bots and encourage deeper exploration.
+    Serves a "monster page" packed with keywords, links, and hints about
+    popular services (WordPress, phpMyAdmin, Jenkins, Tomcat, etc.) to
+    attract probing bots and encourage deeper exploration.
+
+    Also handles path traversal, file inclusion, and other exploit attempts
+    by returning realistic-looking error pages with debug information.
     """
 
     domain = 'generic'
-    PATH_PATTERNS = []  # Catch-all: matches any path
     DETECTED_ID = 4294967294  # UNKNOWN_HTTP
-
-    def matches_path(self, path: str) -> bool:
-        """This handler matches everything (catch-all)."""
-        return True
 
     def generate_response(
         self,

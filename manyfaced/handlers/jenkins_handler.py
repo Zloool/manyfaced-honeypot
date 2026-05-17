@@ -22,26 +22,7 @@ class JenkinsHandler(HTTPHandlerBase):
     """Jenkins CI/CD honeypot handler."""
 
     domain = 'jenkins'
-    PATH_PATTERNS = [
-        '/jenkins',
-        '/jenkins/',
-        '/jenkins/login',
-        '/jenkins/script',
-        '/jenkins/manage',
-        '/jenkins/api',
-        '/jenkins/computer',
-        '/jenkins/view',
-        '/jenkins/job',
-        '/hudson',
-        '/hudson/',
-        '/hudson/login',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,
