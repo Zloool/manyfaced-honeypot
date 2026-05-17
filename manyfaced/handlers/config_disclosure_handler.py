@@ -58,7 +58,13 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         (_check_path, '/.env', fake_env_file, 'text/plain'),
         (_check_path, '/.htaccess', fake_htaccess_file, 'text/plain'),
         (_check_path, '/.htpasswd', fake_htpasswd_file, 'text/plain'),
-        (_check_path, '/config.php', '/configuration.php', fake_config_php, 'application/x-httpd-php'),
+        (
+            _check_path,
+            '/config.php',
+            '/configuration.php',
+            fake_config_php,
+            'application/x-httpd-php',
+        ),
         (_check_path, '/settings.py', fake_settings_py, 'text/x-python'),
         (_check_path, '/database.yml', fake_database_yml, 'text/x-yaml'),
         (_check_path, '/config.json', fake_config_json, 'application/json'),
@@ -71,12 +77,25 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         (_check_path, '/Dockerfile', fake_dockerfile, 'text/plain'),
         (_check_path, '/composer.json', fake_composer_json, 'application/json'),
         (_check_path, '/package.json', fake_package_json, 'application/json'),
-        (_check_path, '/backup.sql', '/dump.sql', '/database.sql', fake_backup_sql, 'application/sql'),
+        (
+            _check_path,
+            '/backup.sql',
+            '/dump.sql',
+            '/database.sql',
+            fake_backup_sql,
+            'application/sql',
+        ),
         (_check_path, '/db/', '/mysql/', '/postgres/', fake_db_directory, 'text/html'),
         # .git/head before .git/config (more specific)
         (lambda p: '/.git/head' in p, fake_git_head, 'text/plain'),
         (lambda p: '/.git/config' in p, fake_git_config, 'text/plain'),
-        (_check_path, '/security.txt', '/.well-known/security.txt', fake_security_txt, 'text/plain'),
+        (
+            _check_path,
+            '/security.txt',
+            '/.well-known/security.txt',
+            fake_security_txt,
+            'text/plain',
+        ),
     ]
 
     def generate_response(

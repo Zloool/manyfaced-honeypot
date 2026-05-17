@@ -91,12 +91,18 @@ class HTTPHandler:
             parsed = HTTPRequest(message)
             if getattr(parsed, 'path', None) is None:
                 logger.debug('HTTPRequest failed to parse path, using fallback for %s', bot_ip)
-                parsed = HTTPRequest('GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n')
+                parsed = HTTPRequest(
+                    'GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n'
+                )
         except Exception as e:
             logger.debug('Failed to parse HTTP request: %s, using fallback for %s', e, bot_ip)
             parsed = HTTPRequest('GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n')
 
-        raw_for_report = message if message else 'GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n'
+        raw_for_report = (
+            message
+            if message
+            else 'GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Unknown\r\n\r\n'
+        )
         data = {
             'ip': bot_ip,
             'raw_request': raw_for_report,
@@ -120,9 +126,12 @@ class HTTPHandler:
             request_version = version or 'SSH-2.0'
 
         bs = BearStorage(
-            bot_ip, protocol_info.get('raw', 'SSH-2.0-PUTTY'),
+            bot_ip,
+            protocol_info.get('raw', 'SSH-2.0-PUTTY'),
             str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
-            _ParsedSSH(), SSH_CLIENT, settings.HIVELOGIN,
+            _ParsedSSH(),
+            SSH_CLIENT,
+            settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
         return banner.encode('utf-8')
@@ -130,8 +139,10 @@ class HTTPHandler:
     def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
         """Handle non-HTTP protocol probes."""
         detected_id = {
-            'tls': UNKNOWN_TLS, 'dns': UNKNOWN_DNS,
-            'mongodb': UNKNOWN_MONGODB, 'redis': UNKNOWN_REDIS,
+            'tls': UNKNOWN_TLS,
+            'dns': UNKNOWN_DNS,
+            'mongodb': UNKNOWN_MONGODB,
+            'redis': UNKNOWN_REDIS,
         }.get(protocol, UNKNOWN_NON_HTTP)
 
         response = non_http_response(protocol)
@@ -146,9 +157,12 @@ class HTTPHandler:
             user_agent = protocol_info.get('client', protocol)
 
         bs = BearStorage(
-            bot_ip, protocol_info.get('raw', ''),
+            bot_ip,
+            protocol_info.get('raw', ''),
             str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
-            _ParsedNonHTTP(), detected_id, settings.HIVELOGIN,
+            _ParsedNonHTTP(),
+            detected_id,
+            settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
         return response
@@ -180,16 +194,24 @@ class HTTPHandler:
         else:
             output_data, detected = fallback_response(path), 1
 
-        logger.debug('Generated response for %s, detected=%s, size=%d', bot_ip, detected, len(output_data))
+        logger.debug(
+            'Generated response for %s, detected=%s, size=%d', bot_ip, detected, len(output_data)
+        )
 
         bs = BearStorage(
-            bot_ip, raw_request, request_time, parsed, detected, settings.HIVELOGIN,
+            bot_ip,
+            raw_request,
+            request_time,
+            parsed,
+            detected,
+            settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
         return output_data
 
     def _handle_empty_connection(self, bot_ip: str) -> bytes:
         """Handle a zero-byte connection (port scan with no data sent)."""
+
         class _ParsedEmpty:
             command = ''
             path = ''
@@ -199,8 +221,12 @@ class HTTPHandler:
             request_version = ''
 
         bs = BearStorage(
-            bot_ip, '', str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
-            _ParsedEmpty(), EMPTY_CONNECTION, settings.HIVELOGIN,
+            bot_ip,
+            '',
+            str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
+            _ParsedEmpty(),
+            EMPTY_CONNECTION,
+            settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
         return fallback_response('')
@@ -222,7 +248,13 @@ class HTTPHandler:
         if server_port is not None:
             q = _get_report_queue()
             from manyfaced.client.client import send_report  # noqa: PLC0415
-            q.put((send_report, (bs, bot_ip, settings.HIVEPASS, server_host, server_port, settings.HIVELOGIN)))
+
+            q.put(
+                (
+                    send_report,
+                    (bs, bot_ip, settings.HIVEPASS, server_host, server_port, settings.HIVELOGIN),
+                )
+            )
 
     @staticmethod
     def _extract_method(raw_request: str) -> str:

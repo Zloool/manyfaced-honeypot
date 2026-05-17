@@ -140,8 +140,10 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
 
     for port in ports:
         t = threading.Thread(
-            target=_port_worker, args=(port,),
-            name=f'honeyport-{port}', daemon=True,
+            target=_port_worker,
+            args=(port,),
+            name=f'honeyport-{port}',
+            daemon=True,
         )
         threads.append(t)
 
@@ -158,7 +160,8 @@ def create_multiport_server(args, update_event: Event, ports: list[int]):
         port_list_str = ', '.join(str(p) for p in successful_ports)
         logger.info(
             'Client honeypot listening on %d ports: %s',
-            len(successful_ports), port_list_str,
+            len(successful_ports),
+            port_list_str,
         )
         if args.verbose:
             print(f'Serving honey on {len(successful_ports)} ports: {port_list_str}')

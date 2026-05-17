@@ -112,7 +112,9 @@ ROUTES: list[Route] = [
     Route(PathExact('/Dockerfile'), _config_disclosure(), 1, 'config_dockerfile'),
     Route(PathExact('/Dockerfile.bak'), _config_disclosure(), 1, 'config_dockerfile_bak'),
     Route(PathExact('/docker-compose.yml'), _config_disclosure(), 1, 'config_docker_compose_yml'),
-    Route(PathExact('/docker-compose.yml.bak'), _config_disclosure(), 1, 'config_docker_compose_bak'),
+    Route(
+        PathExact('/docker-compose.yml.bak'), _config_disclosure(), 1, 'config_docker_compose_bak'
+    ),
     # Web server config files
     Route(PathExact('/nginx.conf'), _config_disclosure(), 1, 'config_nginx_conf'),
     Route(PathExact('/nginx.conf.bak'), _config_disclosure(), 1, 'config_nginx_bak'),
@@ -172,5 +174,10 @@ ROUTES: list[Route] = [
     Route(PathExact('/.git/index'), _config_disclosure(), 1, 'config_git_index'),
     # Security disclosure files
     Route(PathExact('/security.txt'), _config_disclosure(), 1, 'config_security_txt'),
-    Route(PathExact('/.well-known/security.txt'), _config_disclosure(), 1, 'config_well_known_security_txt'),
+    Route(
+        PathExact('/.well-known/security.txt'),
+        _config_disclosure(),
+        1,
+        'config_well_known_security_txt',
+    ),
 ]

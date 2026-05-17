@@ -114,6 +114,7 @@ class BaseHandler(abc.ABC):
 # HTTPHandlerBase (client-side — receives raw HTTP from bots)
 # ---------------------------------------------------------------------------
 
+
 class HTTPHandlerBase(abc.ABC):
     """Abstract base class for HTTP honeypot handlers.
 
@@ -224,20 +225,45 @@ class HTTPHandlerBase(abc.ABC):
         # Normalize field names: strip trailing '=' so we can append it once
         # This fixes the bug where fields like "log=" became "log=="
         username_fields = [
-            'log', 'user', 'username', 'login', 'user_login',
-            'USER_LOGIN', 'j_username', 'uid', 'email',
-            'pma_username', 'server[0][user]',
+            'log',
+            'user',
+            'username',
+            'login',
+            'user_login',
+            'USER_LOGIN',
+            'j_username',
+            'uid',
+            'email',
+            'pma_username',
+            'server[0][user]',
         ]
         password_fields = [
-            'pwd', 'pass', 'password', 'login_password', 'j_password',
-            'passwort', 'user_pass', 'USER_PASSWORD',
-            'pma_password', 'server[0][password]',
+            'pwd',
+            'pass',
+            'password',
+            'login_password',
+            'j_password',
+            'passwort',
+            'user_pass',
+            'USER_PASSWORD',
+            'pma_password',
+            'server[0][password]',
         ]
 
         # URL-decode the body
-        for old, new in [('+', ' '), ('%40', '@'), ('%3D', '='), ('%26', '&'),
-                         ('%23', '#'), ('%25', '%'), ("'%", "'"),
-                         ('%22', '"'), ('%2F', '/'), ('%3A', ':'), ('%3F', '?')]:
+        for old, new in [
+            ('+', ' '),
+            ('%40', '@'),
+            ('%3D', '='),
+            ('%26', '&'),
+            ('%23', '#'),
+            ('%25', '%'),
+            ("'%", "'"),
+            ('%22', '"'),
+            ('%2F', '/'),
+            ('%3A', ':'),
+            ('%3F', '?'),
+        ]:
             body = body.replace(old, new)
 
         username = None

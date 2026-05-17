@@ -69,7 +69,9 @@ class WebDAVHandler(HTTPHandlerBase):
         if method == 'PROPFIND':
             body = _propfind_response(path)
             return self._build_http_response(
-                body, 207, 'Multi-Status',
+                body,
+                207,
+                'Multi-Status',
                 {'Content-Type': 'application/xml; charset=utf-8', 'DAV': '1, 2'},
             ), self.DETECTED_ID
 
@@ -87,14 +89,21 @@ class WebDAVHandler(HTTPHandlerBase):
 
         # Handle PUT requests (file upload attempt)
         if method == 'PUT':
-            profile.record_request({
-                'path': path, 'method': method, 'headers': headers_dict,
-                'raw': raw_request[:5000] + (' [truncated]' if len(raw_request) > 5000 else ''),
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-            })
+            profile.record_request(
+                {
+                    'path': path,
+                    'method': method,
+                    'headers': headers_dict,
+                    'raw': raw_request[:5000] + (' [truncated]' if len(raw_request) > 5000 else ''),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                }
+            )
             profile.escalation_label = 'file_upload_attempt'
             return self._build_http_response(
-                b'', 201, 'Created', {'Content-Type': 'text/html; charset=utf-8'},
+                b'',
+                201,
+                'Created',
+                {'Content-Type': 'text/html; charset=utf-8'},
             ), self.DETECTED_ID
 
         # Handle POST requests (upload, login, etc.)
@@ -106,16 +115,23 @@ class WebDAVHandler(HTTPHandlerBase):
                 if credentials:
                     return self._login_failed_response()
             content_type = headers_dict.get('Content-Type', '')
-            if ('multipart/form-data' in content_type
-                    or 'application/octet-stream' in content_type):
-                profile.record_request({
-                    'path': path, 'method': method, 'headers': headers_dict,
-                    'raw': raw_request[:5000] + (' [truncated]' if len(raw_request) > 5000 else ''),
-                    'timestamp': datetime.now(timezone.utc).isoformat(),
-                })
+            if 'multipart/form-data' in content_type or 'application/octet-stream' in content_type:
+                profile.record_request(
+                    {
+                        'path': path,
+                        'method': method,
+                        'headers': headers_dict,
+                        'raw': raw_request[:5000]
+                        + (' [truncated]' if len(raw_request) > 5000 else ''),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 profile.escalation_label = 'file_upload_attempt'
                 return self._build_http_response(
-                    b'', 201, 'Created', {'Content-Type': 'text/html; charset=utf-8'},
+                    b'',
+                    201,
+                    'Created',
+                    {'Content-Type': 'text/html; charset=utf-8'},
                 ), self.DETECTED_ID
 
         # Handle GET requests (directory listing)
@@ -132,7 +148,9 @@ class WebDAVHandler(HTTPHandlerBase):
                 body = _directory_listing(path)
 
             return self._build_http_response(
-                body, 200, 'OK',
+                body,
+                200,
+                'OK',
                 {'Content-Type': 'text/html; charset=utf-8', 'DAV': '1, 2'},
             ), self.DETECTED_ID
 
@@ -143,14 +161,19 @@ class WebDAVHandler(HTTPHandlerBase):
 
         # Default: 405 Method Not Allowed
         return self._build_http_response(
-            b'', 405, 'Method Not Allowed',
+            b'',
+            405,
+            'Method Not Allowed',
             {'Allow': 'GET, HEAD, POST, OPTIONS, PROPFIND, MKCOL, PUT, DELETE, MOVE, COPY'},
         ), self.DETECTED_ID
 
     def _options_response(self) -> tuple[bytes, int]:
         """Generate WebDAV OPTIONS response (capabilities probe)."""
         return self._build_http_response(
-            b'', 200, 'OK', {
+            b'',
+            200,
+            'OK',
+            {
                 'DAV': '1, 2',
                 'MS-Author-Via': 'DAV',
                 'Allow': 'GET, HEAD, POST, OPTIONS, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK, PUT, DELETE',

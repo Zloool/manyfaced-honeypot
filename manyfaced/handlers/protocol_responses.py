@@ -76,7 +76,7 @@ def _fallback_html_body(path: str) -> str:
     return (
         f'<!DOCTYPE html>\n'
         '<html><head><title>Server</title></head>\n'
-        f'<body><h1>Welcome to zlol\'s manyface!</h1>\n'
+        f"<body><h1>Welcome to zlol's manyface!</h1>\n"
         f'<p>Server: Apache/2.4.57 (Ubuntu)</p>\n'
         f'<p>Path: {path}</p>\n'
         '</body></html>'

@@ -192,7 +192,9 @@ class TestConfigAuthorisedBears:
             cfg = Config.load()
 
         assert cfg.AUTHORIZED_BEES == {
-            'bee1': 'key1', 'bee2': 'key2', 'bee3': 'key3',
+            'bee1': 'key1',
+            'bee2': 'key2',
+            'bee3': 'key3',
         }
 
     def test_authorized_bees_empty_env(self, monkeypatch):

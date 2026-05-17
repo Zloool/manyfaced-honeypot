@@ -19,6 +19,7 @@ class TestStorageBackend:
     def test_storage_backend_is_abstract(self):
         """StorageBackend cannot be instantiated directly."""
         import pytest
+
         with pytest.raises(TypeError):
             StorageBackend()
 
@@ -34,6 +35,7 @@ class TestStorageBackend:
             pass
 
         import pytest
+
         with pytest.raises(TypeError):
             IncompleteBackend()
 

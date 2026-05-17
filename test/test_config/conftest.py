@@ -66,4 +66,5 @@ def _clear_env(monkeypatch):
 def write_toml():
     def _write(content: str, tmp_path: Path) -> Path:
         return _write_toml(tmp_path, content)
+
     return _write

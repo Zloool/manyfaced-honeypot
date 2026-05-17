@@ -83,6 +83,7 @@ class TestPostgreSQLStorageInitDb:
         with patch.dict('sys.modules', {'psycopg2': None}):
             with patch.dict(os.environ, {}, clear=True):
                 import pytest
+
                 with pytest.raises(ImportError, match='psycopg2'):
                     PostgreSQLStorage()
 
@@ -92,6 +93,7 @@ class TestPostgreSQLStorageInitDb:
         with patch.dict('sys.modules', {k: v for k, v in sys.modules.items() if k != 'psycopg2'}):
             with patch.dict(os.environ, {}, clear=True):
                 import pytest
+
                 with pytest.raises(ImportError, match='psycopg2 is required'):
                     PostgreSQLStorage()
 

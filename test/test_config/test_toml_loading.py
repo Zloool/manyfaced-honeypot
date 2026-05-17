@@ -122,14 +122,26 @@ class TestConfigGenerateConfigFile:
         monkeypatch.setenv('HOME', str(fake_home))
 
         cfg = Config(
-            HONEYPORT=443, HONEYFOLDER='bots', HIVEHOST='127.0.0.1',
-            HIVEPORT=8080, HIVELOGIN='honeybee', HIVEPASS='beehive123',
-            DB_BACKEND='sqlite', DB_BACKENDS=('sqlite', 'postgresql'),
-            DB_PATH='bots/honeypot.db', DB_PG_HOST='localhost',
-            DB_PG_PORT=5432, DB_PG_DB='honeypot', DB_PG_USER='postgres',
-            DB_PG_PASSWORD='***', AUTHORIZED_BEES={}, HONEY_PORT_MODE='single',
-            HONEY_TOP_PORTS='', DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='dump.jsonl', LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            HONEYPORT=443,
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
+            HIVEPORT=8080,
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
+            DB_PG_PORT=5432,
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
+            AUTHORIZED_BEES={},
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
 
@@ -138,24 +150,49 @@ class TestConfigGenerateConfigFile:
         assert path == fake_home / '.config' / 'manyfaced' / 'config.toml'
         assert path.exists()
         content = path.read_text()
-        for check in ['[honeypot]', 'honeyport = 443', 'honeyfolder = "bots"',
-                       '[hive]', 'hivehost = "127.0.0.1"', 'hiveport = 8080',
-                       'hivelogin = "honeybee"', 'hivepass = "beehive123"',
-                       '[database]', 'backend = "sqlite"', 'path = "bots/honeypot.db"',
-                       'pg_host = "localhost"', 'pg_port = 5432', 'pg_db = "honeypot"',
-                       'pg_user = "postgres"', 'pg_password = "***"', '[security]']:
+        for check in [
+            '[honeypot]',
+            'honeyport = 443',
+            'honeyfolder = "bots"',
+            '[hive]',
+            'hivehost = "127.0.0.1"',
+            'hiveport = 8080',
+            'hivelogin = "honeybee"',
+            'hivepass = "beehive123"',
+            '[database]',
+            'backend = "sqlite"',
+            'path = "bots/honeypot.db"',
+            'pg_host = "localhost"',
+            'pg_port = 5432',
+            'pg_db = "honeypot"',
+            'pg_user = "postgres"',
+            'pg_password = "***"',
+            '[security]',
+        ]:
             assert check in content
 
     def test_creates_file_at_custom_path(self, tmp_path):
         cfg = Config(
-            HONEYPORT=80, HONEYFOLDER='bots', HIVEHOST='127.0.0.1',
-            HIVEPORT=8080, HIVELOGIN='honeybee', HIVEPASS='beehive123',
-            DB_BACKEND='sqlite', DB_BACKENDS=('sqlite', 'postgresql'),
-            DB_PATH='bots/honeypot.db', DB_PG_HOST='localhost',
-            DB_PG_PORT=5432, DB_PG_DB='honeypot', DB_PG_USER='postgres',
-            DB_PG_PASSWORD='***', AUTHORIZED_BEES={}, HONEY_PORT_MODE='single',
-            HONEY_TOP_PORTS='', DEFAULT_KEY='default_beehive_key',
-            DUMP_FILE='dump.jsonl', LOG_FILE='~/.local/share/manyfaced/honeypot.log',
+            HONEYPORT=80,
+            HONEYFOLDER='bots',
+            HIVEHOST='127.0.0.1',
+            HIVEPORT=8080,
+            HIVELOGIN='honeybee',
+            HIVEPASS='beehive123',
+            DB_BACKEND='sqlite',
+            DB_BACKENDS=('sqlite', 'postgresql'),
+            DB_PATH='bots/honeypot.db',
+            DB_PG_HOST='localhost',
+            DB_PG_PORT=5432,
+            DB_PG_DB='honeypot',
+            DB_PG_USER='postgres',
+            DB_PG_PASSWORD='***',
+            AUTHORIZED_BEES={},
+            HONEY_PORT_MODE='single',
+            HONEY_TOP_PORTS='',
+            DEFAULT_KEY='default_beehive_key',
+            DUMP_FILE='dump.jsonl',
+            LOG_FILE='~/.local/share/manyfaced/honeypot.log',
             LOCKFILE='/run/manyfaced/lockfile',
         )
 
@@ -171,7 +208,7 @@ class TestConfigLoadCustomPath:
     """load with explicit config_path."""
 
     def test_load_with_explicit_config_path(self, tmp_path):
-        toml_content = "[honeypot]\nhoneyport = 8888\n"
+        toml_content = '[honeypot]\nhoneyport = 8888\n'
         config_path = _write_toml(tmp_path, toml_content)
         cfg = Config.load(config_path=config_path)
 
@@ -179,7 +216,7 @@ class TestConfigLoadCustomPath:
         assert cfg.HONEYFOLDER == 'bots'
 
     def test_load_with_string_path(self, tmp_path):
-        toml_content = "[honeypot]\nhoneyport = 7777\n"
+        toml_content = '[honeypot]\nhoneyport = 7777\n'
         config_path = str(_write_toml(tmp_path, toml_content))
         cfg = Config.load(config_path=config_path)
 
