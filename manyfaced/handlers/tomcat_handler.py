@@ -22,30 +22,7 @@ class TomcatHandler(HTTPHandlerBase):
     """Apache Tomcat honeypot handler."""
 
     domain = 'tomcat'
-    PATH_PATTERNS = [
-        '/manager',
-        '/manager/',
-        '/manager/html',
-        '/host-manager',
-        '/host-manager/',
-        '/host-manager/html',
-        '/tomcat',
-        '/tomcat/',
-        '/server-status',
-        '/server-info',
-        '/jmxproxy',
-        '/jmxproxy/',
-        '/examples',
-        '/examples/',
-        '/ROOT',
-        '/ROOT/',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,

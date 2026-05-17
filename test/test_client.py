@@ -28,7 +28,6 @@ from manyfaced.handlers import (
     WebDAVHandler,
     ConfigDisclosureHandler,
     GenericHandler,
-    HandlerRegistry,
     BotProfile,
 )
 
@@ -82,12 +81,6 @@ class TestWordPressHandler(unittest.TestCase):
     def setUp(self):
         self.handler = WordPressHandler()
 
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/wp-login.php'))
-        self.assertTrue(self.handler.matches_path('/wp-admin/'))
-        self.assertTrue(self.handler.matches_path('/wp-content/'))
-        self.assertFalse(self.handler.matches_path('/phpmyadmin/'))
-
     def test_login_page(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
@@ -139,11 +132,6 @@ class TestPhpMyAdminHandler(unittest.TestCase):
     def setUp(self):
         self.handler = PhpMyAdminHandler()
 
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/phpmyadmin/'))
-        self.assertTrue(self.handler.matches_path('/pma/'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
-
     def test_login_page(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
@@ -172,11 +160,6 @@ class TestJenkinsHandler(unittest.TestCase):
 
     def setUp(self):
         self.handler = JenkinsHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/jenkins/'))
-        self.assertTrue(self.handler.matches_path('/jenkins/login'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_login_page(self):
         profile = MagicMock()
@@ -208,11 +191,6 @@ class TestTomcatHandler(unittest.TestCase):
     def setUp(self):
         self.handler = TomcatHandler()
 
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/manager/html'))
-        self.assertTrue(self.handler.matches_path('/host-manager/'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
-
     def test_manager_page(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
@@ -230,11 +208,6 @@ class TestDrupalHandler(unittest.TestCase):
 
     def setUp(self):
         self.handler = DrupalHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/user/login'))
-        self.assertTrue(self.handler.matches_path('/admin'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_login_page(self):
         profile = MagicMock()
@@ -254,13 +227,6 @@ class TestBitrixHandler(unittest.TestCase):
 
     def setUp(self):
         self.handler = BitrixHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/bitrix/admin/'))
-        self.assertTrue(self.handler.matches_path('/bitrix/'))
-        self.assertTrue(self.handler.matches_path('/bitrix/auth/'))
-        self.assertTrue(self.handler.matches_path('/bitrix/setup/'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_admin_login_page(self):
         profile = MagicMock()
@@ -314,13 +280,6 @@ class TestWebDAVHandler(unittest.TestCase):
 
     def setUp(self):
         self.handler = WebDAVHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/webdav/'))
-        self.assertTrue(self.handler.matches_path('/webdav/server.php'))
-        self.assertTrue(self.handler.matches_path('/dav/'))
-        self.assertTrue(self.handler.matches_path('/remote.php/'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_directory_listing(self):
         profile = MagicMock()
@@ -402,15 +361,6 @@ class TestConfigDisclosureHandler(unittest.TestCase):
 
     def setUp(self):
         self.handler = ConfigDisclosureHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/wp-config.php'))
-        self.assertTrue(self.handler.matches_path('/.env'))
-        self.assertTrue(self.handler.matches_path('/.htaccess'))
-        self.assertTrue(self.handler.matches_path('/config.json'))
-        self.assertTrue(self.handler.matches_path('/database.yml'))
-        self.assertTrue(self.handler.matches_path('/settings.py'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_wp_config_php(self):
         profile = MagicMock()
@@ -583,25 +533,12 @@ class TestConfigDisclosureHandler(unittest.TestCase):
         self.assertIn(b'Contact:', response)
         self.assertIn(b'mailto:security@example.com', response)
 
-    def test_matches_git_and_security_paths(self):
-        self.assertTrue(self.handler.matches_path('/.git/config'))
-        self.assertTrue(self.handler.matches_path('/.git/HEAD'))
-        self.assertTrue(self.handler.matches_path('/.git/index'))
-        self.assertTrue(self.handler.matches_path('/security.txt'))
-        self.assertTrue(self.handler.matches_path('/.well-known/security.txt'))
-
 
 class TestCPanelHandler(unittest.TestCase):
     """Test CPanelHandler responses."""
 
     def setUp(self):
         self.handler = CPanelHandler()
-
-    def test_matches_path(self):
-        self.assertTrue(self.handler.matches_path('/cpanel/'))
-        self.assertTrue(self.handler.matches_path('/whm/'))
-        self.assertTrue(self.handler.matches_path('/webmail/'))
-        self.assertFalse(self.handler.matches_path('/wp-login.php'))
 
     def test_cpanel_login_page(self):
         profile = MagicMock()
@@ -614,17 +551,32 @@ class TestCPanelHandler(unittest.TestCase):
         self.assertIn(b'cPanel', response)
         self.assertIn(b'Login', response)
 
+    def test_whm_login(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {'1.2.3.4': profile}
+        response, _ = self.handler.generate_response(
+            '/whm/',
+            'GET /whm/ HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            '1.2.3.4',
+        )
+        self.assertIn(b'WHM', response)
+
+    def test_webmail_login(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {'1.2.3.4': profile}
+        response, _ = self.handler.generate_response(
+            '/webmail/',
+            'GET /webmail/ HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            '1.2.3.4',
+        )
+        self.assertIn(b'Webmail', response)
+
 
 class TestGenericHandler(unittest.TestCase):
     """Test GenericHandler (monster page) responses."""
 
     def setUp(self):
         self.handler = GenericHandler()
-
-    def test_matches_all_paths(self):
-        self.assertTrue(self.handler.matches_path('/anything'))
-        self.assertTrue(self.handler.matches_path('/wp-login.php'))
-        self.assertTrue(self.handler.matches_path('/'))
 
     def test_monster_page(self):
         profile = MagicMock()
@@ -649,113 +601,6 @@ class TestGenericHandler(unittest.TestCase):
         )
         self.assertIn(b'403', response)
         self.assertIn(b'Forbidden', response)
-
-
-class TestHandlerRegistry(unittest.TestCase):
-    """Test HandlerRegistry routing."""
-
-    def setUp(self):
-        self.registry = HandlerRegistry()
-        self.registry.register(WordPressHandler())
-        self.registry.register(PhpMyAdminHandler())
-        self.registry.register(JenkinsHandler())
-        self.registry.register(TomcatHandler())
-        self.registry.register(DrupalHandler())
-        self.registry.register(CPanelHandler())
-        self.registry.register(ConfigDisclosureHandler())
-        self.registry.register(GenericHandler())
-
-    def test_get_handler_wordpress(self):
-        handler = self.registry.get_handler('/wp-login.php')
-        self.assertIsInstance(handler, WordPressHandler)
-
-    def test_get_handler_phpmyadmin(self):
-        handler = self.registry.get_handler('/phpmyadmin/')
-        self.assertIsInstance(handler, PhpMyAdminHandler)
-
-    def test_get_handler_jenkins(self):
-        handler = self.registry.get_handler('/jenkins/')
-        self.assertIsInstance(handler, JenkinsHandler)
-
-    def test_get_handler_tomcat(self):
-        handler = self.registry.get_handler('/manager/html')
-        self.assertIsInstance(handler, TomcatHandler)
-
-    def test_get_handler_drupal(self):
-        handler = self.registry.get_handler('/user/login')
-        self.assertIsInstance(handler, DrupalHandler)
-
-    def test_get_handler_cpanel(self):
-        handler = self.registry.get_handler('/cpanel/')
-        self.assertIsInstance(handler, CPanelHandler)
-
-    def test_get_handler_generic_fallback(self):
-        handler = self.registry.get_handler('/random-path')
-        self.assertIsInstance(handler, GenericHandler)
-
-    def test_generate_response(self):
-        result = self.registry.generate_response(
-            '/wp-login.php',
-            'GET /wp-login.php HTTP/1.1\r\nHost: example.com\r\n\r\n',
-            '1.2.3.4',
-        )
-        self.assertIsNotNone(result)
-        response_bytes, detected = result
-        self.assertIn(b'WordPress', response_bytes)
-
-    def test_get_all_handlers(self):
-        handlers = self.registry.get_all_handlers()
-        self.assertEqual(len(handlers), 8)
-
-    def test_stats(self):
-        stats = self.registry.get_stats()
-        self.assertEqual(stats['total_handlers'], 8)
-        self.assertIn('handlers', stats)
-
-    def test_get_all_matching_handlers(self):
-        """Test that get_all_matching_handlers returns all matching handlers."""
-        # /xmlrpc.php matches both WordPress and Drupal
-        matching = self.registry.get_all_matching_handlers('/xmlrpc.php')
-        matching_domains = [h.domain for h in matching]
-        self.assertIn('wordpress', matching_domains)
-        self.assertIn('drupal', matching_domains)
-
-    def test_multi_handler_mashup(self):
-        """Test that multiple handlers mash responses together."""
-        result = self.registry.generate_response(
-            '/admin',
-            'GET /admin HTTP/1.1\r\nHost: example.com\r\n\r\n',
-            '1.2.3.4',
-        )
-        self.assertIsNotNone(result)
-        response_bytes, detected = result
-        # Should contain content from at least one handler
-        self.assertTrue(len(response_bytes) > 0)
-        # Should have detected content
-        self.assertGreater(detected, 0)
-
-    def test_mash_responses_static(self):
-        """Test the static _mash_responses method."""
-        resp1 = b'HTTP/1.1 200 OK\r\n\r\n<body>WordPress</body>'
-        resp2 = b'HTTP/1.1 200 OK\r\n\r\n<body>Drupal</body>'
-        results = [(resp1, 1), (resp2, 1)]
-        mashed, detected = HandlerRegistry._mash_responses(results)
-        self.assertIn(b'WordPress', mashed)
-        self.assertIn(b'Drupal', mashed)
-        self.assertEqual(detected, 1)
-
-    def test_mash_responses_empty(self):
-        """Test _mash_responses with empty input."""
-        mashed, detected = HandlerRegistry._mash_responses([])
-        self.assertEqual(mashed, b'')
-        self.assertEqual(detected, 0)
-
-    def test_mash_responses_single(self):
-        """Test _mash_responses with single response."""
-        resp = b'HTTP/1.1 200 OK\r\n\r\n<body>WordPress</body>'
-        mashed, detected = HandlerRegistry._mash_responses([(resp, 1)])
-        self.assertIn(b'WordPress', mashed)
-        self.assertEqual(detected, 1)
 
 
 class TestBotProfileDialogue(unittest.TestCase):

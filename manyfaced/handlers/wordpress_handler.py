@@ -23,27 +23,7 @@ class WordPressHandler(HTTPHandlerBase):
     """WordPress honeypot handler."""
 
     domain = 'wordpress'
-    PATH_PATTERNS = [
-        '/wp-login',
-        '/wp-login.php',
-        '/wp-admin',
-        '/wp-admin/',
-        '/wp-content',
-        '/wp-content/',
-        '/wp-includes',
-        '/wp-includes/',
-        '/xmlrpc.php',
-        '/wordpress',
-        '/wordpress/',
-        '/blog',
-        '/blog/',
-    ]
     DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        """Check if this handler should handle the given path."""
-        path_lower = path.lower().split('?')[0]
-        return any(path_lower.startswith(pattern) for pattern in self.PATH_PATTERNS)
 
     def generate_response(
         self,
