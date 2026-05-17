@@ -311,18 +311,19 @@ class TestEmptyConnection:
 
     def test_empty_connection_has_empty_raw_request(self, handler):
         """Empty connection record should have empty request_raw."""
-        with patch.object(handler, '_send_report_enriched') as mock_send:
+        with patch.object(handler, '_enrich_and_send') as mock_enrich:
             handler.handle_request('', bot_ip='5.6.7.8')
 
-        call_args = mock_send.call_args
-        bs = call_args[0][0]  # BearStorage is the first positional arg
+        # _enrich_and_send is called with BearStorage instance and bot_ip
+        assert mock_enrich.called
+        bs = mock_enrich.call_args[0][0]  # BearStorage is the first positional arg
         assert bs.raw_request == ''
 
     def test_empty_connection_no_parse_failure_log(self, handler, caplog):
         """Empty input should NOT emit 'HTTPRequest failed to parse path' log line."""
         import logging
 
-        with patch.object(handler, '_send_report'):
+        with patch.object(handler, '_enrich_and_send'):
             handler.handle_request('', bot_ip='5.6.7.8')
 
         # The "failed to parse" message should not appear in logs for empty input

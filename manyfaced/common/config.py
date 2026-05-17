@@ -75,64 +75,8 @@ _DEFAULT_DB_PG_USER = 'postgres'
 _DEFAULT_DB_PG_PASSWORD = '***'
 _DEFAULT_AUTHORIZED_BEES_DEFAULTS: dict[str, str] = {}
 
-# ── port mode configuration ─────────────────────────────────────────────────
-# Port modes for CLIENT honeypot:
-#   "single"  – listen on a single port (HONEYPORT, default 80)
-#   "top"     – listen on the top 50 most popular/scanned ports
-#   "all"     – listen on all 65535 TCP ports
-
-_TOP_50_PORTS = [
-    21,
-    22,
-    23,
-    25,
-    53,
-    80,
-    110,
-    111,
-    135,
-    139,
-    143,
-    443,
-    445,
-    993,
-    995,
-    1433,
-    1521,
-    2049,
-    3306,
-    3389,
-    5432,
-    5900,
-    5901,
-    6379,
-    8080,
-    8443,
-    9200,
-    11211,
-    27017,
-    5672,
-    15672,
-    4369,
-    2181,
-    9090,
-    8888,
-    7001,
-    7002,
-    11300,
-    11301,
-    11302,
-    11303,
-    11304,
-    11305,
-    11306,
-    11307,
-    11308,
-    11309,
-    11310,
-    11311,
-    5000,
-]
+# ── port mode configuration (shared constants) ───────────────────────────────
+from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS  # noqa: E402, F401
 
 _PORT_MODES = ('single', 'top', 'all')
 
@@ -149,22 +93,17 @@ _DEFAULT_LOCKFILE = os.path.join('/opt/manyfaced/bots', 'lockfile')
 
 
 def _find_config_file() -> Path | None:
-    """Return the first existing config file, or None if not found anywhere."""
+    """Return the first existing user config file, or None if not found."""
     candidates: list[Path] = []
     xdg = os.environ.get('XDG_CONFIG_HOME')
     if xdg:
         candidates.append(Path(xdg) / 'manyfaced' / 'config.toml')
-    # Always check fallback paths (XDG is optional)
-    candidates.extend(
-        [
-            Path.home() / '.config' / 'manyfaced' / 'config.toml',
-            Path(__file__).resolve().parent.parent / 'settings.toml.example',  # in-package fallback
-        ]
-    )
+    # Always check fallback path (XDG is optional)
+    candidates.append(Path.home() / '.config' / 'manyfaced' / 'config.toml')
     for c in candidates:
         if c.is_file():
             return c
-    return None  # will be generated on-demand
+    return None  # will be generated on-demand via --generate-config
 
 
 def _load_toml(path: Path) -> dict:
@@ -230,6 +169,8 @@ def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: st
         return val
 
     # 1 – default
+    if default is None:
+        return ''
     return default
 
 
@@ -394,7 +335,7 @@ class Config:
                     )
                 except ValueError:
                     pass
-            return list(_TOP_50_PORTS)
+            return list(_DEFAULT_TOP_PORTS)
         elif mode == 'all':
             return list(range(1, 65536))
         else:  # single (default)
@@ -417,7 +358,6 @@ if not settings.HIVEPASS:
         'The honeypot cannot start without a secret encryption key. '
         'Set it via the HONEY_HIVEPASS environment variable or in config.toml.'
     )
-    raise SystemExit(1)
 
 if not settings.DEFAULT_KEY:
     import logging
@@ -427,4 +367,3 @@ if not settings.DEFAULT_KEY:
         'config.toml. The honeypot cannot start without a default encryption key. '
         'Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml.'
     )
-    raise SystemExit(1)
