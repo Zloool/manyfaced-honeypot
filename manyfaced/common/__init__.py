@@ -1,12 +1,3 @@
 """manyfaced common package."""
 
-__all__ = [
-    'arguments',
-    'bearstorage',
-    'httphandler',
-    'myenc',
-    'settings',
-    'status',
-    'update',
-    'utils',
-]
+# Submodules are imported directly: from manyfaced.common.config import settings, etc.
