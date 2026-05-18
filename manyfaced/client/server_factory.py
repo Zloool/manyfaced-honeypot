@@ -32,6 +32,136 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# Protocols that can have interactive credential exchange (banner → auth)
+_INTERACTIVE_PROTOCOL_SIGNATURES: list[bytes] = [
+    b'SSH-',  # SSH banner
+    b'220 ',  # FTP/SMTP greeting
+    b'+OK',  # POP3 greeting
+    b'* OK',  # IMAP greeting
+    b'RFB ',  # VNC
+]
+
+
+def _is_interactive_protocol(response_bytes: bytes) -> bool:
+    """Check if response indicates an interactive protocol that may have credentials.
+
+    Args:
+        response_bytes: The honeypot response sent to the bot.
+
+    Returns:
+        True if this is an interactive protocol where credentials might follow.
+    """
+    for sig in _INTERACTIVE_PROTOCOL_SIGNATURES:
+        if response_bytes.startswith(sig):
+            return True
+    return False
+
+
+def _capture_credentials(connection_socket, bot_ip: str, response_bytes: bytes) -> str | None:
+    """Capture credentials from interactive protocol connections.
+
+    For SSH, uses binary protocol parsing. For other protocols (TELNET, FTP, etc.),
+    tries to extract plaintext username/password patterns.
+
+    Args:
+        connection_socket: The open socket connection to the bot.
+        bot_ip: IP address of the bot.
+        response_bytes: The honeypot response sent (used to determine protocol type).
+
+    Returns:
+        String with captured credentials, or None if no credentials captured.
+    """
+    from manyfaced.client.ssh_creds import _capture_ssh_credentials  # noqa: PLC0415
+
+    # SSH gets special binary protocol parsing
+    if response_bytes.startswith(b'SSH-'):
+        return _capture_ssh_credentials(connection_socket, bot_ip)
+
+    # For other interactive protocols (TELNET, FTP, etc.), try plaintext extraction
+    try:
+        connection_socket.settimeout(10)  # Wait for auth data
+        all_data = b''
+        while True:
+            try:
+                data = connection_socket.recv(4096)
+                if not data:
+                    break
+                all_data += data
+                if len(all_data) > 2048:  # Reasonable max for auth exchange
+                    break
+            except socket.timeout:
+                break
+            except socket.error:
+                break
+
+        if all_data:
+            raw_str = all_data.decode('utf-8', errors='replace')
+            creds = _parse_plaintext_credentials(raw_str)
+            if creds:
+                return creds
+            logger.debug(
+                'No credentials found in %s data from %s (length=%d): %s',
+                'TELNET/FTP' if response_bytes.startswith(b'220 ') else 'interactive',
+                bot_ip,
+                len(all_data),
+                repr(all_data[:200]),
+            )
+    except Exception as e:
+        logger.debug('Error capturing credentials from %s: %s', bot_ip, e)
+
+    return None
+
+
+def _parse_plaintext_credentials(raw_data: str) -> str | None:
+    """Extract username/password from plaintext protocol data (TELNET, FTP, etc.).
+
+    Args:
+        raw_data: Raw protocol data as string.
+
+    Returns:
+        String with extracted credentials, or None if not found.
+    """
+    import re  # noqa: PLC0415
+
+    username = None
+    password = None
+
+    # Common patterns for credential disclosure in plaintext protocols
+    user_patterns = [
+        r'username[=:\s]+(\S+)',
+        r'user[=:\s]+(\S+)',
+        r'login[=:\s]+(\S+)',
+        r'USER\s+(\S+)',  # FTP command
+    ]
+
+    pass_patterns = [
+        r'password[=:\s]+(\S+)',
+        r'pass[=:\s]+(\S+)',
+        r'PASS\s+(\S+)',  # FTP command
+    ]
+
+    for pattern in user_patterns:
+        match = re.search(pattern, raw_data, re.IGNORECASE)
+        if match:
+            username = match.group(1).strip('\'"')
+            break
+
+    for pattern in pass_patterns:
+        match = re.search(pattern, raw_data, re.IGNORECASE)
+        if match:
+            password = match.group(1).strip('\'"')
+            break
+
+    if username and password:
+        return f'user={username}, pass={password}'
+    elif username:
+        return f'user={username}'
+    elif password:
+        return f'pass={password}'
+
+    return None
+
+
 def _setup_server_socket(port: int) -> 'SocketType | None':
     """Create and bind a TCP server socket on the given port.
 
@@ -94,17 +224,17 @@ def _handle_bot_connection(
             response_bytes, bear_storage = output_data
             connection_socket.sendall(response_bytes)
 
-            # For SSH connections, keep the connection open to capture credentials
-            if response_bytes.startswith(b'SSH-'):
-                from manyfaced.client.ssh_creds import _capture_ssh_credentials
-
-                ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
-                if ssh_creds and bear_storage is not None:
-                    bear_storage.login = ssh_creds
+            # For interactive protocols (SSH, TELNET, FTP, SMTP, POP3, IMAP, VNC), keep
+            # the connection open to capture credentials from subsequent data
+            if _is_interactive_protocol(response_bytes):
+                creds = _capture_credentials(connection_socket, bot_ip, response_bytes)
+                if creds and bear_storage is not None:
+                    bear_storage.login = creds
                     logger.info(
-                        'Captured SSH credentials from %s: %s',
+                        'Captured %s credentials from %s: %s',
+                        'SSH' if response_bytes.startswith(b'SSH-') else 'interactive',
                         bot_ip,
-                        ssh_creds,
+                        creds,
                     )
                 # Send report AFTER credential capture so login field has real creds
                 if bear_storage is not None:
