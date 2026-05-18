@@ -185,7 +185,8 @@ class HTTPHandler:
             detected_id,
             settings.HIVELOGIN,
         )
-        self._enrich_and_send(bs, bot_ip)
+        # NOTE: Do NOT call _enrich_and_send() here — credential capture happens
+        # after this returns. The caller must send the report AFTER updating bs.login.
         return response, bs
 
     def process_request(self, data):

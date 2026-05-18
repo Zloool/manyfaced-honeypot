@@ -545,6 +545,7 @@ class TestNonHTTPEnrichment:
             )
 
         # Should get telnet response (handle_request returns tuple for non-HTTP)
+        bear_storage = None
         if isinstance(output, tuple):
             response_bytes, bear_storage = output
         else:
@@ -557,6 +558,9 @@ class TestNonHTTPEnrichment:
         call_args = MockBS.call_args
         assert call_args[0][0] == '5.6.7.8'  # bot_ip
         assert call_args[0][4] == UNKNOWN_NON_HTTP  # detected_id
+
+        # Now simulate what the caller does: call _enrich_and_send after credential capture
+        handler._enrich_and_send(bear_storage, '5.6.7.8')
 
         # Verify enrichment methods were called on the BearStorage instance
         mock_bs.resolve_dns_name.assert_called_once_with('5.6.7.8', timeout=1.0)
@@ -577,6 +581,7 @@ class TestNonHTTPEnrichment:
                 bot_ip='9.10.11.12',
             )
 
+        bear_storage = None
         if isinstance(output, tuple):
             response_bytes, bear_storage = output
         else:
@@ -585,6 +590,10 @@ class TestNonHTTPEnrichment:
         assert isinstance(response_bytes, bytes)
         call_args = MockBS.call_args
         assert call_args[0][0] == '9.10.11.12'  # bot_ip
+
+        # Now simulate what the caller does: call _enrich_and_send after credential capture
+        handler._enrich_and_send(bear_storage, '9.10.11.12')
+
         mock_bs.resolve_dns_name.assert_called_once_with('9.10.11.12', timeout=1.0)
         mock_bs.resolve_geo.assert_called_once_with('9.10.11.12', timeout=2.0)
 
