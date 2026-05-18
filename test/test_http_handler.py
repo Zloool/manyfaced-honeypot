@@ -575,10 +575,10 @@ class TestNonHTTPEnrichment:
         mock_bs.country = ''
         mock_bs.continent = ''
 
-        # SMB/NBT: NetBIOS session request starts with \x00\x00\x00 followed by length byte
+        # SMB probe: \x00\x00\x00 + 16 bytes padding + "NT LM" identifier
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
             output = handler.handle_request(
-                b'\x00\x00\x00\x18\x0e\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',  # NBT session request
+                b'\x00\x00\x00' + b'\x00' * 16 + b'NT LM 0.12',  # SMB/NBT probe with NT LM identifier
                 bot_ip='5.6.7.8',
             )
 
