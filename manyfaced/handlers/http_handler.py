@@ -66,7 +66,12 @@ class HTTPHandler:
         self.update_event = update_event
 
     def handle_request(self, message: str, bot_ip: str = '127.0.0.1'):
-        """Handle a raw HTTP request from a bot."""
+        """Handle a raw HTTP request from a bot.
+
+        Returns:
+            For SSH/non-HTTP paths: (response_bytes, BearStorage) so caller can update credentials
+            For HTTP paths: response bytes only
+        """
         raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
         if not raw_bytes:
             return self._handle_empty_connection(bot_ip)
@@ -110,8 +115,12 @@ class HTTPHandler:
         }
         return self.process_request(data)
 
-    def _handle_ssh_probe(self, bot_ip: str, protocol_info: dict) -> bytes:
-        """Handle an SSH probe by responding with a fake SSH banner."""
+    def _handle_ssh_probe(self, bot_ip: str, protocol_info: dict) -> tuple[bytes, BearStorage]:
+        """Handle an SSH probe by responding with a fake SSH banner.
+
+        Returns:
+            Tuple of (response_bytes, BearStorage) so caller can update credentials after capture.
+        """
         client = protocol_info.get('client', '')
         version = protocol_info.get('version', '')
         banner = fake_ssh_banner() + '\r\n'
@@ -134,10 +143,16 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
-        return banner.encode('utf-8')
+        return banner.encode('utf-8'), bs
 
-    def _handle_non_http_probe(self, bot_ip: str, protocol: str, protocol_info: dict) -> bytes:
-        """Handle non-HTTP protocol probes."""
+    def _handle_non_http_probe(
+        self, bot_ip: str, protocol: str, protocol_info: dict
+    ) -> tuple[bytes, BearStorage]:
+        """Handle non-HTTP protocol probes.
+
+        Returns:
+            Tuple of (response_bytes, BearStorage).
+        """
         detected_id = {
             'tls': UNKNOWN_TLS,
             'dns': UNKNOWN_DNS,
@@ -165,7 +180,7 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
-        return response
+        return response, bs
 
     def process_request(self, data):
         """Process an incoming HTTP request."""
@@ -184,6 +199,9 @@ class HTTPHandler:
                 headers = dict(parsed.headers)
             except Exception:
                 logger.debug('Failed to parse request headers for %s', bot_ip)
+
+        # Extract credentials from POST requests (login attempts)
+        login_creds = self._extract_http_credentials(raw_request, headers or {})
 
         router = _get_router()
         path = getattr(parsed, 'path', '/')
@@ -206,11 +224,115 @@ class HTTPHandler:
             detected,
             settings.HIVELOGIN,
         )
+
+        # Store extracted credentials in BearStorage
+        if login_creds:
+            bs.login = login_creds
+            logger.info('Captured HTTP credentials from %s at %s', bot_ip, path)
+
         self._enrich_and_send(bs, bot_ip)
         return output_data
 
-    def _handle_empty_connection(self, bot_ip: str) -> bytes:
-        """Handle a zero-byte connection (port scan with no data sent)."""
+    def _extract_http_credentials(self, raw_request: str, headers: dict) -> str | None:
+        """Extract credentials from an HTTP POST request.
+
+        Looks for common credential field names in the request body (URL-encoded form data).
+
+        Args:
+            raw_request: The raw HTTP request string.
+            headers: Request headers.
+
+        Returns:
+            String with extracted credentials, or None if not found.
+        """
+        # Only process POST requests
+        parts = raw_request.split()
+        if len(parts) < 1 or parts[0].upper() != 'POST':
+            return None
+
+        # Split headers from body
+        header_body_split = raw_request.split('\r\n\r\n', 1)
+        if len(header_body_split) < 2:
+            return None
+
+        body = header_body_split[1]
+
+        # URL-decode the body
+        for old, new in [
+            ('+', ' '),
+            ('%40', '@'),
+            ('%3D', '='),
+            ('%26', '&'),
+            ('%23', '#'),
+            ('%25', '%'),
+            ("'%", "'"),
+            ('%22', '"'),
+            ('%2F', '/'),
+            ('%3A', ':'),
+            ('%3F', '?'),
+        ]:
+            body = body.replace(old, new)
+
+        username_fields = [
+            'log',
+            'user',
+            'username',
+            'login',
+            'user_login',
+            'USER_LOGIN',
+            'j_username',
+            'uid',
+            'email',
+            'pma_username',
+            'server[0][user]',
+        ]
+        password_fields = [
+            'pwd',
+            'pass',
+            'password',
+            'login_password',
+            'j_password',
+            'passwort',
+            'user_pass',
+            'USER_PASSWORD',
+            'pma_password',
+            'server[0][password]',
+        ]
+
+        username = None
+        password = None
+
+        for field in username_fields:
+            prefix = field + '='
+            if prefix in body:
+                value = body.split(prefix, 1)[1].split('&', 1)[0]
+                if value:
+                    username = value
+                    break
+
+        for field in password_fields:
+            prefix = field + '='
+            if prefix in body:
+                value = body.split(prefix, 1)[1].split('&', 1)[0]
+                if value:
+                    password = value
+                    break
+
+        if username and password:
+            return f'user={username}, pass={password}'
+        elif username:
+            return f'user={username}'
+        elif password:
+            return f'pass={password}'
+
+        return None
+
+    def _handle_empty_connection(self, bot_ip: str) -> tuple[bytes, BearStorage]:
+        """Handle a zero-byte connection (port scan with no data sent).
+
+        Returns:
+            Tuple of (response_bytes, BearStorage).
+        """
 
         class _ParsedEmpty:
             command = ''
@@ -229,7 +351,7 @@ class HTTPHandler:
             settings.HIVELOGIN,
         )
         self._enrich_and_send(bs, bot_ip)
-        return fallback_response('')
+        return fallback_response(''), bs
 
     def _enrich_and_send(self, bs: BearStorage, bot_ip: str) -> None:
         """Resolve DNS/geo and queue report for a BearStorage entry."""

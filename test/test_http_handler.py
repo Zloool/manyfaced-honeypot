@@ -297,8 +297,14 @@ class TestEmptyConnection:
 
         output = handler.handle_request('', bot_ip='5.6.7.8')
 
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        # handle_request now returns (response_bytes, BearStorage) for empty connections
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
     def test_empty_bytes_uses_empty_connection_id(self, handler):
         """Empty bytes input should produce a record with EMPTY_CONNECTION detected_id."""
@@ -306,8 +312,14 @@ class TestEmptyConnection:
 
         output = handler.handle_request(b'', bot_ip='5.6.7.8')
 
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        # handle_request now returns (response_bytes, BearStorage) for empty connections
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
     def test_empty_connection_has_empty_raw_request(self, handler):
         """Empty connection record should have empty request_raw."""
@@ -378,8 +390,14 @@ class TestEmptyConnection:
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
             output = enriched_handler.handle_request('', bot_ip='5.6.7.8')
 
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        # handle_request now returns (response_bytes, BearStorage) for empty connections
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
         # Verify BearStorage was created with correct args
         call_args = MockBS.call_args
@@ -405,8 +423,13 @@ class TestEmptyConnection:
             output = enriched_handler.handle_request('', bot_ip='5.6.7.8')
 
         # Should still get response (no crash)
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
         # resolve_geo should still be called even after DNS failure
         mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
@@ -439,9 +462,14 @@ class TestSSHEnrichment:
                 bot_ip='1.2.3.4',
             )
 
-        # Should get SSH banner response
-        assert isinstance(output, bytes)
-        assert output.startswith(b'SSH-2.0')
+        # Should get SSH banner response (handle_request returns tuple for SSH)
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert response_bytes.startswith(b'SSH-2.0')
 
         # Verify BearStorage was created with correct args
         call_args = MockBS.call_args
@@ -470,8 +498,13 @@ class TestSSHEnrichment:
             )
 
         # Should still get SSH banner response (no crash)
-        assert isinstance(output, bytes)
-        assert output.startswith(b'SSH-2.0')
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert response_bytes.startswith(b'SSH-2.0')
 
         # resolve_geo should still be called even after DNS failure
         mock_bs.resolve_geo.assert_called_once_with('1.2.3.4', timeout=2.0)
@@ -505,9 +538,14 @@ class TestNonHTTPEnrichment:
                 bot_ip='5.6.7.8',
             )
 
-        # Should get telnet response
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        # Should get telnet response (handle_request returns tuple for non-HTTP)
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
         # Verify BearStorage was created with correct args
         call_args = MockBS.call_args
@@ -533,7 +571,12 @@ class TestNonHTTPEnrichment:
                 bot_ip='9.10.11.12',
             )
 
-        assert isinstance(output, bytes)
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
         call_args = MockBS.call_args
         assert call_args[0][0] == '9.10.11.12'  # bot_ip
         mock_bs.resolve_dns_name.assert_called_once_with('9.10.11.12', timeout=1.0)
@@ -557,8 +600,13 @@ class TestNonHTTPEnrichment:
             )
 
         # Should still get response (no crash)
-        assert isinstance(output, bytes)
-        assert len(output) > 0
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
 
 
 if __name__ == '__main__':

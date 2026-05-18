@@ -119,24 +119,19 @@ def analyze_logs(log_path):
         detected_counter = Counter(detected_values)
         print(f"Total detections logged: {len(detected_values)}")
         # Canonical detected_id values: manyfaced/common/status.py
+        # Note: All HTTP service handlers share DETECTED_ID = 1 (WordPress, Drupal, Jenkins, etc.)
         detected_names = {
-            1: "WordPress",
-            2: "phpMyAdmin", 
-            3: "Jenkins",
-            4: "Tomcat",
-            5: "Drupal",
-            6: "CPanel",
-            7: "Bitrix",
-            8: "WebDAV",
-            9: "Config Disclosure",
-            4294967291: "Empty Connection (port scan)",
-            4294967292: "Unknown Telnet/RDP Probe",
-            4294967293: "SSH Probe",
-            4294967294: "Generic/Monster Page",
+            1: "HTTP Handler (WordPress/Drupal/Jenkins/etc)",
             4294967285: "TLS ClientHello",
             4294967286: "DNS-over-TCP Query",
             4294967287: "MongoDB Wire Protocol",
             4294967288: "Redis RESP Command",
+            4294967289: "SSH Probe",
+            4294967290: "Telnet Probe",
+            4294967291: "Empty Connection (port scan)",
+            4294967292: "RDP/TLS/Other Non-HTTP Probe",
+            4294967293: "FTP Probe",
+            4294967294: "Generic/Malformed HTTP Request",
         }
         for flag, count in detected_counter.most_common():
             name = detected_names.get(flag, f"Unknown({flag})")
@@ -279,24 +274,19 @@ def analyze_db(db_path):
         det_rows = cursor.fetchall()
         print(f"\nDetected services distribution:")
         # Canonical detected_id values: manyfaced/common/status.py
+        # Note: All HTTP service handlers share DETECTED_ID = 1 (WordPress, Drupal, Jenkins, etc.)
         det_names = {
-            1: "WordPress",
-            2: "phpMyAdmin", 
-            3: "Jenkins",
-            4: "Tomcat",
-            5: "Drupal",
-            6: "CPanel",
-            7: "Bitrix",
-            8: "WebDAV",
-            9: "Config Disclosure",
-            4294967291: "Empty Connection (port scan)",
-            4294967292: "Unknown Telnet/RDP Probe",
-            4294967293: "SSH Probe",
-            4294967294: "Generic/Monster Page",
+            1: "HTTP Handler (WordPress/Drupal/Jenkins/etc)",
             4294967285: "TLS ClientHello",
             4294967286: "DNS-over-TCP Query",
             4294967287: "MongoDB Wire Protocol",
             4294967288: "Redis RESP Command",
+            4294967289: "SSH Probe",
+            4294967290: "Telnet Probe",
+            4294967291: "Empty Connection (port scan)",
+            4294967292: "RDP/TLS/Other Non-HTTP Probe",
+            4294967293: "FTP Probe",
+            4294967294: "Generic/Malformed HTTP Request",
         }
         for row in det_rows:
             name = det_names.get(row[0], f"Unknown({row[0]})")

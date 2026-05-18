@@ -317,7 +317,7 @@ manyfaced-honeypot/
 │   └── systemd/                    # Systemd service files
 ├── test/
 │   ├── conftest.py                 # Test utilities
-│   ├── test_integration.py         # Full pipeline integration tests
+│   ├── test_router_integration.py  # Full pipeline integration tests
 │   ├── test_client.py              # Client unit tests
 │   └── test_*.py                   # Other test modules
 ├── requirements.txt                # Legacy manual deps
@@ -334,7 +334,7 @@ cd /home/zlol/manyfaced-honeypot
 /usr/bin/python3 -m pytest test/ -v
 ```
 
-See `test/test_integration.py` for full pipeline tests (socket → decrypt → save → query).
+See `test/test_router_integration.py` for full pipeline tests (socket → decrypt → save → query).
 
 ## Key Constants
 
