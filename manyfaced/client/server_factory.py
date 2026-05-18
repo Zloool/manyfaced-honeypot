@@ -4,6 +4,10 @@ Provides functions to create single-port and multi-port honeypot servers.
 Extracted from client.py to reduce cyclomatic complexity of the main module.
 """
 
+# pyright: reportInvalidTypeForm=false
+
+from __future__ import annotations
+
 import socket
 import threading
 from multiprocessing import Event

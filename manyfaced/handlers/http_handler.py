@@ -10,6 +10,10 @@ from __future__ import annotations
 import os
 import random
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from manyfaced.handlers.router import Router  # noqa: F401
 
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.config import settings
@@ -37,10 +41,10 @@ logger = get_logger(__name__)
 
 
 # Singleton router – initialized on first use
-_router: object | None = None
+_router: Router | None = None
 
 
-def _get_router():
+def _get_router() -> Router:
     """Get or create the module-level router (singleton)."""
     global _router
     if _router is None:

@@ -56,38 +56,40 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
 
 # ── defaults (layer 1 – code) ──────────────────────────────────────────────
 
-_DEFAULT_HONEYPORT = 80
-_DEFAULT_HONEYFOLDER = 'bots'
-_DEFAULT_HIVEHOST = '127.0.0.1'
-_DEFAULT_HIVEPORT = 8080
-_DEFAULT_HIVELOGIN = 'honeybee'
-_DEFAULT_HIVEPASS = None
-_DEFAULT_DB_BACKEND = 'sqlite'
-_DEFAULT_DB_BACKENDS = ('sqlite', 'postgresql')
-_DEFAULT_DB_PATH = 'bots/honeypot.db'
-_DEFAULT_DB_PG_HOST = 'localhost'
-_DEFAULT_DB_PG_PORT = 5432
-_DEFAULT_DB_PG_DB = 'honeypot'
-_DEFAULT_DB_PG_USER = 'postgres'
-_DEFAULT_DB_PG_PASSWORD = '***'
+_DEFAULT_HONEYPORT: int = 80
+_DEFAULT_HONEYFOLDER: str = 'bots'
+_DEFAULT_HIVEHOST: str = '127.0.0.1'
+_DEFAULT_HIVEPORT: int = 8080
+_DEFAULT_HIVELOGIN: str = 'honeybee'
+_DEFAULT_HIVEPASS: str | None = None
+_DEFAULT_DB_BACKEND: str = 'sqlite'
+_DEFAULT_DB_BACKENDS: tuple[str, ...] = ('sqlite', 'postgresql')
+_DEFAULT_DB_PATH: str = 'bots/honeypot.db'
+_DEFAULT_DB_PG_HOST: str = 'localhost'
+_DEFAULT_DB_PG_PORT: int = 5432
+_DEFAULT_DB_PG_DB: str = 'honeypot'
+_DEFAULT_DB_PG_USER: str = 'postgres'
+_DEFAULT_DB_PG_PASSWORD: str = '***'
 _DEFAULT_AUTHORIZED_BEES_DEFAULTS: dict[str, str] = {}
 
 # ── port mode configuration (shared constants) ───────────────────────────────
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS  # noqa: E402, F401
 
-_PORT_MODES = ('single', 'top', 'all')
+_PORT_MODES: tuple[str, ...] = ('single', 'top', 'all')
 
 # ── Security defaults ───────────────────────────────────────────────────────
 
-_DEFAULT_DEFAULT_KEY = None
-_DEFAULT_LOG_FILE = os.path.join(
+_DEFAULT_DEFAULT_KEY: str | None = None
+_DEFAULT_LOG_FILE: str = os.path.join(
     os.path.expanduser('~'), '.local', 'share', 'manyfaced', 'honeypot.log'
 )
-_DEFAULT_DUMP_FILE = 'dump.jsonl'
-_DEFAULT_LOCKFILE = os.path.join('/opt/manyfaced/bots', 'lockfile')
+_DEFAULT_DUMP_FILE: str = 'dump.jsonl'
+_DEFAULT_LOCKFILE: str = os.path.join('/opt/manyfaced/bots', 'lockfile')
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -106,13 +108,13 @@ def _find_config_file() -> Path | None:
     return None  # will be generated on-demand via --generate-config
 
 
-def _load_toml(path: Path) -> dict:
+def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file and return a flat dict of section.key → value."""
     import tomllib
 
     with open(path, 'rb') as fh:
         raw = tomllib.load(fh)
-    result: dict = {}
+    result: dict[str, Any] = {}
     for section, values in raw.items():
         if isinstance(values, dict):
             for key, val in values.items():
@@ -127,50 +129,57 @@ def _env_prefix() -> str:
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 
-def _resolve(name: str, default, section: str, toml: dict | None, env_prefix: str):
+def _resolve(
+    name: str, default: Any, section: str, toml: dict[str, Any] | None, env_prefix: str
+) -> Any:
+    """Resolve a config value from env → TOML → default.
+
+    Returns the resolved value with the same type as *default*.
+    """
     toml_key = f'{section}.{name}'
     env_key = f'{env_prefix}{name.upper()}'
 
-    # 3 – env var
+    # 3 – env var (highest priority)
     env_val = os.environ.get(env_key)
     if env_val is not None:
-        # Coerce types
+        # Coerce types based on the default's type
         if isinstance(default, int):
-            return int(env_val)
+            return int(env_val)  # type: ignore[return-value]
         if isinstance(default, bool):
-            return env_val.lower() in ('1', 'true', 'yes')
+            return env_val.lower() in ('1', 'true', 'yes')  # type: ignore[return-value]
         if isinstance(default, dict):
-            # semicolon-separated key:value pairs
-            d: dict = {}
+            # semicolon-separated key:value pairs → dict[str, str]
+            d: dict[str, str] = {}
             for pair in (env_val or '').split(';'):
                 pair = pair.strip()
                 if ':' in pair:
                     k, v = pair.split(':', 1)
                     d[k.strip()] = v.strip()
-            return d or default
+            return d or default  # type: ignore[return-value]
         if isinstance(default, (list, tuple)):
-            return [v.strip() for v in env_val.split(';') if v.strip()] or default
+            result = [v.strip() for v in env_val.split(';') if v.strip()]
+            return result or default  # type: ignore[return-value]
         return env_val
 
     # 2 – TOML
     if toml and toml_key in toml:
         val = toml[toml_key]
         if isinstance(default, int) and isinstance(val, str):
-            return int(val)
+            return int(val)  # type: ignore[return-value]
         if isinstance(default, dict) and isinstance(val, str):
             # semicolon-separated key:value pairs (same as env var handling)
-            d: dict = {}
+            tomld: dict[str, str] = {}
             for pair in (val or '').split(';'):
                 pair = pair.strip()
                 if ':' in pair:
                     k, v = pair.split(':', 1)
-                    d[k.strip()] = v.strip()
-            return d or default
+                    tomld[k.strip()] = v.strip()
+            return tomld or default  # type: ignore[return-value]
         return val
 
-    # 1 – default
+    # 1 – default (lowest priority)
     if default is None:
-        return ''
+        return ''  # type: ignore[return-value]
     return default
 
 
@@ -219,7 +228,7 @@ class Config:
         if config_path is None:
             config_path = _find_config_file()
 
-        toml: dict | None = None
+        toml: dict[str, Any] | None = None
         if config_path:
             toml = _load_toml(config_path)
 
@@ -233,9 +242,11 @@ class Config:
             HIVEHOST=str(_resolve('hivehost', _DEFAULT_HIVEHOST, 'hive', toml, prefix)),
             HIVEPORT=int(_resolve('hiveport', _DEFAULT_HIVEPORT, 'hive', toml, prefix)),
             HIVELOGIN=str(_resolve('hivelogin', _DEFAULT_HIVELOGIN, 'hive', toml, prefix)),
-            HIVEPASS=str(_resolve('hivepass', _DEFAULT_HIVEPASS, 'hive', toml, prefix)),
+            HIVEPASS=str(_resolve('hivepass', _DEFAULT_HIVEPASS or '', 'hive', toml, prefix)),
             DB_BACKEND=str(_resolve('backend', _DEFAULT_DB_BACKEND, 'database', toml, prefix)),
-            DB_BACKENDS=tuple(_resolve('backends', _DEFAULT_DB_BACKENDS, 'database', toml, prefix)),
+            DB_BACKENDS=tuple(
+                _resolve('backends', _DEFAULT_DB_BACKENDS, 'database', toml, prefix)  # type: ignore[arg-type]
+            ),
             DB_PATH=str(_resolve('path', _DEFAULT_DB_PATH, 'database', toml, prefix)),
             DB_PG_HOST=str(_resolve('pg_host', _DEFAULT_DB_PG_HOST, 'database', toml, prefix)),
             DB_PG_PORT=int(_resolve('pg_port', _DEFAULT_DB_PG_PORT, 'database', toml, prefix)),
@@ -244,19 +255,23 @@ class Config:
             DB_PG_PASSWORD=str(
                 _resolve('pg_password', _DEFAULT_DB_PG_PASSWORD, 'database', toml, prefix)
             ),
-            AUTHORIZED_BEES=dict(
-                _resolve(
-                    'authorized_bees',
-                    _DEFAULT_AUTHORIZED_BEES_DEFAULTS,
-                    'security',
-                    toml,
-                    prefix,
-                )
-            ),
+            AUTHORIZED_BEES={
+                str(k): str(v)
+                for k, v in (
+                    _resolve(
+                        'authorized_bees',
+                        _DEFAULT_AUTHORIZED_BEES_DEFAULTS,
+                        'security',
+                        toml,
+                        prefix,
+                    )
+                    or {}
+                ).items()
+            },
             HONEY_PORT_MODE=str(_resolve('port_mode', 'single', 'honeypot', toml, prefix)),
             HONEY_TOP_PORTS=str(_resolve('top_ports', '', 'honeypot', toml, prefix)),
             DEFAULT_KEY=str(
-                _resolve('default_key', _DEFAULT_DEFAULT_KEY, 'security', toml, prefix)
+                _resolve('default_key', _DEFAULT_DEFAULT_KEY or '', 'security', toml, prefix)
             ),
             LOG_FILE=str(_resolve('file', _DEFAULT_LOG_FILE, 'logging', toml, prefix)),
             DUMP_FILE=str(_resolve('dump_file', _DEFAULT_DUMP_FILE, 'dump', toml, prefix)),

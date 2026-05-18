@@ -1,3 +1,5 @@
+from typing import Any
+
 import logging
 import socket
 
@@ -15,7 +17,7 @@ class BearStorage:
         ip: str,
         raw_request: str,
         timestamp: str,
-        parsed_request: object,
+        parsed_request: Any,
         is_detected: int,
         hostname: str,
     ) -> None:
