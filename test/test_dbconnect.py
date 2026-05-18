@@ -137,6 +137,7 @@ class TestBearRequestsDataclassRepr:
             'dns_name',
             'country',
             'continent',
+            'login',
         ]
 
     def test_dataclass_repr(self):
@@ -361,6 +362,7 @@ class TestInsertFunction:
             'dns_name',
             'country',
             'continent',
+            'login',
         }
         assert set(record.keys()) == expected_keys
 
