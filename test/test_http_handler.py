@@ -578,7 +578,9 @@ class TestNonHTTPEnrichment:
         # SMB probe: \x00\x00\x00 + 16 bytes padding + "NT LM" identifier
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
             output = handler.handle_request(
-                b'\x00\x00\x00' + b'\x00' * 16 + b'NT LM 0.12',  # SMB/NBT probe with NT LM identifier
+                b'\x00\x00\x00'
+                + b'\x00' * 16
+                + b'NT LM 0.12',  # SMB/NBT probe with NT LM identifier
                 bot_ip='5.6.7.8',
             )
 
