@@ -448,7 +448,7 @@ class TestSSHEnrichment:
         return HTTPHandler(args, update_event)
 
     def test_ssh_probe_enriched_with_dns_and_geo(self, handler):
-        """SSH probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        """SSH probe should produce a record that gets enriched when _enrich_and_send is called."""
         from manyfaced.common.status import SSH_CLIENT
 
         mock_bs = MagicMock()
@@ -463,6 +463,7 @@ class TestSSHEnrichment:
             )
 
         # Should get SSH banner response (handle_request returns tuple for SSH)
+        bear_storage = None
         if isinstance(output, tuple):
             response_bytes, bear_storage = output
         else:
@@ -475,6 +476,9 @@ class TestSSHEnrichment:
         call_args = MockBS.call_args
         assert call_args[0][0] == '1.2.3.4'  # bot_ip
         assert call_args[0][4] == SSH_CLIENT  # detected_id
+
+        # Now simulate what the caller does: call _enrich_and_send after credential capture
+        handler._enrich_and_send(bear_storage, '1.2.3.4')
 
         # Verify enrichment methods were called on the BearStorage instance
         mock_bs.resolve_dns_name.assert_called_once_with('1.2.3.4', timeout=1.0)
@@ -498,6 +502,7 @@ class TestSSHEnrichment:
             )
 
         # Should still get SSH banner response (no crash)
+        bear_storage = None
         if isinstance(output, tuple):
             response_bytes, bear_storage = output
         else:
@@ -506,7 +511,8 @@ class TestSSHEnrichment:
         assert isinstance(response_bytes, bytes)
         assert response_bytes.startswith(b'SSH-2.0')
 
-        # resolve_geo should still be called even after DNS failure
+        # resolve_geo should still be called even after DNS failure (via _enrich_and_send)
+        handler._enrich_and_send(bear_storage, '1.2.3.4')
         mock_bs.resolve_geo.assert_called_once_with('1.2.3.4', timeout=2.0)
 
 

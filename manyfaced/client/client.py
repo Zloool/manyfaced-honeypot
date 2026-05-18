@@ -109,6 +109,9 @@ def create_server(args, update_event: Event, port: int):
                             bot_ip,
                             ssh_creds,
                         )
+                    # Send report AFTER credential capture so login field has real creds
+                    if bear_storage is not None:
+                        handler._enrich_and_send(bear_storage, bot_ip)
                 connection_socket.close()
             except socket_error:
                 if args.verbose:
