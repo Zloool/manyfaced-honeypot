@@ -14,7 +14,7 @@ readme_paths = [
     'manyfaced/common/config.py',
     'manyfaced/server/server.py',
     'manyfaced/client/client.py',
-    'test/test_config.py',
+    'test/test_http_handler.py',
     'pyproject.toml',
     'README.md',
 ]

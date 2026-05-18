@@ -63,6 +63,7 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
         'dns_name': getattr(data, 'dns_name', '') or '',
         'country': getattr(data, 'country', '') or '',
         'continent': getattr(data, 'continent', '') or '',
+        'login': getattr(data, 'login', '') or '',  # Captured credentials (user:pass or user only)
     }
     identifier = sensor_id if sensor_id else client
     message = (identifier + ':').encode()

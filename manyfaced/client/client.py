@@ -82,7 +82,15 @@ def create_server(args, update_event: Event, port: int):
                 continue
             bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
             handler = HTTPHandler(args, update_event)
-            output_data = handler.handle_request(message, bot_ip=bot_ip)
+            result = handler.handle_request(message, bot_ip=bot_ip)
+
+            # Handle different return types from handle_request
+            if isinstance(result, tuple):
+                output_data, bear_storage = result
+            else:
+                output_data = result
+                bear_storage = None
+
             try:
                 logger.debug('Sending response of length %d', len(output_data))
                 connection_socket.sendall(
@@ -93,7 +101,9 @@ def create_server(args, update_event: Event, port: int):
                 # For SSH connections, keep the connection open to capture credentials
                 if isinstance(output_data, bytes) and output_data.startswith(b'SSH-'):
                     ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
-                    if ssh_creds:
+                    if ssh_creds and bear_storage is not None:
+                        # Update BearStorage with captured credentials before report is sent
+                        bear_storage.login = ssh_creds
                         logger.info(
                             'Captured SSH credentials from %s: %s',
                             bot_ip,
