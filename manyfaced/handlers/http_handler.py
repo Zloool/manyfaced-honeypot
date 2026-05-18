@@ -120,6 +120,7 @@ class HTTPHandler:
 
         Returns:
             Tuple of (response_bytes, BearStorage) so caller can update credentials after capture.
+            NOTE: Does NOT queue report — caller must send report AFTER credential capture.
         """
         client = protocol_info.get('client', '')
         version = protocol_info.get('version', '')
@@ -142,7 +143,8 @@ class HTTPHandler:
             SSH_CLIENT,
             settings.HIVELOGIN,
         )
-        self._enrich_and_send(bs, bot_ip)
+        # NOTE: Do NOT call _enrich_and_send() here — credential capture happens
+        # after this returns. The caller must send the report AFTER updating bs.login.
         return banner.encode('utf-8'), bs
 
     def _handle_non_http_probe(
