@@ -32,6 +32,14 @@ from manyfaced.common.myenc import AESCipher
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
 from manyfaced.common.status import BOT_TIMEOUT
 from manyfaced.handlers.http_handler import HTTPHandler
+
+# Internal IPs to filter out (loopback, DO internal network, honeypot's own IP)
+_INTERNAL_IPS = frozenset(
+    {
+        '127.0.0.1',  # loopback
+        '::1',  # IPv6 loopback
+    }
+)
 from manyfaced.common.utils import dump_file, receive_timeout
 
 logger = get_logger(__name__)
@@ -81,6 +89,12 @@ def create_server(args, update_event: Event, port: int):
                     print('Failed to receive data from bot')
                 continue
             bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
+
+            # Filter out internal/loopback connections (iptables redirects, local probes)
+            if bot_ip in _INTERNAL_IPS:
+                logger.debug('Dropping connection from internal IP %s', bot_ip)
+                continue
+
             handler = HTTPHandler(args, update_event)
             result = handler.handle_request(message, bot_ip=bot_ip)
 

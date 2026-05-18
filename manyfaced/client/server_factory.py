@@ -14,6 +14,14 @@ from manyfaced.common.status import BOT_TIMEOUT
 from manyfaced.common.utils import receive_timeout
 from manyfaced.handlers.http_handler import HTTPHandler
 
+# Internal IPs to filter out (loopback, DO internal network, honeypot's own IP)
+_INTERNAL_IPS = frozenset(
+    {
+        '127.0.0.1',  # loopback
+        '::1',  # IPv6 loopback
+    }
+)
+
 if TYPE_CHECKING:
     from socket import socket as SocketType
 
@@ -65,6 +73,12 @@ def _handle_bot_connection(
         return
 
     bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
+
+    # Filter out internal/loopback connections (iptables redirects, local probes)
+    if bot_ip in _INTERNAL_IPS:
+        logger.debug('Dropping connection from internal IP %s', bot_ip)
+        return
+
     handler = HTTPHandler(args, update_event)
     output_data = handler.handle_request(message, bot_ip=bot_ip)
 
