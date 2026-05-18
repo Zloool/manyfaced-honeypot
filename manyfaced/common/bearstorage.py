@@ -32,6 +32,7 @@ class BearStorage:
         self.timezone = ''
         self.dns_name = ''
         self.tracert = ''  # TODO
+        self.login = ''  # Captured credentials (user:pass or user only)
         if hasattr(parsed_request, 'path'):
             self.path = parsed_request.path
         if getattr(parsed_request, 'command', None) is not None:
