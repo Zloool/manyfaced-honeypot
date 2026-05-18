@@ -213,8 +213,12 @@ class TestFullPathSocketToDatabase:
             value=raw,
         )
 
-    def test_hivelogin_field_stored(self):
-        """HIVELOGIN field should be stored in the login column."""
+    def test_hivelogin_not_stored_in_login_column(self):
+        """HIVELOGIN (sensor ID) should NOT be stored in the login column.
+
+        The login column is for captured credentials only; HIVELOGIN is the
+        sensor identifier and must not masquerade as credential data.
+        """
         from manyfaced.db.storage import _resolve_db_path
 
         bear_data = {
@@ -228,7 +232,7 @@ class TestFullPathSocketToDatabase:
 
         _ = self._run_pipeline(bear_data)
 
-        _verify_record(_resolve_db_path(), field='login', value='testuser123')
+        _verify_record(_resolve_db_path(), field='login', value='')
 
     def test_detected_field_preserved(self):
         """is_detected should store the correct value in detected_id."""

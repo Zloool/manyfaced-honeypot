@@ -321,7 +321,8 @@ class TestSQLiteStorageInsert:
         assert row[1] == 'GET'  # request_command from record
         assert row[2] == 'TestAgent'  # ua from record
         assert row[3] == 10  # hive_id from record
-        assert row[4] == 'root'  # HIVELOGIN from record
+        # HIVELOGIN is the sensor ID, NOT credentials — login should be empty
+        assert row[4] == ''
         storage.close()
 
     def test_insert_with_is_detected_conversion(self, tmp_path):

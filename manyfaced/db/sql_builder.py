@@ -25,12 +25,13 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     bot_dns_name TEXT,
     detected_id  INTEGER,
     hive_id      INTEGER,
-    login        TEXT
+    login        TEXT,
+    UNIQUE(bot_ip, timestamp)
 )
 """
 
 INSERT_SQL = """\
-INSERT INTO honeypot_bears
+INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
      bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
@@ -55,7 +56,8 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     bot_dns_name VARCHAR(512),
     detected_id  INTEGER,
     hive_id      INTEGER,
-    login        VARCHAR(255)
+    login        VARCHAR(255),
+    UNIQUE(bot_ip, timestamp)
 )
 """
 
@@ -66,6 +68,7 @@ INSERT INTO honeypot_bears
      bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
 VALUES
     (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT(bot_ip, timestamp) DO NOTHING
 """
 
 
@@ -103,7 +106,7 @@ def extract_record_fields(record: dict) -> tuple:
     if detected_id is None:
         detected_id = record.get('isDetected')
     hive_id = record.get('hive_id')
-    login = record.get('login') or record.get('HIVELOGIN') or ''
+    login = record.get('login') or ''
 
     # Convert timestamps to text if needed
     from datetime import datetime  # noqa: PLC0415
