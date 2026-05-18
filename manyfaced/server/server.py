@@ -1,5 +1,6 @@
 import json
 import signal
+import threading
 from socket import (
     socket,
     AF_INET,
@@ -72,6 +73,29 @@ class ServerHandler(BaseHandler):
                 print(f'Error writing data to database: {e}, writing to file')
 
 
+def _handle_client(connection_socket, addr, args, update_event):
+    """Handle a single client connection in its own thread."""
+    try:
+        message = receive_timeout(connection_socket)
+        handler = ServerHandler(args, update_event)
+        response = handler.handle_request(message)
+        if isinstance(response, bool):
+            response = '200 OK'
+        elif not isinstance(response, str):
+            response = str(response)
+        connection_socket.send(response.encode())
+    except socket_error as e:
+        logger.warning('Socket error from %s: %s', addr, e)
+    except (ValueError, TypeError, KeyError, ImportError) as e:
+        logger.error('Unexpected error handling request from %s: %s', addr, e)
+        try:
+            connection_socket.send(b'CODE 300 ERROR')
+        except socket_error:
+            pass
+    finally:
+        connection_socket.close()
+
+
 def main(args, update_event):
     logger.info('Server honeypot listening on port %d', args.server)
     if getattr(signal, 'SIGCHLD', None) is not None:
@@ -90,28 +114,12 @@ def main(args, update_event):
             connection_socket, addr = server_socket.accept()
         except KeyboardInterrupt:
             break
-        try:
-            message = receive_timeout(connection_socket)
-            handler = ServerHandler(args, update_event)
-            response = handler.handle_request(message)
-            if isinstance(response, bool):
-                response = '200 OK'
-            elif not isinstance(response, str):
-                response = str(response)
-            connection_socket.send(response.encode())
-        except socket_error as e:
-            logger.warning('Socket error: %s', e)
-            if args.verbose:
-                print(f'Socket error: {e}')
-            continue
-        except (ValueError, TypeError, KeyError, ImportError) as e:
-            logger.error('Unexpected error: %s', e)
-            if connection_socket:
-                connection_socket.send(b'CODE 300 ERROR')
-            if args.verbose:
-                print(f'Unexpected error: {e}')
-        finally:
-            if connection_socket:
-                connection_socket.close()
+        # Handle each client in a separate thread to avoid blocking new connections
+        t = threading.Thread(
+            target=_handle_client,
+            args=(connection_socket, addr, args, update_event),
+            daemon=True,
+        )
+        t.start()
 
     server_socket.close()
