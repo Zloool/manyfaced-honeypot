@@ -79,7 +79,7 @@ def main(args, update_event):
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(('', args.server))
-    server_socket.listen(1)
+    server_socket.listen(128)  # queue up to 128 pending report connections
     if args.verbose:
         print('Awaiting for bears on port %s' % args.server)
     while True:
