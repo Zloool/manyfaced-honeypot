@@ -70,16 +70,32 @@ def _handle_bot_connection(
 
     try:
         logger.debug('Sending response of length %d', len(output_data))
-        connection_socket.sendall(
-            output_data if isinstance(output_data, bytes) else output_data.encode('iso-8859-1')
-        )
-        # For SSH connections, keep the connection open to capture credentials
-        if isinstance(output_data, bytes) and output_data.startswith(b'SSH-'):
-            from manyfaced.client.ssh_creds import _capture_ssh_credentials
+        # Handle both SSH/non-HTTP (returns tuple) and HTTP (returns bytes) paths
+        if isinstance(output_data, tuple):
+            # SSH or non-HTTP probe: (response_bytes, BearStorage)
+            response_bytes, bear_storage = output_data
+            connection_socket.sendall(response_bytes)
 
-            ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
-            if ssh_creds:
-                logger.info('Captured SSH credentials from %s: %s', bot_ip, ssh_creds)
+            # For SSH connections, keep the connection open to capture credentials
+            if response_bytes.startswith(b'SSH-'):
+                from manyfaced.client.ssh_creds import _capture_ssh_credentials
+
+                ssh_creds = _capture_ssh_credentials(connection_socket, bot_ip)
+                if ssh_creds and bear_storage is not None:
+                    bear_storage.login = ssh_creds
+                    logger.info(
+                        'Captured SSH credentials from %s: %s',
+                        bot_ip,
+                        ssh_creds,
+                    )
+                # Send report AFTER credential capture so login field has real creds
+                if bear_storage is not None:
+                    handler._enrich_and_send(bear_storage, bot_ip)
+        else:
+            # HTTP request: response bytes only (report already queued in process_request)
+            connection_socket.sendall(
+                output_data if isinstance(output_data, bytes) else output_data.encode('iso-8859-1')
+            )
     except socket.error:
         pass
     finally:
