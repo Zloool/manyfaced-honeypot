@@ -119,18 +119,15 @@ def analyze_logs(log_path):
         detected_counter = Counter(detected_values)
         print(f"Total detections logged: {len(detected_values)}")
         # Canonical detected_id values: manyfaced/common/status.py
-        # Note: All HTTP service handlers share DETECTED_ID = 1 (WordPress, Drupal, Jenkins, etc.)
         detected_names = {
             1: "HTTP Handler (WordPress/Drupal/Jenkins/etc)",
-            4294967285: "TLS ClientHello",
-            4294967286: "DNS-over-TCP Query",
-            4294967287: "MongoDB Wire Protocol",
+            4294967287: "TLS ClientHello",
             4294967288: "Redis RESP Command",
-            4294967289: "SSH Probe",
-            4294967290: "Telnet Probe",
+            4294967289: "MongoDB Wire Protocol",
+            4294967290: "DNS-over-TCP Query",
             4294967291: "Empty Connection (port scan)",
-            4294967292: "RDP/TLS/Other Non-HTTP Probe",
-            4294967293: "FTP Probe",
+            4294967292: "Unknown Non-HTTP Probe",
+            4294967293: "SSH Client Probe",
             4294967294: "Generic/Malformed HTTP Request",
         }
         for flag, count in detected_counter.most_common():
@@ -274,18 +271,15 @@ def analyze_db(db_path):
         det_rows = cursor.fetchall()
         print(f"\nDetected services distribution:")
         # Canonical detected_id values: manyfaced/common/status.py
-        # Note: All HTTP service handlers share DETECTED_ID = 1 (WordPress, Drupal, Jenkins, etc.)
         det_names = {
             1: "HTTP Handler (WordPress/Drupal/Jenkins/etc)",
-            4294967285: "TLS ClientHello",
-            4294967286: "DNS-over-TCP Query",
-            4294967287: "MongoDB Wire Protocol",
+            4294967287: "TLS ClientHello",
             4294967288: "Redis RESP Command",
-            4294967289: "SSH Probe",
-            4294967290: "Telnet Probe",
+            4294967289: "MongoDB Wire Protocol",
+            4294967290: "DNS-over-TCP Query",
             4294967291: "Empty Connection (port scan)",
-            4294967292: "RDP/TLS/Other Non-HTTP Probe",
-            4294967293: "FTP Probe",
+            4294967292: "Unknown Non-HTTP Probe",
+            4294967293: "SSH Client Probe",
             4294967294: "Generic/Malformed HTTP Request",
         }
         for row in det_rows:

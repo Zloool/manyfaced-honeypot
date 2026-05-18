@@ -1,26 +1,24 @@
 ---
 name: prod-analysis
-description: Production honeypot analysis workflow — SSH data pull, log/DB parsing, attack pattern detection, data quality audit, and structured report generation. Includes reusable Python analyzer script.
+description: Production honeypot data-pull, investigation, and report workflow — SSH data pull from droplet, log/DB parsing with analyze_production.py, attack pattern detection, data quality audit, and structured report generation.
 ---
 
 # Production Honeypot Analysis Skill
 
-Use this skill when you need to analyze production honeypot data (logs + SQLite DB) on the remote droplet — detect attack patterns, identify bugs, assess data quality, and generate structured reports.
+Use this skill when you need to **pull gathered data from production and investigate what's working vs. not.** This covers SSH data pulls, DB/log analysis via `analyze_production.py`, data quality audits, attack pattern detection, and structured report generation.
 
 ## Triggers
 
 **Use this skill when:**
-- "analyze production" or "check the honeypot"
+- "analyze production" or "investigate honeypot data"
 - "pull latest data from the droplet" / "get fresh honeypot data"
-- "manyfaced service status" / "is the honeypot running?"
 - "generate a production report" / "write an analysis report"
-- References to `manyfaced` systemd service, `honeypot.sqlite`, or `honeypot.log` on the server
+- References to `honeypot.sqlite` analysis, attack patterns, or data quality audits
 
 **Do NOT use this skill for:**
+- Quick service health checks — use **prod-healthcheck** instead (fast read-only SSH check)
 - Local development debugging (use `python3 mfh.py -c 8888 -s 9999 -v`)
-- Writing new faces or handlers (see DEVELOPER.md)
-- Modifying deployment configuration or SSH credentials
-- Analyzing local test data
+- Writing new faces or handlers (see DEVELOPER.md and **add-service-handler** skill)
 
 ## Prerequisites
 
@@ -55,10 +53,6 @@ ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > 
 # Pull database safely via scp (avoids WAL corruption from cat-redirect)
 scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
 
-# Pull recent journal logs for error context (last 24 hours)
-ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
-  "journalctl -u manyfaced --no-pager --since '24 hours ago' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
-
 # 3. Run analysis script
 cd deployment-analysis/latest
 python3 ../analyze_production.py .
@@ -85,19 +79,9 @@ python3 ../analyze_production.py .
 
 ## Analysis Workflow
 
-### Step 1: Service Health Check
+### Step 1: Service Status (from prod-healthcheck)
 
-```bash
-source .deploy_config
-ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "
-echo '=== Service Status ===' && systemctl status manyfaced --no-pager 2>&1
-echo '=== Processes ===' && ps aux | grep mfh | grep -v grep
-echo '=== Listening Ports ===' && ss -tlnp | grep python | wc -l
-echo '=== Disk Space ===' && df -h /opt/manyfaced/bots
-"
-```
-
-**Expected:** 3 processes (main + client + server), 47 ports, < 50% disk usage.
+Run **prod-healthcheck** first to verify the service is alive. Carry those findings into report section "1. Service Status". Do not repeat health checks here — delegate that to prod-healthcheck.
 
 ### Step 2: Pull Data Locally
 
@@ -111,10 +95,6 @@ ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > 
 
 # Pull database via scp (WAL-safe — avoids cat-redirect corruption)
 scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
-
-# Pull recent journal logs for error context (last 24 hours)
-ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
-  "journalctl -u manyfaced --no-pager --since '24 hours ago' | grep -E 'error|exception|fail|crash' | tail -30" > journal-errors.txt
 ```
 
 ### Step 3: Run Analysis Script
@@ -294,3 +274,8 @@ deployment-analysis/
 - **Never commit** `honeypot.db`, `honeypot.log`, or analysis reports — they contain attacker IP addresses and request data
 - Add `deployment-analysis/latest/` to `.gitignore` if not already present
 - Analysis reports are for internal use only; share sanitized summaries externally
+
+## Cross-Reference
+
+- For quick service health checks (is the honeypot alive?), use **prod-healthcheck** skill — run it first, carry findings into report section "1. Service Status"
+- For adding new service handlers/impersonation faces, see **add-service-handler** skill

@@ -17,7 +17,8 @@ manyfaced/              # Package root
   db/                   # Data persistence layer (SQLite / PostgreSQL)
 deployment-analysis/    # Production analysis scripts and data (untracked output in latest/)
 bots/                   # Untracked — honeypot.sqlite lives here on prod
-skills/prod-analysis/   # SSH-based production analysis workflow skill
+skills/prod-healthcheck/  # Fast read-only service health check (SSH)
+skills/prod-analysis/     # Data-pull + investigation + report generation workflow
 test/                   # pytest suite (~76% coverage target)
 systemd/                # manyfaced.service + logrotate config
 .github/workflows/      # CI (ruff lint, deploy only — no tests on master push), deploy (SSH rsync to droplet)
@@ -34,7 +35,7 @@ See `DEVELOPER.md` for architecture deep-dive and how to add new faces.
 
 ## Deployment
 
-Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). Health check: SSH in and run `systemctl status manyfaced --no-pager`. For the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis skill**.
+Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). For a quick health check, use the **prod-healthcheck** skill; for the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis** skill.
 
 The deploy pipeline (GitHub Actions) runs automatically on push to `master` — it skips tests and deploys directly. It syncs all files atomically via rsync into a per-commit staging directory under `/opt/manyfaced/releases/<sha>/`, reinstalls deps, swaps the symlink (`/opt/manyfaced/current → releases/<sha>`), restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
 
@@ -50,7 +51,8 @@ The deploy pipeline (GitHub Actions) runs automatically on push to `master` — 
 
 ## Available skills
 
-- **`skills/prod-analysis`** — Production honeypot analysis via SSH. Use when you need to analyze production bot data, check service health on the droplet, or generate structured reports from `honeypot.sqlite` and `honeypot.log`. Triggers: "analyze production", "check the honeypot", "pull latest data", "manyfaced service status".
+- **`skills/prod-healthcheck`** — Fast read-only SSH health check for the manyfaced service. Use when you need a quick answer: is it alive, are processes running, ports listening? Triggers: "is the honeypot running?", "manyfaced service status", "quick health check".
+- **`skills/prod-analysis`** — Production honeypot data-pull + investigation workflow. Use for SSH data pulls from droplet, log/DB parsing with `analyze_production.py`, attack pattern detection, data quality audit, and structured report generation. Triggers: "analyze production", "pull latest data", "generate a production report".
 
 ## Pointers
 

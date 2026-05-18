@@ -73,16 +73,12 @@ Abstract base for service-specific HTTP handlers. Subclasses implement:
 
 CLIENT-side entry point. When a bot connects:
 1. Parses raw HTTP request
-2. Routes to the appropriate service handler via HandlerRegistry
+2. Routes to the appropriate service handler via Router + ordered route table (`manyfaced.handlers.routes`)
 3. Service handler generates realistic honeypot response
 4. Spawns `send_report()` process to send encrypted report back to server
 5. Returns the fake HTTP response to the bot
 
-#### HandlerRegistry — `handlers/registry.py`
-
-Manages and routes HTTP requests to specialized handlers.
-Maintains a registry of handlers and routes based on path patterns.
-Handlers are checked in registration order; first match wins.
+**Routing:** The route table is an ordered list of `Route(matcher, handler_cls, detected_id, name)` entries in `manyfaced.handlers.routes`. First match wins — order is the dispatch policy. Per-service route files live in `manyfaced/handlers/routes/` (e.g., `routes_bitrix.py`).
 
 #### Service Handlers — `handlers/*.py`
 
@@ -170,75 +166,55 @@ Dataclass: `ip`, `raw_request`, `timestamp`, `parsed_request`, `is_detected`, `H
 
 ## How to Add a New Service Handler
 
-1. Create a new class in `manyfaced/handlers/` that extends `HTTPHandlerBase`
-2. Define `domain` and `PATH_PATTERNS`
-3. Implement `matches_path()` and `generate_response()`
-4. Add login handling with `handle_login()` if the service has auth
-5. Register the handler in `handlers/registry.py`
-6. Export it from `handlers/__init__.py`
+The full recipe is codified in the **add-service-handler** skill. This section summarizes the current architecture (the old `registry.py` pattern no longer exists).
 
-```python
-from manyfaced.handlers.base_handler import HTTPHandlerBase
-import datetime
+### Current Architecture
 
-class MyServiceHandler(HTTPHandlerBase):
-    domain = "my_service"
-    PATH_PATTERNS = ["/my-service", "/my-service/"]
-    DETECTED_ID = 1
-
-    def matches_path(self, path: str) -> bool:
-        path_lower = path.lower().split("?")[0]
-        return any(path_lower.startswith(p) for p in self.PATH_PATTERNS)
-
-    def generate_response(self, path, raw_request, bot_ip, headers=None):
-        profile = self.get_or_create_profile(bot_ip)
-        request_data = {
-            "path": path,
-            "method": self._extract_method(raw_request),
-            "headers": dict(headers) if headers else {},
-            "raw": raw_request,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-        }
-        profile.record_request(request_data)
-
-        method = self._extract_method(raw_request)
-        if method == "POST" and "login" in path.lower():
-            credentials, response, detected = self.handle_login(
-                path, raw_request, bot_ip, headers or {}
-            )
-            if credentials:
-                response = self._login_failed_response()
-                return response, detected
-
-        body = self._main_page()
-        response = self._build_http_response(body, path)
-        self._response_count += 1
-        return response, self.DETECTED_ID
-
-    def _main_page(self):
-        return "<html><body><h1>My Service</h1></body></html>"
-
-    def _login_failed_response(self):
-        body = "<html><body><h1>Login Failed</h1></body></html>"
-        return self._build_http_response(body, "/my-service/login")
-
-    def _extract_method(self, raw_request):
-        parts = raw_request.split()
-        return parts[0].upper() if parts else "GET"
-
-    def _build_http_response(self, body, path, status="200 OK"):
-        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
-        response = (
-            f"HTTP/1.1 {status}\r\n"
-            f"Server: Apache/2.4.57 (Ubuntu)\r\n"
-            f"Date: {now}\r\n"
-            f"Content-Type: text/html; charset=UTF-8\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-            f"{body}"
-        )
-        return response.encode("iso-8859-1")
 ```
+manyfaced/handlers/
+├── base_handler.py          # HTTPHandlerBase ABC — subclass this
+├── http_handler.py           # Main entry point, dispatches via Router
+├── __init__.py               # Imports all handlers + exports in __all__
+├── <svc>_handler.py          # Your new handler class (subclass HTTPHandlerBase)
+│
+└── routes/                   # Per-service route files
+    ├── __init__.py           # Concatenates per-service ROUTES into one ordered table
+    └── routes_<svc>.py       # Route entries for your service
+```
+
+### Steps
+
+1. **Create handler class** in `manyfaced/handlers/<svc>_handler.py` extending `HTTPHandlerBase`:
+   - Define `domain = '<svc>'` and `DETECTED_ID = 1` (or a special ID from `status.py`)
+   - Implement `generate_response(path, raw_request, bot_ip, headers)` → `(bytes, int)`
+   - Add `handle_login()` logic if the service has authentication
+
+2. **Export from** `manyfaced/handlers/__init__.py`:
+   - Add import: `from manyfaced.handlers.<svc>_handler import <Svc>Handler`
+   - Add `<Svc>Handler` to `__all__` list (alphabetical order)
+
+3. **Register routes** in `manyfaced/handlers/routes/`:
+   - Create `routes_<svc>.py` with lazy-import helper (`def _<svc>() -> type:`) and `ROUTES: list[Route] = [...]`
+   - Import + concatenate in `routes/__init__.py` (order = dispatch priority, first match wins)
+
+4. **Add to monster page** in `generic_handler._SERVICE_INFO`:
+   - Add `' <svc>': ('Display Name', 'Version', 'Running (vVersion)')`
+   - Optionally add representative paths in `_SERVICE_PATHS`
+
+5. **Write tests** mirroring existing handler test patterns in `test/test_handlers/test_service_handlers.py`
+
+### Canonical Example
+
+See `bitrix_handler.py` + `routes_bitrix.py` for a clean, minimal reference implementation. The Bitrix handler demonstrates:
+- Multiple page types (admin login, auth, setup, portal) each with their own HTML method
+- POST credential capture via `handle_login()`
+- Login-failed responses that encourage further probing
+
+### Routing Caveats
+
+- **Ordering = dispatch policy:** First route match wins. To change precedence, reorder entries in `routes/__init__.py`.
+- **Overlap resolution:** `/xmlrpc.php` → WordPressHandler (not ConfigDisclosure), `/mysql` → PhpMyAdminHandler. Higher-priority routes listed first.
+- **WebDAV is deliberately NOT route-registered** — it uses a separate dispatch mechanism.
 
 ## How to Change Database Schema
 
@@ -288,7 +264,7 @@ test/
 
 ## Handler Coverage Analysis
 
-### Current Handlers (11 total)
+### Current Handlers (10 total)
 
 | Handler | Domain | Purpose |
 |---------|--------|---------|
@@ -316,15 +292,17 @@ Production data shows **97% of bot traffic hits the root path `/`** which curren
 - Next.js paths `/_next/*` — New NextJS handler needed
 - PHP eval RCE `eval-stdin.php` patterns — New EvalStdin handler needed
 
-### Adding a New Handler
+### Adding A New Handler
+
+See the **add-service-handler** skill for the full recipe. Summary:
 
 1. Create `manyfaced/handlers/<name>_handler.py` extending `HTTPHandlerBase`
-2. Define `domain`, `PATH_PATTERNS`, and `generate_response()` method
-3. Register in `handlers/__init__.py` (add to `_HANDLER_CLASSES`)
+2. Export from `handlers/__init__.py` (import + add to `__all__`)
+3. Register routes in `routes/` (create `routes_<name>.py`, import + concatenate in `routes/__init__.py`)
 4. Add service info to `generic_handler._SERVICE_INFO` for monster page inclusion
-5. Write tests in `test/test_<name>_handler.py`
+5. Write tests in `test/test_handlers/test_service_handlers.py`
 
-See existing handlers for patterns — `wordpress_handler.py` is a good reference for a complete implementation.
+See existing handlers for patterns — `bitrix_handler.py` + `routes_bitrix.py` is a clean reference implementation.
 
 ## Debugging Tips
 
