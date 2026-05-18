@@ -95,6 +95,7 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
                     'Report send failed for %s (attempt %d/%d), retrying in %ds',
                     client,
                     attempt,
+                    REPORT_SEND_MAX_RETRIES,
                     delay,
                 )
                 time.sleep(delay)
