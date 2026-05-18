@@ -1,3 +1,3 @@
 """manyfaced server package."""
 
-__all__ = ['main']
+# Submodules are imported directly: from manyfaced.server import server, etc.

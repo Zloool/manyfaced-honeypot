@@ -37,7 +37,7 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
     ua = ''
     if hasattr(data, 'ua'):
         ua = data.ua or ''
-    elif hasattr(parsed, 'headers') and parsed.headers:
+    elif parsed is not None and hasattr(parsed, 'headers') and parsed.headers:
         ua = (
             getattr(parsed, 'user_agent', '')
             or parsed.headers.get('User-Agent', '')

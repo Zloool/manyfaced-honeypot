@@ -41,6 +41,11 @@ class HTTPRequest(BaseHTTPRequestHandler):
         if self.error_code is not None:
             raise ValueError(self.error_message or f'HTTP parse error: {self.error_code}')
 
-    def send_error(self, code, message):
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """Override to capture error info without sending an actual HTTP response.
+
+        The parent class sends a full error page; we just store the values
+        for later inspection by the honeypot handler.
+        """
         self.error_code = code
-        self.error_message = message
+        self.error_message = message or ''
