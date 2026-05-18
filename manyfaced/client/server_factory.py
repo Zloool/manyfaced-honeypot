@@ -39,6 +39,7 @@ _INTERACTIVE_PROTOCOL_SIGNATURES: list[bytes] = [
     b'+OK',  # POP3 greeting
     b'* OK',  # IMAP greeting
     b'RFB ',  # VNC
+    b'\xff',  # TELNET IAC (Interpret As Command) - starts with 0xFF
 ]
 
 
@@ -95,16 +96,38 @@ def _capture_credentials(connection_socket, bot_ip: str, response_bytes: bytes) 
                 break
 
         if all_data:
-            raw_str = all_data.decode('utf-8', errors='replace')
+            # Strip TELNET IAC (Interpret As Command) bytes and options
+            # TELNET protocol uses \xff as escape character followed by command codes
+            clean_data = b''
+            i = 0
+            while i < len(all_data):
+                if all_data[i : i + 1] == b'\xff':
+                    # Skip IAC byte and any following option bytes (IAC WILL, IAC WONT, etc.)
+                    i += 1
+                    while i < len(all_data) and all_data[i : i + 1] in (
+                        b'\xfb',
+                        b'\xfc',
+                        b'\xfd',
+                        b'\xfe',
+                        b'\xff',
+                    ):
+                        i += 1
+                else:
+                    clean_data += all_data[i : i + 1]
+                    i += 1
+
+            raw_str = clean_data.decode('utf-8', errors='replace')
             creds = _parse_plaintext_credentials(raw_str)
             if creds:
                 return creds
             logger.debug(
                 'No credentials found in %s data from %s (length=%d): %s',
-                'TELNET/FTP' if response_bytes.startswith(b'220 ') else 'interactive',
+                'TELNET'
+                if response_bytes.startswith(b'\xff')
+                else ('FTP/SMTP' if response_bytes.startswith(b'220 ') else 'interactive'),
                 bot_ip,
                 len(all_data),
-                repr(all_data[:200]),
+                repr(clean_data[:200]),
             )
     except Exception as e:
         logger.debug('Error capturing credentials from %s: %s', bot_ip, e)
