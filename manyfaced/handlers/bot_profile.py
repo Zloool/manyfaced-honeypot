@@ -79,6 +79,8 @@ class BotProfile:
         self.request_history: list[dict[str, Any]] = []
         self.detected_behaviors: set[str] = set()
         self.escalation_level: int = self.IDLE
+        self.escalation_label: str | None = None  # Custom label override (set by handlers)
+        self._response_count: int = 0  # Request/response count (set by handlers)
         self.captured_credentials: list[dict[str, str]] = []
 
         # Dialogue tracking – the most valuable artifact
@@ -302,7 +304,8 @@ class BotProfile:
                 'last_updated': self.last_updated.isoformat(),
                 'metadata': dict(self.metadata),
                 'escalation_level': self.escalation_level,
-                'escalation_label': self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
+                'escalation_label': self.escalation_label
+                or self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
                 'detected_behaviors': list(self.detected_behaviors),
                 'request_count': len(self.request_history),
                 'dialogue_count': len(self.dialogue),
@@ -319,7 +322,8 @@ class BotProfile:
                 'bot_ip': self.bot_ip,
                 'session_id': self.session_id,
                 'escalation_level': self.escalation_level,
-                'escalation_label': self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
+                'escalation_label': self.escalation_label
+                or self.ESCALATION_LABELS.get(self.escalation_level, 'unknown'),
                 'detected_behaviors': list(self.detected_behaviors),
                 'request_count': len(self.request_history),
                 'dialogue_count': len(self.dialogue),
