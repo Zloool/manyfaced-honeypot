@@ -27,6 +27,7 @@ from manyfaced.common.status import (
     UNKNOWN_MONGODB,
     UNKNOWN_NON_HTTP,
     UNKNOWN_REDIS,
+    UNKNOWN_SMB,
     UNKNOWN_TLS,
 )
 from manyfaced.handlers.protocol_responses import (
@@ -164,6 +165,7 @@ class HTTPHandler:
             'dns': UNKNOWN_DNS,
             'mongodb': UNKNOWN_MONGODB,
             'redis': UNKNOWN_REDIS,
+            'smb': UNKNOWN_SMB,
         }.get(protocol, UNKNOWN_NON_HTTP)
 
         response = non_http_response(protocol)

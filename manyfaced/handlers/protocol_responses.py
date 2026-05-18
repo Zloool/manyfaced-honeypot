@@ -45,6 +45,8 @@ def non_http_response(protocol: str) -> bytes:
         'telnet': lambda: b'\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1f',
         'rdp': lambda: b'\x03\x00\x00\x1f\x0e\xe0\x00\x00\x18\x00\x01\xc1\x00\x00\x00',
         'vnc': lambda: b'RFB 003.003\r\n',
+        # SMB/NBT: NetBIOS Session Service positive session response (RFC 1002)
+        'smb': lambda: b'\x82\x00\x00\x00',  # type=0x82, flags=0, length=0
     }
 
     if protocol in responses:
