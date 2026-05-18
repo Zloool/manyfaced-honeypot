@@ -6,5 +6,6 @@ UNKNOWN_DNS = 4294967290  # DNS-over-TCP probe
 UNKNOWN_MONGODB = 4294967289  # MongoDB wire protocol probe
 UNKNOWN_REDIS = 4294967288  # Redis RESP protocol probe
 UNKNOWN_TLS = 4294967287  # TLS ClientHello (handshake)
+UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 BOT_TIMEOUT = 5
 CLIENT_TIMEOUT = 2
