@@ -24,6 +24,7 @@ class BearRequests:
     dns_name: str = ''
     country: str = ''
     continent: str = ''
+    login: str = ''
 
 
 def Insert(bear: BearRequests) -> None:
@@ -40,5 +41,6 @@ def Insert(bear: BearRequests) -> None:
         'dns_name': bear.dns_name,
         'country': bear.country,
         'continent': bear.continent,
+        'login': bear.login,
     }
     storage.insert(record)
