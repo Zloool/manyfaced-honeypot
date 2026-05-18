@@ -89,15 +89,14 @@ reportUnknownArgumentType = false
 reportAny = false
 reportUnusedCallResult = false
 reportUnusedVariable = false
-# Downgrade remaining error-level rules to warnings so CI passes on pre-existing issues
-# but developers still see them locally and can fix them over time
-reportAttributeAccessIssue = "warning"
-reportArgumentType = "warning"
-reportReturnType = "warning"
-reportOptionalMemberAccess = "warning"
-reportInvalidTypeForm = "warning"
-reportGeneralTypeIssues = "warning"
-reportRedeclaration = "warning"
-reportCallIssue = "warning"
-reportIncompatibleMethodOverride = "warning"
-reportIndexIssue = "warning"
+# Rules now fixed — back to error level for CI gatekeeping
+reportIncompatibleMethodOverride = true  # send_error override was fixed
+reportAttributeAccessIssue = "warning"   # bearstorage uses Any for parsed_request (union of types)
+reportArgumentType = true                # config.py casts added
+reportReturnType = "warning"             # still some dynamic typing in handlers
+reportOptionalMemberAccess = "warning"   # optional chaining in report_sender is intentional
+reportInvalidTypeForm = "warning"        # multiprocessing.Event has no proper type stubs
+reportGeneralTypeIssues = true           # bearstorage uses Any for parsed_request (union of types)
+reportRedeclaration = true               # fixed by renaming shadowed variables
+reportCallIssue = true                   # config.py casts added
+reportIndexIssue = "warning"             # some index access patterns remain

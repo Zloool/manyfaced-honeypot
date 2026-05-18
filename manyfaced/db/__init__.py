@@ -1,6 +1,5 @@
 """manyfaced db package."""
 
-__all__ = [
-    'BearRequests',
-    'Insert',
-]
+from manyfaced.db.dbconnect import BearRequests, Insert
+
+__all__ = ['BearRequests', 'Insert']

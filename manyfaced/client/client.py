@@ -13,6 +13,10 @@ Architecture::
                                           → send_report() (encrypted to server)
 """
 
+# pyright: reportInvalidTypeForm=false
+
+from __future__ import annotations
+
 import signal
 from multiprocessing import Event
 from socket import (

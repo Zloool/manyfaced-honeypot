@@ -195,7 +195,7 @@ class PostgreSQLStorage(StorageBackend):
     def _init_db(self) -> None:
         """Connect to PostgreSQL and create the table if it does not exist."""
         try:
-            import psycopg2  # noqa: PLC0415
+            import psycopg2  # noqa: PLC0415  # pyright: ignore[reportMissingModuleSource]
         except ImportError:
             raise ImportError(
                 'psycopg2 is required for PostgreSQL backend. '
