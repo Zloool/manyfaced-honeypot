@@ -537,10 +537,10 @@ class TestNonHTTPEnrichment:
         mock_bs.country = ''
         mock_bs.continent = ''
 
-        # Telnet probes start with three null bytes per protocol.py detection
+        # Telnet probes start with IAC (Interpret As Command) byte 0xFF
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
             output = handler.handle_request(
-                b'\x00\x00\x00\xff\xfb\x01',  # Telnet probe bytes (null prefix per protocol.py)
+                b'\xff\xfb\x01\xff\xfb\x03',  # Telnet IAC probe bytes
                 bot_ip='5.6.7.8',
             )
 
@@ -558,6 +558,43 @@ class TestNonHTTPEnrichment:
         call_args = MockBS.call_args
         assert call_args[0][0] == '5.6.7.8'  # bot_ip
         assert call_args[0][4] == UNKNOWN_NON_HTTP  # detected_id
+
+        # Now simulate what the caller does: call _enrich_and_send after credential capture
+        handler._enrich_and_send(bear_storage, '5.6.7.8')
+
+        # Verify enrichment methods were called on the BearStorage instance
+        mock_bs.resolve_dns_name.assert_called_once_with('5.6.7.8', timeout=1.0)
+        mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
+
+    def test_smb_probe_enriched_with_dns_and_geo(self, handler):
+        """SMB/NBT probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
+        from manyfaced.common.status import UNKNOWN_SMB
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        # SMB/NBT: NetBIOS session request starts with \x00\x00\x00 followed by length byte
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            output = handler.handle_request(
+                b'\x00\x00\x00\x18\x0e\xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',  # NBT session request
+                bot_ip='5.6.7.8',
+            )
+
+        bear_storage = None
+        if isinstance(output, tuple):
+            response_bytes, bear_storage = output
+        else:
+            response_bytes = output
+
+        assert isinstance(response_bytes, bytes)
+        assert len(response_bytes) > 0
+
+        # Verify BearStorage was created with SMB detected_id
+        call_args = MockBS.call_args
+        assert call_args[0][0] == '5.6.7.8'  # bot_ip
+        assert call_args[0][4] == UNKNOWN_SMB  # detected_id
 
         # Now simulate what the caller does: call _enrich_and_send after credential capture
         handler._enrich_and_send(bear_storage, '5.6.7.8')
@@ -610,7 +647,7 @@ class TestNonHTTPEnrichment:
 
         with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
             output = handler.handle_request(
-                b'\x00\x00\x00\xff\xfb\x01',  # Telnet probe bytes (null prefix per protocol.py)
+                b'\xff\xfb\x01\xff\xfb\x03',  # Telnet IAC probe bytes
                 bot_ip='5.6.7.8',
             )
 
