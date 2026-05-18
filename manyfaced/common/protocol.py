@@ -15,8 +15,8 @@ _PROTOCOL_SIGNATURES = [
     # (name, regex_pattern, sample)
     ('ssh', re.compile(rb'^SSH-\d\.\d-', re.IGNORECASE), b'SSH-2.0-OpenSSH'),
     ('ftp', re.compile(rb'^220\s', re.IGNORECASE), b'220 (vsFTPd)'),
-    # SMB/NBT before TELNET — \x00\x00\x00 prefix is actually NBT session requests, not telnet
-    ('smb', re.compile(rb'^\x00\x00\x00[\x10\x18]'), None),  # NBT session request (16 or 24 bytes)
+    # SMB/NBT before TELNET — \x00\x00\x00 prefix with SMB indicators (NT LM, SMB 2.x)
+    ('smb', re.compile(rb'^\x00\x00\x00.{16}NT\sLM|^\x00\x00\x00.{16}SMB\s\d'), None),
     # TELNET: starts with IAC (Interpret As Command) byte 0xFF
     ('telnet', re.compile(rb'^\xff'), b'\xff\xfb\x01'),
     # POP3/IMAP before Redis — both + and * can appear in other protocols, but POP3/IMAP are more specific
@@ -141,14 +141,16 @@ def get_protocol_info(raw_data: bytes) -> dict:
         info['version'] = http_match.group(3).decode('latin-1', errors='replace')
         return info
 
-    # SMB/NBT detection (before telnet — \x00\x00\x00 prefix is NBT, not telnet)
-    if (
-        len(raw_data) >= 4
-        and raw_data[:3] == b'\x00\x00\x00'
-        and raw_data[3:4] in (b'\x10', b'\x18')
-    ):
-        info['protocol'] = 'smb'
-        return info
+    # SMB/NBT detection (before telnet — \x00\x00\x00 prefix with SMB indicators)
+    if len(raw_data) >= 24 and raw_data[:3] == b'\x00\x00\x00':
+        # Check for NT LM or SMB 2.x identifiers at offset 17 (after 4-byte header + 16-byte name section)
+        try:
+            payload = raw_data[17:].decode('ascii', errors='ignore')
+            if 'NT LM' in payload or re.match(r'SMB\s\d', payload):
+                info['protocol'] = 'smb'
+                return info
+        except Exception:
+            pass
 
     # Telnet detection — starts with IAC (Interpret As Command) byte 0xFF
     if raw_data[:1] == b'\xff':
