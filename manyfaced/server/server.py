@@ -61,6 +61,7 @@ class ServerHandler(BaseHandler):
                 dns_name=data.get('dns_name', ''),
                 country=data.get('country', ''),
                 continent=data.get('continent', ''),
+                login=data.get('login', ''),
             )
             Insert(bear)
             logger.info('Data saved for %s', data['ip'])

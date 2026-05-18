@@ -126,7 +126,8 @@ class TestEdgeCases:
         assert row[1] == 'GET'
         assert row[2] == 'TestAgent'
         assert row[3] == 10
-        assert row[4] == 'root'
+        # HIVELOGIN is the sensor ID, NOT credentials — login should be empty
+        assert row[4] == ''
         storage.close()
 
     def test_sqlite_insert_string_timestamp(self, tmp_path):
