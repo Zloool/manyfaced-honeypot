@@ -29,6 +29,9 @@ from manyfaced.common.status import (
     UNKNOWN_REDIS,
     UNKNOWN_SMB,
     UNKNOWN_TLS,
+    UNKNOWN_TELNET,
+    UNKNOWN_RDP,
+    UNKNOWN_VNC,
 )
 from manyfaced.handlers.protocol_responses import (
     fallback_response,
@@ -36,6 +39,18 @@ from manyfaced.handlers.protocol_responses import (
     ftp_banners,
     non_http_response,
 )
+from manyfaced.handlers.redis_handler import generate_redis_response, extract_redis_credentials
+from manyfaced.handlers.mongodb_handler import (
+    generate_mongodb_response,
+    extract_mongodb_credentials,
+)
+from manyfaced.handlers.telnet_handler import (
+    generate_telnet_response,
+    extract_telnet_credentials,
+    generate_telnet_greeting,
+)
+from manyfaced.handlers.rdp_handler import generate_rdp_response, extract_rdp_credentials
+from manyfaced.handlers.vnc_handler import generate_vnc_response, extract_vnc_credentials
 from manyfaced.handlers.report_queue import _get_report_queue, shutdown_report_executor
 
 logger = get_logger(__name__)
@@ -166,9 +181,28 @@ class HTTPHandler:
             'mongodb': UNKNOWN_MONGODB,
             'redis': UNKNOWN_REDIS,
             'smb': UNKNOWN_SMB,
+            'telnet': UNKNOWN_TELNET,
+            'rdp': UNKNOWN_RDP,
+            'vnc': UNKNOWN_VNC,
         }.get(protocol, UNKNOWN_NON_HTTP)
 
-        response = non_http_response(protocol)
+        raw_data = protocol_info.get('raw', b'')
+
+        # Use protocol-specific handlers for Redis, MongoDB, Telnet, RDP, VNC
+        if protocol == 'redis':
+            response = generate_redis_response(raw_data, bot_ip)
+        elif protocol == 'mongodb':
+            response = generate_mongodb_response(raw_data, bot_ip)
+        elif protocol == 'telnet':
+            response = generate_telnet_response(raw_data, bot_ip)
+        elif protocol == 'rdp':
+            response = generate_rdp_response(raw_data, bot_ip)
+        elif protocol == 'vnc':
+            response = generate_vnc_response(raw_data, bot_ip)
+        else:
+            # Fallback to legacy handler for other protocols
+            response = non_http_response(protocol)
+
         if response is None:
             response = b''
 
