@@ -530,7 +530,7 @@ class TestNonHTTPEnrichment:
 
     def test_telnet_probe_enriched_with_dns_and_geo(self, handler):
         """Telnet probe should produce a record with bot_dns_name/bot_country/bot_continent populated."""
-        from manyfaced.common.status import UNKNOWN_NON_HTTP
+        from manyfaced.common.status import UNKNOWN_TELNET
 
         mock_bs = MagicMock()
         mock_bs.dns_name = ''
@@ -557,7 +557,7 @@ class TestNonHTTPEnrichment:
         # Verify BearStorage was created with correct args
         call_args = MockBS.call_args
         assert call_args[0][0] == '5.6.7.8'  # bot_ip
-        assert call_args[0][4] == UNKNOWN_NON_HTTP  # detected_id
+        assert call_args[0][4] == UNKNOWN_TELNET  # detected_id (telnet probe)
 
         # Now simulate what the caller does: call _enrich_and_send after credential capture
         handler._enrich_and_send(bear_storage, '5.6.7.8')
