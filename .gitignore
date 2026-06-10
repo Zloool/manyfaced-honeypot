@@ -101,6 +101,10 @@ local_faces.txt
 # Local analysis/dev artifacts
 deployment-analysis/
 
+# Dev working artifacts (audit docs, PR drafts)
+.audit-*.md
+.pr_body.md
+
 # Production analysis data (contains sensitive IP info)
 deployment-analysis/latest/
 
