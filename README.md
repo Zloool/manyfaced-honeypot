@@ -307,20 +307,20 @@ manyfaced-honeypot/
 │   ├── handlers/
 │   │   ├── base_handler.py         # BaseHandler ABC, BotProfile
 │   │   ├── http_handler.py         # HTTPHandler (CLIENT-side request processing)
-│   │   ├── registry.py             # HandlerRegistry (routes requests)
+│   │   ├── router.py               # HandlerRouter (routes requests)
+│   │   ├── routes/                 # Service-specific route handlers
 │   │   └── *.py                    # Service handlers (WordPress, phpMyAdmin, etc.)
 │   ├── db/
 │   │   ├── dbconnect.py            # BearRequests dataclass + Insert()
 │   │   └── storage.py              # SQLiteStorage, PostgreSQLStorage
 │   ├── mfh.py                      # Main entry point
-│   ├── settings.toml.example       # Example TOML config
-│   ├── systemd/                    # Systemd service files
+│   └── settings.toml.example       # Example TOML config
+├── systemd/                        # Systemd service files + logrotate config
 ├── test/
 │   ├── conftest.py                 # Test utilities
 │   ├── test_router_integration.py  # Full pipeline integration tests
 │   ├── test_client.py              # Client unit tests
 │   └── test_*.py                   # Other test modules
-├── pytest.ini                      # pytest config
 └── .github/workflows/              # CI/CD (single workflow)
     └── deploy.yml                  # CI (lint/test/typecheck) + production deployment via rsync
 ```
@@ -376,4 +376,3 @@ pip install -e ".[dev]"   # runtime + dev
 
 - `tracert` field in BearStorage is marked TODO (never implemented)
 - `utils.py:dump_file()` uses unsafe pickle (see [`docs/DEVELOPER.md`](docs/DEVELOPER.md#security))
-- ClickHouse support replaced with SQLite/PostgreSQL but ClickHouse SQL file still in repo
