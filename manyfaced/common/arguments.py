@@ -20,7 +20,7 @@ And that`s how you`d detect a sneaky bot.
 def parse():
     parser = argparse.ArgumentParser(
         description='Serve some sweet honey to the ubiquitous bots!',
-        epilog='And that`s how you`d detect a sneaky chinese bot.',
+        epilog='And that\'s how you\'d detect a sneaky bot.',
         prog='mfh.py',
     )
 
