@@ -14,6 +14,8 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import DRUPAL_HTTP
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ class DrupalHandler(HTTPHandlerBase):
     """Drupal CMS honeypot handler."""
 
     domain = 'drupal'
-    DETECTED_ID = 1
+    DETECTED_ID = DRUPAL_HTTP
 
     def generate_response(
         self,

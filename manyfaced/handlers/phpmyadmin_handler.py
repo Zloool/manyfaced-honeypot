@@ -14,14 +14,16 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import PHPMYADMIN_HTTP
+
 logger = logging.getLogger(__name__)
 
 
 class PhpMyAdminHandler(HTTPHandlerBase):
-    """phpMyAdmin honeypot handler."""
+    """Handles phpMyAdmin honeypot responses."""
 
     domain = 'phpmyadmin'
-    DETECTED_ID = 1
+    DETECTED_ID = PHPMYADMIN_HTTP
 
     def generate_response(
         self,

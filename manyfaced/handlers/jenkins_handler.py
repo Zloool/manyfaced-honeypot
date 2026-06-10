@@ -15,6 +15,8 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import JENKINS_HTTP
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ class JenkinsHandler(HTTPHandlerBase):
     """Jenkins CI/CD honeypot handler."""
 
     domain = 'jenkins'
-    DETECTED_ID = 1
+    DETECTED_ID = JENKINS_HTTP
 
     def generate_response(
         self,

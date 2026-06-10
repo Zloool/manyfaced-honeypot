@@ -23,6 +23,7 @@ from abc import abstractmethod
 from typing import Any
 
 from manyfaced.common.myenc import AESCipher
+from manyfaced.common.credential_extractor import extract_http_credentials
 from manyfaced.handlers.bot_profile import BotProfile  # noqa: F401 — re-exported for backward compat
 
 logger = logging.getLogger(__name__)
@@ -207,87 +208,16 @@ class HTTPHandlerBase(abc.ABC):
     ) -> dict[str, str] | None:
         """Extract credentials from a POST request.
 
-        Looks for common credential field names in the request body.
+        Delegates to the unified credential extractor for consistent behavior.
 
         Args:
             raw_request: The raw HTTP request string
             headers: Request headers
 
         Returns:
-            Dict with 'username' and 'password' keys, or None
+            Dict with 'username' and/or 'password' keys, or None if not found.
         """
-        # Split headers from body
-        parts = raw_request.split('\r\n\r\n', 1)
-        if len(parts) < 2:
-            return None
-        body = parts[1]
-
-        # Normalize field names: strip trailing '=' so we can append it once
-        # This fixes the bug where fields like "log=" became "log=="
-        username_fields = [
-            'log',
-            'user',
-            'username',
-            'login',
-            'user_login',
-            'USER_LOGIN',
-            'j_username',
-            'uid',
-            'email',
-            'pma_username',
-            'server[0][user]',
-        ]
-        password_fields = [
-            'pwd',
-            'pass',
-            'password',
-            'login_password',
-            'j_password',
-            'passwort',
-            'user_pass',
-            'USER_PASSWORD',
-            'pma_password',
-            'server[0][password]',
-        ]
-
-        # URL-decode the body
-        for old, new in [
-            ('+', ' '),
-            ('%40', '@'),
-            ('%3D', '='),
-            ('%26', '&'),
-            ('%23', '#'),
-            ('%25', '%'),
-            ("'%", "'"),
-            ('%22', '"'),
-            ('%2F', '/'),
-            ('%3A', ':'),
-            ('%3F', '?'),
-        ]:
-            body = body.replace(old, new)
-
-        username = None
-        password = None
-
-        for field in username_fields:
-            prefix = field + '='
-            if prefix in body:
-                value = body.split(prefix, 1)[1].split('&', 1)[0]
-                if value:
-                    username = value
-                    break
-
-        for field in password_fields:
-            prefix = field + '='
-            if prefix in body:
-                value = body.split(prefix, 1)[1].split('&', 1)[0]
-                if value:
-                    password = value
-                    break
-
-        if username and password:
-            return {'username': username, 'password': password}
-        return None
+        return extract_http_credentials(raw_request, headers)
 
     def _login_success_response(self) -> bytes:
         """Return a fake login success response."""
