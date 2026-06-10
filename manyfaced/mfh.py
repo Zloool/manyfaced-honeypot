@@ -15,8 +15,6 @@ from manyfaced.common.config import settings, Config
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 _lock_fd = None
 
 
