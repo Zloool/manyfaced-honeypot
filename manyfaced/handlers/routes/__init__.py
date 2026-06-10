@@ -11,8 +11,6 @@ Overlap resolution (deliberate ordering):
 
 ConfigDisclosure's patterns all migrate intact — they simply lose the above
 three paths because higher-priority routes are listed first.
-
-WebDAVHandler is NOT registered here (separate brief).
 """
 
 from __future__ import annotations
@@ -44,10 +42,11 @@ from manyfaced.handlers.routes.routes_phpmyadmin import (
     ROUTES as _phpmyadmin_routes,  # noqa: E402
 )
 from manyfaced.handlers.routes.routes_tomcat import ROUTES as _tomcat_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_webdav import ROUTES as _webdav_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_wordpress import ROUTES as _wordpress_routes  # noqa: E402
 
 # Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
-# Drupal → cPanel → Bitrix → ConfigDisclosure → catch-all
+# Drupal → cPanel → Bitrix → WebDAV → ConfigDisclosure → catch-all
 ROUTES: list[Route] = (
     list(_wordpress_routes)
     + list(_phpmyadmin_routes)
@@ -56,6 +55,7 @@ ROUTES: list[Route] = (
     + list(_drupal_routes)
     + list(_cpanel_routes)
     + list(_bitrix_routes)
+    + list(_webdav_routes)
     + list(_config_disclosure_routes)
     + [Route(Any(), _generic(), 4294967294, 'catchall_monster_page')]
 )
