@@ -28,8 +28,8 @@ For development you can also run without installing:
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Generate config example
-cp manyfaced/settings.toml.example manyfaced/common/config.toml.example.example
+# 2. Generate config (writes ~/.config/manyfaced/config.toml)
+python3 mfh.py --generate-config
 # Edit config.toml with your keys and credentials
 
 # 3. Run the client only (impersonates web services)

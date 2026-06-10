@@ -72,4 +72,4 @@ The deploy pipeline (GitHub Actions) runs automatically on push to `master` — 
 - `.deploy_config` — SSH creds, droplet IP, ports. **Never committed.**
 - `~/.ssh/dohp` — private key for the production droplet. Keep it local.
 - `honeypot.env` on the server — environment variables for the systemd service.
-- Config auto-generates at `~/.config/manyfaced/config.toml` on first run (from `settings.toml.example`).
+- Config auto-generates at `~/.config/manyfaced/config.toml` on first run via `Config.generate_config_file()`.

@@ -1,36 +1,46 @@
 # manyfaced configuration file
 # Copy this to ~/.config/manyfaced/config.toml and edit as needed.
-# Environment variables (prefix HONEY_) always take precedence.
+# Environment variables (prefix HONEY_) always take precedence over TOML values.
 
 [honeypot]
 honeyport = 80
-honeyfolder = "bots"
+honeyfolder = 'bots'
 # Port listening mode: "single" (one port), "top" (top 50 scanned ports), "all" (all 65535 ports)
-port_mode = "single"
+port_mode = 'single'
 # Comma-separated list of ports to listen on when port_mode=top (empty = use default top 50)
-top_ports = ""
+top_ports = ''
 
 [hive]
-hivehost = "127.0.0.1"
+hivehost = '127.0.0.1'
 hiveport = 8080
-hivelogin = "honeybee"
-hivepass = "beehive123"
+hivelogin = 'honeybee'
+hivepass = 'CHANGE-ME-GENERATE-NEW-KEY'
 
 [database]
-backend = "sqlite"
-backends = ["sqlite", "postgresql"]
-path = "bots/honeypot.db"
-pg_host = "localhost"
+backend = 'sqlite'
+backends = ['sqlite', 'postgresql']
+path = 'bots/honeypot.db'
+pg_host = 'localhost'
 pg_port = 5432
-pg_db = "honeypot"
-pg_user = "postgres"
-pg_password = "postgres"
+pg_db = 'honeypot'
+pg_user = 'postgres'
+pg_password = '***'
 
 [security]
 # semicolon-separated "bee_id:key" pairs for authorized client sensors (bees)
 # e.g. "sensor1:secret1;sensor2:secret2"
-authorized_bees = ""  # semicolon-separated "bee_id:key" pairs for authorized client sensors
+authorized_bees = ''
+# Default encryption key for unknown identifiers — MUST be set before starting
+default_key = 'CHANGE-ME-GENERATE-NEW-KEY'
 
 [logging]
-# Path to the log file (JSON format). Falls back to ~/.local/share/manyfaced/honeypot.log
-file = "/opt/manyfaced/bots/honeypot.log"
+# Path to the JSON log file
+file = '~/.local/share/manyfaced/honeypot.log'
+
+[dump]
+# Path to the JSONL dump file (fallback for failed DB writes)
+dump_file = 'dump.jsonl'
+
+[lockfile]
+# Path to the lockfile (prevents multiple instances from running simultaneously)
+lockfile = '/opt/manyfaced/bots/lockfile'
