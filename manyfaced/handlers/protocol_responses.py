@@ -118,7 +118,9 @@ def _build_http_response(
             f'Link: <https://{host}>; rel="https://api.w.org/"',
         )
 
-    return '\r\n'.join(headers) + '\r\n\r\n' + body
+    # Build response string then encode to bytes (iso-8859-1 for Apache compatibility)
+    header_block = '\r\n'.join(headers) + '\r\n\r\n'
+    return (header_block + body).encode('iso-8859-1')
 
 
 def fallback_response(path: str) -> bytes:
