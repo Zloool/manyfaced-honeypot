@@ -3,6 +3,8 @@ from typing import Any
 import logging
 import socket
 
+from manyfaced.common.status import UNKNOWN_NON_HTTP
+
 # type placeholders for type checkers
 ipinfo_dummy = None  # placeholder if ipinfo is used in future
 
@@ -104,13 +106,13 @@ class BearStorage:
                 'IP: ' + self.ip + '\r\n'
                 'timestamp: ' + self.timestamp + '\r\n'
                 'User-Agent: ' + self.ua + '\r\n'
-                'datected: ' + str(self.isDetected) + '\r\n'
+                'detected: ' + str(self.isDetected) + '\r\n'
                 'path: ' + self.path + '\r\n'
                 'command: ' + self.command + '\r\n'
                 'version: ' + self.version + '\r\n'
                 'country: ' + self.country + '\r\n'
             )
-            if self.isDetected != 4294967295 - 3:
+            if self.isDetected != UNKNOWN_NON_HTTP:
                 output += 'Detected: Yes' + '\r\n'
             else:
                 output += 'Detected: No' + '\r\n'
