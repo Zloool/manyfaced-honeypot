@@ -50,8 +50,8 @@ jobs:
         run: ruff check .
 
   test:
-    # Run on PRs for validation; skipped on push-to-master (deploy is fast-path).
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # Run on PRs, push-to-master, and manual dispatch for validation.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
@@ -74,8 +74,8 @@ jobs:
         run: pytest -v --tb=short
 
   typecheck:
-    # Run on PRs for validation; skipped on push-to-master (deploy is fast-path).
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # Run on PRs, push-to-master, and manual dispatch for validation.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     name: Typecheck (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
@@ -107,9 +107,8 @@ jobs:
         uses: raven-actions/actionlint@v2
 
   deploy:
-    needs: [lint, actionlint]
+    needs: [lint, actionlint, test, typecheck]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
-    # Tests/typecheck are skipped on master — they already pass via PR CI.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
