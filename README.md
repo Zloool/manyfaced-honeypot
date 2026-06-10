@@ -361,9 +361,10 @@ Messages between client and server use AES-256-CBC with:
 | Package | Purpose |
 |------|-------|
 | cryptography>=41.0 | AES-256-CBC encryption for client-server comms |
-| python-geoip | IP geolocation for bot attribution |
-| python-geoip-geolite2 | GeoLite2 database for geolocation |
-| pytest (dev) | Testing framework |
+| geoip2 (optional) | IP geolocation via MaxMind GeoLite2 .mmdb database |
+| pytest + pytest-cov (dev) | Testing framework with coverage reporting |
+| basedpyright (dev) | Static type checking |
+| ruff==0.15.13 (dev) | Linting and formatting |
 
 Install all deps in one command:
 
