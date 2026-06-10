@@ -174,23 +174,35 @@ class Config:
         prefix = env_prefix()
 
         return Config(
-            HONEYPORT=int(resolve_setting('honeyport', _DEFAULT_HONEYPORT, 'honeypot', toml, prefix)),
+            HONEYPORT=int(
+                resolve_setting('honeyport', _DEFAULT_HONEYPORT, 'honeypot', toml, prefix)
+            ),  # type: ignore[arg-type]
             HONEYFOLDER=str(
                 resolve_setting('honeyfolder', _DEFAULT_HONEYFOLDER, 'honeypot', toml, prefix)
             ),
-            HIVEHOST=str(resolve_setting('hivehost', _DEFAULT_HIVEHOST, 'hive', toml, prefix)),
-            HIVEPORT=int(resolve_setting('hiveport', _DEFAULT_HIVEPORT, 'hive', toml, prefix)),
-            HIVELOGIN=str(resolve_setting('hivelogin', _DEFAULT_HIVELOGIN, 'hive', toml, prefix)),
-            HIVEPASS=str(resolve_setting('hivepass', _DEFAULT_HIVEPASS or '', 'hive', toml, prefix)),
-            DB_BACKEND=str(resolve_setting('backend', _DEFAULT_DB_BACKEND, 'database', toml, prefix)),
+            HIVEHOST=str(resolve_setting('hivehost', _DEFAULT_HIVEHOST, 'hive', toml, prefix)),  # type: ignore[arg-type]
+            HIVEPORT=int(resolve_setting('hiveport', _DEFAULT_HIVEPORT, 'hive', toml, prefix)),  # type: ignore[arg-type]
+            HIVELOGIN=str(resolve_setting('hivelogin', _DEFAULT_HIVELOGIN, 'hive', toml, prefix)),  # type: ignore[arg-type]
+            HIVEPASS=str(
+                resolve_setting('hivepass', _DEFAULT_HIVEPASS or '', 'hive', toml, prefix)
+            ),  # type: ignore[arg-type]
+            DB_BACKEND=str(
+                resolve_setting('backend', _DEFAULT_DB_BACKEND, 'database', toml, prefix)
+            ),  # type: ignore[arg-type]
             DB_BACKENDS=tuple(
                 resolve_setting('backends', _DEFAULT_DB_BACKENDS, 'database', toml, prefix)  # type: ignore[arg-type]
             ),
-            DB_PATH=str(resolve_setting('path', _DEFAULT_DB_PATH, 'database', toml, prefix)),
-            DB_PG_HOST=str(resolve_setting('pg_host', _DEFAULT_DB_PG_HOST, 'database', toml, prefix)),
-            DB_PG_PORT=int(resolve_setting('pg_port', _DEFAULT_DB_PG_PORT, 'database', toml, prefix)),
-            DB_PG_DB=str(resolve_setting('pg_db', _DEFAULT_DB_PG_DB, 'database', toml, prefix)),
-            DB_PG_USER=str(resolve_setting('pg_user', _DEFAULT_DB_PG_USER, 'database', toml, prefix)),
+            DB_PATH=str(resolve_setting('path', _DEFAULT_DB_PATH, 'database', toml, prefix)),  # type: ignore[arg-type]
+            DB_PG_HOST=str(
+                resolve_setting('pg_host', _DEFAULT_DB_PG_HOST, 'database', toml, prefix)
+            ),  # type: ignore[arg-type]
+            DB_PG_PORT=int(
+                resolve_setting('pg_port', _DEFAULT_DB_PG_PORT, 'database', toml, prefix)
+            ),  # type: ignore[arg-type]
+            DB_PG_DB=str(resolve_setting('pg_db', _DEFAULT_DB_PG_DB, 'database', toml, prefix)),  # type: ignore[arg-type]
+            DB_PG_USER=str(
+                resolve_setting('pg_user', _DEFAULT_DB_PG_USER, 'database', toml, prefix)
+            ),  # type: ignore[arg-type]
             DB_PG_PASSWORD=str(
                 resolve_setting('pg_password', _DEFAULT_DB_PG_PASSWORD, 'database', toml, prefix)
             ),
@@ -205,16 +217,16 @@ class Config:
                         prefix,
                     )
                     or {}
-                ).items()
+                ).items()  # type: ignore[union-attr]
             },
-            HONEY_PORT_MODE=str(resolve_setting('port_mode', 'single', 'honeypot', toml, prefix)),
-            HONEY_TOP_PORTS=str(resolve_setting('top_ports', '', 'honeypot', toml, prefix)),
+            HONEY_PORT_MODE=str(resolve_setting('port_mode', 'single', 'honeypot', toml, prefix)),  # type: ignore[arg-type]
+            HONEY_TOP_PORTS=str(resolve_setting('top_ports', '', 'honeypot', toml, prefix)),  # type: ignore[arg-type]
             DEFAULT_KEY=str(
                 resolve_setting('default_key', _DEFAULT_DEFAULT_KEY or '', 'security', toml, prefix)
             ),
-            LOG_FILE=str(resolve_setting('file', _DEFAULT_LOG_FILE, 'logging', toml, prefix)),
-            DUMP_FILE=str(resolve_setting('dump_file', _DEFAULT_DUMP_FILE, 'dump', toml, prefix)),
-            LOCKFILE=str(resolve_setting('lockfile', _DEFAULT_LOCKFILE, 'lockfile', toml, prefix)),
+            LOG_FILE=str(resolve_setting('file', _DEFAULT_LOG_FILE, 'logging', toml, prefix)),  # type: ignore[arg-type]
+            DUMP_FILE=str(resolve_setting('dump_file', _DEFAULT_DUMP_FILE, 'dump', toml, prefix)),  # type: ignore[arg-type]
+            LOCKFILE=str(resolve_setting('lockfile', _DEFAULT_LOCKFILE, 'lockfile', toml, prefix)),  # type: ignore[arg-type]
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
