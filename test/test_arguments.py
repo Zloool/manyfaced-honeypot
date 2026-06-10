@@ -205,7 +205,6 @@ class TestParsePortModeCombined:
                 '-s',
                 '666',
                 '-v',
-                '-p',
                 '--generate-config',
                 '--port-mode',
                 'top',
