@@ -11,6 +11,7 @@ This module is imported by manyfaced.common.config to keep that module lean.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 
 def _parse_dict_env(env_val: str) -> dict[str, str]:
@@ -24,7 +25,7 @@ def _parse_dict_env(env_val: str) -> dict[str, str]:
     return d
 
 
-def _parse_dict_toml(val) -> dict[str, str]:
+def _parse_dict_toml(val: Any) -> dict[str, str] | Any:
     """Parse a TOML string value (semicolon-separated ``key:value``) into a dict."""
     if not isinstance(val, str):
         return val  # already a dict from TOML
@@ -39,11 +40,11 @@ def _parse_dict_toml(val) -> dict[str, str]:
 
 def resolve_setting(
     name: str,
-    default,
+    default: Any,
     section: str,
-    toml_dict: dict | None,
+    toml_dict: dict[str, Any] | None,
     env_prefix: str,
-):
+) -> Any:
     """Resolve a single configuration setting with TOML → env var precedence.
 
     Resolution order (highest priority first):

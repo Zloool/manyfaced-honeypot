@@ -17,7 +17,8 @@ sys.modules['geoip'] = geoip_mock
 sys.modules['geoip.geolite2'] = geoip_mock.geolite2
 sys.modules['GeoIP'] = MagicMock()
 
-from manyfaced.common.config import Config, _load_toml, _resolve, _env_prefix
+from manyfaced.common.config import Config, _load_toml
+from manyfaced.common.config_resolver import resolve_setting as _resolve, env_prefix as _env_prefix
 
 
 def _write_toml(tmp_path: Path, content: str) -> Path:
