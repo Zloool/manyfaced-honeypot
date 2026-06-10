@@ -25,8 +25,8 @@ manyfaced --generate-config
 For development you can also run without installing:
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+# 1. Install dependencies (installs runtime + dev deps)
+pip install -e ".[dev]"
 
 # 2. Generate config (writes ~/.config/manyfaced/config.toml)
 python3 mfh.py --generate-config
@@ -314,13 +314,12 @@ manyfaced-honeypot/
 │   │   └── storage.py              # SQLiteStorage, PostgreSQLStorage
 │   ├── mfh.py                      # Main entry point
 │   ├── settings.toml.example       # Example TOML config
-│   └── systemd/                    # Systemd service files
+│   ├── systemd/                    # Systemd service files
 ├── test/
 │   ├── conftest.py                 # Test utilities
 │   ├── test_router_integration.py  # Full pipeline integration tests
 │   ├── test_client.py              # Client unit tests
 │   └── test_*.py                   # Other test modules
-├── requirements.txt                # Legacy manual deps
 ├── pytest.ini                      # pytest config
 └── .github/workflows/              # CI/CD (single workflow)
     └── deploy.yml                  # CI (lint/test/typecheck) + production deployment via rsync
@@ -376,5 +375,5 @@ pip install -e ".[dev]"   # runtime + dev
 ## Known Issues & TODOs
 
 - `tracert` field in BearStorage is marked TODO (never implemented)
-- `utils.py:dump_file()` uses unsafe pickle (see [DEVELOPER.md](./DEVELOPER.md#security))
+- `utils.py:dump_file()` uses unsafe pickle (see [`docs/DEVELOPER.md`](docs/DEVELOPER.md#security))
 - ClickHouse support replaced with SQLite/PostgreSQL but ClickHouse SQL file still in repo

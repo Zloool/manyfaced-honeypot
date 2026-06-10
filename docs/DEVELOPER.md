@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Python 3.8+
-- `pip install -r requirements.txt`
+- Python 3.12+
+- `pip install -e ".[dev]"` (installs runtime + dev dependencies)
 
 ## Running Locally
 
@@ -259,8 +259,6 @@ test/
 3. **AUTHORIZED_BEANS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
 
 4. **geoip2 dependency** — The `python-geoip-geolite2` package requires a GeoLite2 database to be installed separately. Without it, country/continent fields will be empty.
-
-5. **Subprocess git pull** — The `update.py:pull()` runs `git pull` and `pip install -r requirements.txt` in a subprocess. This is a security risk in production — consider pinning versions.
 
 ## Handler Coverage Analysis
 
