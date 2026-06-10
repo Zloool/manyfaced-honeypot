@@ -318,6 +318,7 @@ class GenericHandler(HTTPHandlerBase):
             f'Date: {now}\r\n'
             f'Content-Type: {content_type}\r\n'
             f'Connection: close\r\n'
+            f'Content-Length: {len(body.encode("iso-8859-1"))}\r\n'
         )
 
         if extra_headers:

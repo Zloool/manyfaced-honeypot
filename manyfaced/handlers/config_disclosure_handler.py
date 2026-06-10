@@ -163,10 +163,17 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
 
         now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
+        # Calculate body length for Content-Length header
+        if isinstance(body_bytes, str):
+            body_len = len(body_bytes.encode('iso-8859-1'))
+        else:
+            body_len = len(body_bytes)
+
         resp_headers = {
             'Server': 'Apache/2.4.57 (Ubuntu)',
             'Date': now,
             'Connection': 'close',
+            'Content-Length': str(body_len),
         }
         if headers:
             resp_headers.update(headers)
