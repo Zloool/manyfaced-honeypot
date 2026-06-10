@@ -55,7 +55,7 @@ ignore = [
 "test/*" = ["E402", "F401", "F841"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76"
+addopts = "-v --cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76"
 testpaths = ["test"]
 
 [tool.interrogate]
