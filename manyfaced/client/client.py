@@ -178,13 +178,13 @@ def _parse_plaintext_credentials(raw_data: str) -> str | None:
     for pattern in user_patterns:
         match = re.search(pattern, raw_data, re.IGNORECASE)
         if match:
-            username = match.group(1).strip("'\"")
+            username = match.group(1).strip('\'"')
             break
 
     for pattern in pass_patterns:
         match = re.search(pattern, raw_data, re.IGNORECASE)
         if match:
-            password = match.group(1).strip("'\"")
+            password = match.group(1).strip('\'"')
             break
 
     if username and password:
