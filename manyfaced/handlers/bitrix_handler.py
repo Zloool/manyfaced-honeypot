@@ -16,6 +16,8 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import BITRIX_HTTP
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,7 +25,7 @@ class BitrixHandler(HTTPHandlerBase):
     """Bitrix CMS honeypot handler."""
 
     domain = 'bitrix'
-    DETECTED_ID = 1
+    DETECTED_ID = BITRIX_HTTP
 
     def generate_response(
         self,

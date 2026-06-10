@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 from manyfaced.common.bearstorage import BearStorage
 from manyfaced.common.config import settings
+from manyfaced.common.credential_extractor import extract_http_credentials, format_creds_string
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
@@ -244,7 +245,8 @@ class HTTPHandler:
                 logger.debug('Failed to parse request headers for %s', bot_ip)
 
         # Extract credentials from POST requests (login attempts)
-        login_creds = self._extract_http_credentials(raw_request, headers or {})
+        login_creds_dict = extract_http_credentials(raw_request, headers or {})
+        login_creds = format_creds_string(login_creds_dict) if login_creds_dict else None
 
         router = _get_router()
         path = getattr(parsed, 'path', '/')
@@ -275,100 +277,6 @@ class HTTPHandler:
 
         self._enrich_and_send(bs, bot_ip)
         return output_data
-
-    def _extract_http_credentials(self, raw_request: str, headers: dict) -> str | None:
-        """Extract credentials from an HTTP POST request.
-
-        Looks for common credential field names in the request body (URL-encoded form data).
-
-        Args:
-            raw_request: The raw HTTP request string.
-            headers: Request headers.
-
-        Returns:
-            String with extracted credentials, or None if not found.
-        """
-        # Only process POST requests
-        parts = raw_request.split()
-        if len(parts) < 1 or parts[0].upper() != 'POST':
-            return None
-
-        # Split headers from body
-        header_body_split = raw_request.split('\r\n\r\n', 1)
-        if len(header_body_split) < 2:
-            return None
-
-        body = header_body_split[1]
-
-        # URL-decode the body
-        for old, new in [
-            ('+', ' '),
-            ('%40', '@'),
-            ('%3D', '='),
-            ('%26', '&'),
-            ('%23', '#'),
-            ('%25', '%'),
-            ("'%", "'"),
-            ('%22', '"'),
-            ('%2F', '/'),
-            ('%3A', ':'),
-            ('%3F', '?'),
-        ]:
-            body = body.replace(old, new)
-
-        username_fields = [
-            'log',
-            'user',
-            'username',
-            'login',
-            'user_login',
-            'USER_LOGIN',
-            'j_username',
-            'uid',
-            'email',
-            'pma_username',
-            'server[0][user]',
-        ]
-        password_fields = [
-            'pwd',
-            'pass',
-            'password',
-            'login_password',
-            'j_password',
-            'passwort',
-            'user_pass',
-            'USER_PASSWORD',
-            'pma_password',
-            'server[0][password]',
-        ]
-
-        username = None
-        password = None
-
-        for field in username_fields:
-            prefix = field + '='
-            if prefix in body:
-                value = body.split(prefix, 1)[1].split('&', 1)[0]
-                if value:
-                    username = value
-                    break
-
-        for field in password_fields:
-            prefix = field + '='
-            if prefix in body:
-                value = body.split(prefix, 1)[1].split('&', 1)[0]
-                if value:
-                    password = value
-                    break
-
-        if username and password:
-            return f'user={username}, pass={password}'
-        elif username:
-            return f'user={username}'
-        elif password:
-            return f'pass={password}'
-
-        return None
 
     def _handle_empty_connection(self, bot_ip: str) -> tuple[bytes, BearStorage]:
         """Handle a zero-byte connection (port scan with no data sent).
