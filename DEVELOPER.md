@@ -18,7 +18,7 @@ python3 mfh.py -c 80 -v
 python3 mfh.py -s 666 -v
 ```
 
-The config file auto-generates from `manyfaced/settings.toml.example` on first run via `manyfaced --generate-config`.
+The config file auto-generates via `manyfaced --generate-config` (uses `Config.generate_config_file()`). A reference template is available at `manyfaced/settings.toml.example`.
 
 ## Codebase Deep Dive
 

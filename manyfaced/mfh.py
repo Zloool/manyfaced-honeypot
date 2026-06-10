@@ -63,30 +63,19 @@ def run() -> None:
     # Acquire lockfile to prevent multiple instances
     _acquire_lockfile()
 
-    # Auto-generate XDG config file if none exists
+    # Auto-generate XDG config file if none exists (always uses Config.generate_config_file)
     xdg_config = os.path.join(
         os.environ.get('XDG_CONFIG_HOME', os.path.join(os.path.expanduser('~'), '.config')),
         'manyfaced',
         'config.toml',
     )
     if not os.path.isfile(xdg_config):
-        example = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.toml.example')
-        if os.path.isfile(example):
-            import shutil
-
-            os.makedirs(os.path.dirname(xdg_config), exist_ok=True)
-            shutil.copy2(example, xdg_config)
-            print(
-                f'[manyfaced] Generated config at {xdg_config} – edit it to customize.',
-                file=sys.stderr,
-            )
-        else:
-            new_cfg = Config.load()
-            new_cfg.generate_config_file(xdg_config)
-            print(
-                f'[manyfaced] Generated config at {xdg_config} – edit it to customize.',
-                file=sys.stderr,
-            )
+        new_cfg = Config.load()
+        path = new_cfg.generate_config_file(xdg_config)
+        print(
+            f'[manyfaced] Generated config at {path} – edit it to customize.',
+            file=sys.stderr,
+        )
 
     from manyfaced.common.arguments import parse
     from manyfaced.client import client
