@@ -103,12 +103,17 @@ class BaseHandler(abc.ABC):
         """Common processing logic. Override in subclasses as needed."""
         pass
 
-    def process_request_safe(self, data: dict[str, Any]) -> Any:
-        """Wrapper that catches exceptions during processing."""
+    def process_request_safe(self, data: dict[str, Any]) -> Any | None:
+        """Wrapper that catches exceptions during processing and logs them properly.
+
+        Calls the abstract process_request() method with error handling.
+        Returns None if an exception occurs (prevents crashes in production).
+        """
         try:
-            self._common_processing(data)
+            return self.process_request(data)
         except Exception as e:
-            print(f'Error processing request: {e}')
+            logger.error('Error processing request: %s', e, exc_info=True)
+            return None
 
 
 # ---------------------------------------------------------------------------
