@@ -52,13 +52,6 @@ def parse():
     )
 
     parser.add_argument(
-        '-p',
-        '--proxy',
-        action='store_true',
-        help='set this argument if you want to put honeypot behind proxy',
-    )
-
-    parser.add_argument(
         '--generate-config',
         action='store_true',
         dest='generate_config',
