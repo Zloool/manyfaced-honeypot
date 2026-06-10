@@ -258,7 +258,7 @@ test/
 
 3. **AUTHORIZED_BEANS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
 
-4. **geoip2 dependency** — The `python-geoip-geolite2` package requires a GeoLite2 database to be installed separately. Without it, country/continent fields will be empty.
+4. **geoip2 dependency** — The `geoip2` package requires a MaxMind GeoLite2 `.mmdb` database to be installed separately. Without it, country/continent fields will be empty.
 
 ## Handler Coverage Analysis
 
