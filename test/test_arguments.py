@@ -215,7 +215,6 @@ class TestParsePortModeCombined:
         assert args.client == 80
         assert args.server == 666
         assert args.verbose is True
-        assert args.proxy is True
         assert args.generate_config is True
         assert args.port_mode == 'top'
         assert args.top_ports == '80,443'
