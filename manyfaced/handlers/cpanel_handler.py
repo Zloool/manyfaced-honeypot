@@ -15,6 +15,8 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import CPANEL_HTTP
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ class CPanelHandler(HTTPHandlerBase):
     """cPanel/WHM honeypot handler."""
 
     domain = 'cpanel'
-    DETECTED_ID = 1
+    DETECTED_ID = CPANEL_HTTP
 
     def generate_response(
         self,

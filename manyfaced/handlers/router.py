@@ -114,10 +114,17 @@ class Router:
     None only if no match (should not happen if the table ends with Any()).
 
     ``explain(path)`` returns a debug string like "matched route 3 (wordpress)".
+
+    Handler instances are persisted across dispatch calls so that per-request
+    state (BotProfile dicts, request history, escalation levels) survives
+    within a single connection/session.
     """
 
     def __init__(self, routes: list[Route]) -> None:
         self._routes = routes
+        # Persist handler instances keyed by route index so BotProfile state
+        # survives across multiple requests on the same TCP connection.
+        self._handler_instances: dict[int, object] = {}
 
     # -- public API --------------------------------------------------------
 
@@ -130,13 +137,16 @@ class Router:
     ) -> tuple[bytes, int] | None:
         """Return ``(response_bytes, detected_id)`` or ``None``.
 
-        The matched handler is instantiated on each call so that per-request
-        state (BotProfile dicts) stays isolated between requests.
+        The matched handler instance is reused across calls so that per-request
+        state (BotProfile dicts) persists within a session/connection.
         """
         for idx, route in enumerate(self._routes):
             if route.matcher.match(path):
                 try:
-                    handler = route.handler_cls()
+                    # Reuse existing handler or create new one for this route
+                    if idx not in self._handler_instances:
+                        self._handler_instances[idx] = route.handler_cls()
+                    handler = self._handler_instances[idx]
                     response_bytes, detected_flag = handler.generate_response(
                         path=path,
                         raw_request=raw_request,
@@ -154,6 +164,10 @@ class Router:
                 except Exception as e:
                     logger.warning('Handler %s failed for path %s: %s', route.name, path, e)
         return None  # pragma: no cover – should never happen with Any() catch-all
+
+    def clear_handler_instances(self) -> None:
+        """Clear persisted handler instances (e.g., at end of connection)."""
+        self._handler_instances.clear()
 
     def explain(self, path: str) -> str:
         """Return a debug string for the matched route."""

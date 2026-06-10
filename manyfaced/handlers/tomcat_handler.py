@@ -15,6 +15,8 @@ import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
+from manyfaced.common.status import TOMCAT_HTTP
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ class TomcatHandler(HTTPHandlerBase):
     """Apache Tomcat honeypot handler."""
 
     domain = 'tomcat'
-    DETECTED_ID = 1
+    DETECTED_ID = TOMCAT_HTTP
 
     def generate_response(
         self,
