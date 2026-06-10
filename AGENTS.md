@@ -31,7 +31,7 @@ systemd/                # manyfaced.service + logrotate config
 3. **Lint/format:** `ruff check . && ruff format .`
 4. **Run a bot locally:** `python3 mfh.py -c 8888 -s 9999 -v`
 
-See `DEVELOPER.md` for architecture deep-dive and how to add new faces.
+See [`docs/DEVELOPER.md`](docs/DEVELOPER.md) for architecture deep-dive and how to add new faces.
 
 ## Deployment
 
@@ -56,7 +56,7 @@ The deploy pipeline (GitHub Actions) runs automatically on push to `master` — 
 
 ## Pointers
 
-- For repo workflow and how to ship a change, see [CONTRIBUTING.md](CONTRIBUTING.md)
+- For repo workflow and how to ship a change, see [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
 - For code style, the linter configs in `pyproject.toml` / `.ruff.toml` are authoritative
 - For per-PR checklist, see [.github/pull_request_template.md](.github/pull_request_template.md)
 
