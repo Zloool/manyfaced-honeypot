@@ -120,3 +120,7 @@ prod-backup/
 
 # Local CLI binaries (downloaded for local pre-checks)
 actionlint
+
+# AI coding assistant directories
+.claude/
+.cursor/
