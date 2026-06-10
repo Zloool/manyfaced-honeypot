@@ -363,6 +363,7 @@ class TomcatHandler(HTTPHandlerBase):
             f'Date: {now}\r\n'
             f'Content-Type: text/html;charset=UTF-8\r\n'
             f'Connection: close\r\n'
+            f'Content-Length: {len(body.encode("iso-8859-1"))}\r\n'
             f'\r\n'
             f'{body}'
         )

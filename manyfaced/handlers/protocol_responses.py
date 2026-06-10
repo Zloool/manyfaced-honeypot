@@ -85,6 +85,42 @@ def _fallback_html_body(path: str) -> str:
     )
 
 
+def _build_http_response(
+    body: str, content_type: str, path: str = '', status: str = '200 OK'
+) -> bytes:
+    """Build a complete HTTP response with Content-Length header.
+
+    Args:
+        body: The response body string.
+        content_type: The Content-Type header value.
+        path: The request path (used for Link header in WordPress responses).
+        status: The HTTP status line (default '200 OK').
+
+    Returns:
+        Complete HTTP response as bytes (iso-8859-1 encoded) with Content-Length.
+    """
+    now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+    body_encoded = body.encode('iso-8859-1')
+
+    headers = [
+        f'HTTP/1.1 {status}',
+        'Server: Apache/2.4.57 (Ubuntu)',
+        f'Date: {now}',
+        f'Content-Type: {content_type}',
+        f'Content-Length: {len(body_encoded)}',
+        'Connection: close',
+    ]
+
+    # Add WordPress-specific Link header if path suggests it
+    if '/' in path and ('wp-login' in path or 'xmlrpc' in path):
+        host = path.split('/')[1] if '/' in path else 'localhost'
+        headers.append(
+            f'Link: <https://{host}>; rel="https://api.w.org/"',
+        )
+
+    return '\r\n'.join(headers) + '\r\n\r\n' + body
+
+
 def fallback_response(path: str) -> bytes:
     """Generate a full HTTP 200 OK response for unmatched paths.
 
@@ -94,14 +130,5 @@ def fallback_response(path: str) -> bytes:
     Returns:
         Complete HTTP response as bytes (iso-8859-1 encoded).
     """
-    now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
     body = _fallback_html_body(path)
-    return (
-        f'HTTP/1.1 200 OK\r\n'
-        f'Server: Apache/2.4.57 (Ubuntu)\r\n'
-        f'Date: {now}\r\n'
-        f'Content-Type: text/html; charset=UTF-8\r\n'
-        f'Connection: close\r\n'
-        f'\r\n'
-        f'{body}'
-    ).encode('iso-8859-1')
+    return _build_http_response(body, 'text/html; charset=UTF-8', path)
