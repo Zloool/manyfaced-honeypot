@@ -177,8 +177,13 @@ class Router:
         return 'no match'
 
     @property
-    def routes(self) -> list[Route]:
+    def routes_count(self) -> int:
         """Number of routes in the table."""
+        return len(self._routes)
+
+    @property
+    def routes(self) -> list[Route]:
+        """The ordered list of Route objects."""
         return self._routes
 
 
