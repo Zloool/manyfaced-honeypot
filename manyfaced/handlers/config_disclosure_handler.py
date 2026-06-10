@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
+
+from manyfaced.common.status import CONFIG_DISCLOSURE_HTTP
 from manyfaced.handlers.config_responses import (
     fake_backup_sql,
     fake_composer_json,
@@ -48,7 +50,7 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
     """Config file disclosure honeypot handler."""
 
     domain = 'config_disclosure'
-    DETECTED_ID = 1
+    DETECTED_ID = CONFIG_DISCLOSURE_HTTP
 
     # Dispatch table: (path_check_fn, response_fn, content_type) tuples.
     # Evaluated in order; first match wins.

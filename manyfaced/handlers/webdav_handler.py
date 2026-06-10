@@ -13,6 +13,8 @@ import base64
 from datetime import datetime, timezone
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
+
+from manyfaced.common.status import WEBDAV_HTTP
 from manyfaced.handlers.webdav_responses import (
     directory_listing as _directory_listing,
     forbidden_response as _forbidden_response,
@@ -29,7 +31,7 @@ class WebDAVHandler(HTTPHandlerBase):
     """WebDAV honeypot handler."""
 
     domain = 'webdav'
-    DETECTED_ID = 1
+    DETECTED_ID = WEBDAV_HTTP
 
     def generate_response(
         self,
