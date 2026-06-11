@@ -316,6 +316,12 @@ class HTTPHandler:
         except Exception:
             logger.debug('Geo resolution failed for %s', bot_ip)
 
+        # Collect BotProfile data from all handler instances for this IP
+        router = _get_router()
+        profile_data = router.get_all_profiles_for_ip(bot_ip)
+        if profile_data:
+            bs.bot_profile_data = profile_data
+
         server_host = getattr(self.args, 'server_host', '127.0.0.1')
         server_port = getattr(self.args, 'server', None)
         if server_port is not None:
