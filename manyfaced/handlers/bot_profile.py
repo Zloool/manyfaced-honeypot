@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -50,6 +51,12 @@ class BotProfile:
     The dialogue is the most valuable artifact – it captures the complete
     interaction with the attacker, including exploit attempts, scanning
     patterns, and any credentials submitted.
+
+    Memory bounds:
+        - Per-profile ``request_history`` and ``dialogue`` are capped at
+          ``MAX_HISTORY`` entries (oldest evicted on append).
+        - The handler-level profile cache uses an LRU with a configurable
+          max size; when full, the least-recently-used profile is discarded.
     """
 
     # Escalation levels
@@ -68,6 +75,10 @@ class BotProfile:
         COMPROMISE: 'compromised',
         DEEP_EXPLOIT: 'deep_exploiting',
     }
+
+    # Memory bounds — per-profile caps
+    MAX_HISTORY = 500  # request_history entries
+    MAX_DIALOGUE = 500  # dialogue entries
 
     def __init__(self, bot_ip: str) -> None:
         self.bot_ip = bot_ip
@@ -93,6 +104,9 @@ class BotProfile:
         """Record a request made by this bot."""
         with self._lock:
             self.request_history.append(request)
+            # Evict oldest entries to stay within bounds
+            while len(self.request_history) > self.MAX_HISTORY:
+                self.request_history.pop(0)
             self.last_updated = datetime.now(timezone.utc)
             self._analyze_request(request)
             # Extract metadata from first request
@@ -152,6 +166,9 @@ class BotProfile:
                 },
             }
             self.dialogue.append(dialogue_entry)
+            # Evict oldest entries to stay within bounds
+            while len(self.dialogue) > self.MAX_DIALOGUE:
+                self.dialogue.pop(0)
             logger.info(
                 'Recorded dialogue entry #%d for %s (path=%s, method=%s)',
                 dialogue_entry['sequence'],

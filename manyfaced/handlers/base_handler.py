@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 from abc import abstractmethod
+from collections import OrderedDict
 from typing import Any
 
 from manyfaced.common.myenc import AESCipher
@@ -138,8 +139,12 @@ class HTTPHandlerBase(abc.ABC):
     # Detected ID value for this service
     DETECTED_ID: int = 1
 
+    # Maximum number of bot profiles per handler (LRU eviction when exceeded)
+    MAX_PROFILES: int = 1000
+
     def __init__(self) -> None:
-        self.bot_profiles: dict[str, BotProfile] = {}
+        # OrderedDict-based LRU cache — most recently used item is at the end
+        self.bot_profiles: OrderedDict[str, BotProfile] = OrderedDict()
         self._lock = threading.RLock()
         self._response_count: int = 0
 
@@ -164,18 +169,38 @@ class HTTPHandlerBase(abc.ABC):
         """
 
     def get_or_create_profile(self, bot_ip: str) -> BotProfile:
-        """Get existing profile or create a new one for the bot."""
+        """Get existing profile or create a new one for the bot.
+
+        Uses an LRU cache with a configurable max size (MAX_PROFILES). When the
+        cache is full, the least-recently-used profile is evicted to prevent
+        unbounded memory growth.
+        """
         with self._lock:
-            if bot_ip not in self.bot_profiles:
-                profile = BotProfile(bot_ip=bot_ip)
-                self.bot_profiles[bot_ip] = profile
+            if bot_ip in self.bot_profiles:
+                # Move to end (most recently used) — only for OrderedDict
+                if hasattr(self.bot_profiles, 'move_to_end'):
+                    self.bot_profiles.move_to_end(bot_ip)
+                return self.bot_profiles[bot_ip]
+
+            # Evict least-recently-used profile if at capacity
+            while len(self.bot_profiles) >= self.MAX_PROFILES:
+                evicted_ip, evicted_profile = self.bot_profiles.popitem(last=False)
                 logger.info(
-                    'Created new BotProfile for %s (session=%s, domain=%s)',
-                    bot_ip,
-                    profile.session_id,
+                    'Evicted LRU BotProfile for %s (domain=%s, cache_size=%d)',
+                    evicted_ip,
                     self.domain,
+                    len(self.bot_profiles),
                 )
-            return self.bot_profiles[bot_ip]
+
+            profile = BotProfile(bot_ip=bot_ip)
+            self.bot_profiles[bot_ip] = profile
+            logger.info(
+                'Created new BotProfile for %s (session=%s, domain=%s)',
+                bot_ip,
+                profile.session_id,
+                self.domain,
+            )
+            return profile
 
     def handle_login(
         self,
@@ -229,9 +254,17 @@ class HTTPHandlerBase(abc.ABC):
         return b'HTTP/1.1 302 Found\r\nLocation: /wp-admin/\r\n\r\n'
 
     def get_profile(self, bot_ip: str) -> BotProfile | None:
-        """Get the bot's profile, or None if not found."""
+        """Get the bot's profile, or None if not found.
+
+        Moves the profile to end (most recently used) for LRU tracking.
+        """
         with self._lock:
-            return self.bot_profiles.get(bot_ip)
+            if bot_ip in self.bot_profiles:
+                # Move to end (most recently used) — only for OrderedDict
+                if hasattr(self.bot_profiles, 'move_to_end'):
+                    self.bot_profiles.move_to_end(bot_ip)
+                return self.bot_profiles[bot_ip]
+            return None
 
     def get_all_profiles(self) -> list[BotProfile]:
         """Get all bot profiles."""
