@@ -60,6 +60,8 @@ class BearStorage:
                 self.ua = ua_val
         self.isDetected = is_detected
         self.hostname = hostname
+        # Bot profile data — accumulated state (escalation, dialogue, history) for this IP
+        self.bot_profile_data: dict[str, Any] | None = None
         # Reverse-DNS and geolocation moved to async context (see resolve_dns_name, resolve_geo)
 
     def resolve_dns_name(self, ip: str, timeout: float = 1.0) -> str:

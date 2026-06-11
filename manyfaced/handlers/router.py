@@ -186,6 +186,22 @@ class Router:
         """The ordered list of Route objects."""
         return self._routes
 
+    def get_all_profiles_for_ip(self, bot_ip: str) -> dict[str, Any]:
+        """Collect BotProfile data for a given IP across all handler instances.
+
+        Returns a dict keyed by domain name with each value being the full report
+        from that handler's BotProfile (if one exists).  Only HTTPHandlerBase
+        subclasses are inspected.
+        """
+        result: dict[str, Any] = {}
+        for idx, instance in self._handler_instances.items():
+            if hasattr(instance, 'get_profile'):
+                profile = instance.get_profile(bot_ip)
+                if profile is not None:
+                    domain = getattr(instance, 'domain', f'route_{idx}')
+                    result[domain] = profile.get_full_report()
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Singleton (populated by routes.py at import time)
