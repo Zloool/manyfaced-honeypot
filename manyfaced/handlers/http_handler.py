@@ -7,8 +7,6 @@ to protocol_responses module; report queue management to report_queue module.
 
 from __future__ import annotations
 
-import os
-import random
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -37,22 +35,18 @@ from manyfaced.common.status import (
 from manyfaced.handlers.protocol_responses import (
     fallback_response,
     fake_ssh_banner,
-    ftp_banners,
     non_http_response,
 )
-from manyfaced.handlers.redis_handler import generate_redis_response, extract_redis_credentials
+from manyfaced.handlers.redis_handler import generate_redis_response
 from manyfaced.handlers.mongodb_handler import (
     generate_mongodb_response,
-    extract_mongodb_credentials,
 )
 from manyfaced.handlers.telnet_handler import (
     generate_telnet_response,
-    extract_telnet_credentials,
-    generate_telnet_greeting,
 )
-from manyfaced.handlers.rdp_handler import generate_rdp_response, extract_rdp_credentials
-from manyfaced.handlers.vnc_handler import generate_vnc_response, extract_vnc_credentials
-from manyfaced.handlers.report_queue import _get_report_queue, shutdown_report_executor
+from manyfaced.handlers.rdp_handler import generate_rdp_response
+from manyfaced.handlers.vnc_handler import generate_vnc_response
+from manyfaced.handlers.report_queue import _get_report_queue
 
 logger = get_logger(__name__)
 
@@ -228,7 +222,6 @@ class HTTPHandler:
 
     def process_request(self, data):
         """Process an incoming HTTP request."""
-        from manyfaced.client.client import send_report  # noqa: PLC0415
 
         bot_ip = data['ip']
         raw_request = data['raw_request']
@@ -326,7 +319,7 @@ class HTTPHandler:
         server_port = getattr(self.args, 'server', None)
         if server_port is not None:
             q = _get_report_queue()
-            from manyfaced.client.client import send_report  # noqa: PLC0415
+            from manyfaced.client.report_sender import send_report  # noqa: PLC0415
 
             q.put(
                 (

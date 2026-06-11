@@ -16,7 +16,13 @@ three paths because higher-priority routes are listed first.
 from __future__ import annotations
 
 # Router types
-from manyfaced.handlers.router import Any, PathExact, PathPrefix, Route, Router
+from manyfaced.handlers.router import (  # noqa: F401
+    Any,
+    PathExact as PathExact,
+    PathPrefix as PathPrefix,
+    Route,
+    Router,
+)
 
 # Handler classes (imported lazily to avoid circular imports)
 
