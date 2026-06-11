@@ -138,6 +138,7 @@ class TestBearRequestsDataclassRepr:
             'country',
             'continent',
             'login',
+            'bot_profile_data',
         ]
 
     def test_dataclass_repr(self):
@@ -413,3 +414,54 @@ class TestInsertFunction:
         assert record['dns_name'] == ''
         assert record['country'] == ''
         assert record['continent'] == ''
+
+    def test_insert_includes_bot_profile_data(self):
+        """Insert() should include bot_profile_data when present on BearRequests."""
+        mock_storage = MagicMock()
+
+        profile_data = {
+            'wordpress': {
+                'bot_ip': '1.2.3.4',
+                'session_id': 'abc123',
+                'escalation_level': 2,
+                'request_count': 5,
+                'dialogue_count': 3,
+                'captured_credentials': [{'username': 'admin', 'password': 'secret'}],
+            }
+        }
+
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='POST /wp-login.php HTTP/1.1',
+            timestamp='2024-06-01 12:00:00',
+            parsed_request={'path': '/wp-login.php', 'command': 'POST'},
+            is_detected=1,
+            HIVELOGIN='testuser',
+            bot_profile_data=profile_data,
+        )
+
+        with patch('manyfaced.db.dbconnect.get_storage', return_value=mock_storage):
+            Insert(bear)
+
+        record = mock_storage.insert.call_args[0][0]
+        assert 'bot_profile_data' in record
+        assert record['bot_profile_data'] == profile_data
+
+    def test_insert_omits_bot_profile_data_when_none(self):
+        """Insert() should not include bot_profile_data key when it is None."""
+        mock_storage = MagicMock()
+
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='GET / HTTP/1.1',
+            timestamp='2024-06-01 12:00:00',
+            parsed_request={},
+            is_detected=0,
+            HIVELOGIN='',
+        )
+
+        with patch('manyfaced.db.dbconnect.get_storage', return_value=mock_storage):
+            Insert(bear)
+
+        record = mock_storage.insert.call_args[0][0]
+        assert 'bot_profile_data' not in record

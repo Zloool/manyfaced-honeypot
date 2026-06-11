@@ -25,11 +25,11 @@ class BearRequests:
     country: str = ''
     continent: str = ''
     login: str = ''
+    bot_profile_data: dict[str, Any] | None = None
 
 
 def Insert(bear: BearRequests) -> None:
     """Insert bear data into the configured storage backend."""
-    storage = get_storage()
     record: dict[str, Any] = {
         'ip': bear.ip,
         'raw_request': bear.raw_request,
@@ -43,4 +43,10 @@ def Insert(bear: BearRequests) -> None:
         'continent': bear.continent,
         'login': bear.login,
     }
+
+    # Bot profile data — accumulated state (escalation, dialogue, history) for this IP
+    if bear.bot_profile_data:
+        record['bot_profile_data'] = bear.bot_profile_data
+
+    storage = get_storage()
     storage.insert(record)
