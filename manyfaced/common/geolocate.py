@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
 import time
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
