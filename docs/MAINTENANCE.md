@@ -35,7 +35,7 @@ git push origin master
 ```
 
 ## Architecture
-- Client: multi-port listener → HTTPHandler → HandlerRegistry → ServiceHandler → send_report()
+- Client: multi-port listener → HTTPHandler → Router → ServiceHandler → send_report()
 - Server: single-port listener → ServerHandler → BearRequests → Insert() → SQLiteStorage
 - BearStorage: encapsulates bot data for report
 - HTTPRequest: wraps BaseHTTPRequestHandler for string parsing
