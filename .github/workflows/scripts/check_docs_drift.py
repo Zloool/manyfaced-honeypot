@@ -1,14 +1,90 @@
 #!/usr/bin/env python3
-"""Check for documentation drift between docs and code."""
+"""Check for documentation drift between docs and code.
 
+Extends basic file-existence checks with:
+- Config-parity: reconciles Config dataclass fields with .env.example vars
+  and generate_config_file() output (with documented allowlist).
+- CLI-flag reachability: asserts every argparse flag is referenced elsewhere
+  in the codebase (catches dead flags like --proxy).
+"""
+
+from __future__ import annotations
+
+import ast
 import os
 import re
 import sys
+from pathlib import Path
 
-errors = []
+errors: list[str] = []
 
-# Check 1: README's directory tree matches reality
-# This is a simplified check - just verify key files exist
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _read(path: str) -> str:
+    """Read a file, returning empty string if missing."""
+    try:
+        return Path(path).read_text()
+    except FileNotFoundError:
+        return ''
+
+
+def _check_file_exists(path: str) -> None:
+    """Add an error if the path doesn't exist."""
+    if not os.path.exists(path):
+        errors.append(f'{path} does not exist')
+
+
+# ── Allowlists & mappings (must be defined before checks that use them) ───────
+
+GENERATED_CONFIG_ALLOWLIST: set[str] = {
+    # Section header comments / structural markers
+    'honeypot',
+    'hive',
+    'database',
+    'security',
+    'logging',
+    'dump',
+    'lockfile',
+    # Derived/compound fields that are documented but not direct Config attrs
+    'authorized_bees',  # stored as dict, written as string in config file
+}
+
+TOML_TO_CONFIG_FIELD: dict[str, str] = {
+    'honeypot.honeyport': 'HONEYPORT',
+    'honeypot.honeyfolder': 'HONEYFOLDER',
+    'honeypot.port_mode': 'HONEY_PORT_MODE',
+    'honeypot.top_ports': 'HONEY_TOP_PORTS',
+    'hive.hivehost': 'HIVEHOST',
+    'hive.hiveport': 'HIVEPORT',
+    'hive.hivelogin': 'HIVELOGIN',
+    'hive.hivepass': 'HIVEPASS',
+    'database.backend': 'DB_BACKEND',
+    'database.path': 'DB_PATH',
+    'database.pg_host': 'DB_PG_HOST',
+    'database.pg_port': 'DB_PG_PORT',
+    'database.pg_db': 'DB_PG_DB',
+    'database.pg_user': 'DB_PG_USER',
+    'database.pg_password': 'DB_PG_PASSWORD',
+    'security.authorized_bees': 'AUTHORIZED_BEES',
+    'security.default_key': 'DEFAULT_KEY',
+    'logging.file': 'LOG_FILE',
+    'dump.dump_file': 'DUMP_FILE',
+    'lockfile.lockfile': 'LOCKFILE',
+}
+
+INTENTIONALLY_OMITTED: set[str] = {
+    'DB_BACKENDS',  # tuple of allowed backends — internal validation only, not user-configurable
+}
+
+ENV_EXAMPLE_ALLOWLIST: set[str] = {
+    'DB_BACKENDS',  # not a user-facing env var
+}
+
+
+# ── Check 1: README's directory tree matches reality ─────────────────────────
+
 readme_paths = [
     'manyfaced/mfh.py',
     'manyfaced/common/config.py',
@@ -20,51 +96,198 @@ readme_paths = [
 ]
 
 for path in readme_paths:
-    if not os.path.exists(path):
-        errors.append(f"README references {path} but it doesn't exist")
+    _check_file_exists(path)
 
-# Check 2: Config fields documented in CONFIG.md exist in Config dataclass
-# This is a simplified check - just verify the main config file exists
+
+# ── Check 2: Config fields documented in CONFIG.md exist in Config dataclass ─
+
 config_file = 'manyfaced/common/config.py'
-if not os.path.exists(config_file):
-    errors.append("CONFIG.md references manyfaced/common/config.py but it doesn't exist")
+_check_file_exists(config_file)
 
-# Check 3: CLI flags in arguments.py are documented in README
+if os.path.exists(config_file):
+    config_src = _read(config_file)
+
+    # Extract field names from the @dataclass(frozen=True) class Config: block
+    try:
+        tree = ast.parse(config_src)
+        config_fields: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'Config':
+                for item in node.body:
+                    if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                        config_fields.add(item.target.id)
+    except SyntaxError:
+        errors.append('Failed to parse Config dataclass from config.py')
+
+
+# ── Check 3: Config-parity — reconcile with .env.example ─────────────────────
+
+env_example = '.env.example'
+_check_file_exists(env_example)
+
+if os.path.exists(env_example):
+    env_src = _read(env_example)
+    # Extract HONEY_* variable names, strip prefix → match against Config fields
+    env_vars: set[str] = set()
+    for line in env_src.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        m = re.match(r'^HONEY_([A-Z_]+)=', line)
+        if m:
+            # Convert HONEY_DB_PG_HOST → DB_PG_HOST (strip section prefix)
+            env_vars.add(m.group(1))
+
+    missing_in_env = config_fields - env_vars - ENV_EXAMPLE_ALLOWLIST
+    extra_in_env = env_vars - config_fields
+    for f in sorted(missing_in_env):
+        errors.append(f'Config field {f} not found in .env.example')
+    for v in sorted(extra_in_env):
+        errors.append(f'.env.example var HONEY_{v} not a Config dataclass field')
+
+
+# ── Check 4: generate_config_file() output matches Config fields ─────────────
+
+if os.path.exists(config_file):
+    try:
+        tree = ast.parse(config_src)
+        gen_method_lines: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'Config':
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'generate_config_file':
+                        # Collect all string lines that produce config output:
+                        # 1. f-string parts (JoinedStr values)
+                        # 2. Plain string constants (e.g., 'authorized_bees = ""')
+                        for sub in ast.walk(item):
+                            if isinstance(sub, ast.JoinedStr):
+                                for val in sub.values:
+                                    if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                                        gen_method_lines.append(val.value)
+                            elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                                # Plain string literal used as a config line
+                                gen_method_lines.append(sub.value)
+
+        # Extract TOML keys from generated lines (e.g., "honeyport = {self.HONEYPORT}")
+        toml_keys: set[str] = set()
+        for line in gen_method_lines:
+            m = re.match(r'^\s*(\w+)\s*=', line)
+            if m:
+                toml_keys.add(m.group(1))
+
+        # Check that every TOML key maps to a known Config field or is in the allowlist
+        for key in sorted(toml_keys):
+            mapped_field = None
+            if key in config_fields:
+                mapped_field = key
+            else:
+                for toml_path, field_name in TOML_TO_CONFIG_FIELD.items():
+                    section, toml_key = toml_path.split('.', 1)
+                    if toml_key == key:
+                        mapped_field = field_name
+                        break
+
+            if mapped_field is None and key not in GENERATED_CONFIG_ALLOWLIST:
+                errors.append(
+                    f"generate_config_file() writes '{key}' but it's neither a "
+                    f'Config field nor in GENERATED_CONFIG_ALLOWLIST or TOML_TO_CONFIG_FIELD'
+                )
+
+        # Check that every Config field appears as a TOML key (or is intentionally omitted)
+        for cf in sorted(config_fields):
+            if cf in INTENTIONALLY_OMITTED:
+                continue  # skip fields that are intentionally not user-configurable
+            toml_key = None
+            for toml_path, field_name in TOML_TO_CONFIG_FIELD.items():
+                if field_name == cf:
+                    section, toml_key = toml_path.split('.', 1)
+                    break
+            if toml_key is not None and toml_key not in toml_keys:
+                errors.append(
+                    f'Config field {cf} has no corresponding TOML key '
+                    f"'{toml_key}' in generate_config_file()"
+                )
+
+    except SyntaxError:
+        errors.append('Failed to parse generate_config_file() from config.py')
+
+
+# ── Check 5: CLI flags in arguments.py are documented in README ───────────────
+
 args_file = 'manyfaced/common/arguments.py'
+_check_file_exists(args_file)
+
 if os.path.exists(args_file):
-    with open(args_file, 'r') as f:
-        args_content = f.read()
+    args_src = _read(args_file)
 
     # Extract --flag patterns, skip --help (auto-generated)
-    flags = re.findall(r'--([\w-]+)', args_content)
+    flags: list[str] = re.findall(r'--([\\w-]+)', args_src)
     flags = [f for f in flags if f != 'help']
 
-    with open('README.md', 'r') as f:
-        readme_content = f.read()
+    readme_content = _read('README.md')
 
     for flag in flags:
         # Check if the full flag is documented
         if f'--{flag}' not in readme_content:
-            # Also check if the short form is documented
             short_form = f'-{flag[0]}'
             if short_form not in readme_content:
                 errors.append(f'CLI flag --{flag} in arguments.py not documented in README')
 
-# Check 4: File paths mentioned in README exist
-# Match paths that look like actual file references
-readme_paths_to_check = set()
-for match in re.finditer(
-    r"(?:^|[\s`'\",;])((?:manyfaced|test|\.github)/[\w./-]+?)(?:[\s`'\",;]|$)",
-    readme_content,
-):
-    path = match.group(1)
-    # Clean up trailing punctuation
-    path = path.rstrip('`,;\'"')
-    readme_paths_to_check.add(path)
 
-for path in readme_paths_to_check:
-    if not os.path.exists(path):
-        errors.append(f"README references {path} but it doesn't exist")
+# ── Check 6: CLI-flag reachability — every argparse flag is referenced elsewhere ─
+
+if os.path.exists(args_file):
+    try:
+        args_tree = ast.parse(args_src)
+        arg_flags: set[str] = set()
+        for node in ast.walk(args_tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Attribute) and func.attr == 'add_argument':
+                    # Collect all string arguments to add_argument
+                    for call_arg in node.args:
+                        if isinstance(call_arg, ast.Constant) and isinstance(call_arg.value, str):
+                            arg_flags.add(call_arg.value)
+    except SyntaxError:
+        errors.append('Failed to parse argparse flags from arguments.py')
+
+    # For each flag, check it's referenced elsewhere in the codebase
+    for flag in sorted(arg_flags):
+        if flag.startswith('-'):
+            found = False
+            for pyfile in Path('.').rglob('*.py'):
+                if pyfile.name == 'arguments.py':
+                    continue
+                try:
+                    content = pyfile.read_text()
+                    if flag in content:
+                        found = True
+                        break
+                except (OSError, UnicodeDecodeError):
+                    pass
+            if not found:
+                errors.append(f'argparse flag {flag} defined but never referenced elsewhere')
+
+
+# ── Check 7: File paths mentioned in README exist ─────────────────────────────
+
+readme_content_full = _read('README.md')
+if readme_content_full:
+    readme_paths_to_check: set[str] = set()
+    for match in re.finditer(
+        r"(?:^|[\\s`'\\\",;])((?:manyfaced|test|\\.github)/[\\w./-]+?)(?:[\\s`'\\\",;]|$)",
+        readme_content_full,
+    ):
+        path = match.group(1)
+        # Clean up trailing punctuation
+        path = path.rstrip('`,;\'"')
+        readme_paths_to_check.add(path)
+
+    for path in sorted(readme_paths_to_check):
+        _check_file_exists(path)
+
+
+# ── Report ────────────────────────────────────────────────────────────────────
 
 if errors:
     print('Documentation drift detected:')
