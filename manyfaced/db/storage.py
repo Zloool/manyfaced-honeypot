@@ -11,6 +11,7 @@ import logging
 import os
 import sqlite3
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
 
@@ -182,6 +183,127 @@ class SQLiteStorage(StorageBackend):
     def db_path(self) -> str:
         """Return the path to the SQLite database file."""
         return self._db_path
+
+    def delete_old_records(self, days: int = 90) -> int:
+        """Delete records older than *days* days from the honeypot_bears table.
+
+        Args:
+            days: Number of days to retain. Records with timestamp older than
+                this many days will be deleted. Defaults to 90.
+
+        Returns:
+            Number of rows deleted.
+        """
+        if self._conn is None:
+            logger.error('SQLite storage is not initialised; skipping delete')
+            return 0
+
+        cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        try:
+            with self._lock:
+                cursor = self._conn.execute(
+                    'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < ?',
+                    (cutoff,),
+                )
+                count = cursor.fetchone()[0]
+
+                if count > 0:
+                    self._conn.execute(
+                        'DELETE FROM honeypot_bears WHERE timestamp < ?',
+                        (cutoff,),
+                    )
+                    self._conn.commit()
+                    logger.info('Deleted %d records older than %d days', count, days)
+
+                return count
+
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error deleting old records from SQLite storage')
+            return 0
+
+    def archive_old_records(self, days: int = 90, dest_db: str | None = None) -> str | None:
+        """Archive records older than *days* days to a separate database file.
+
+        Creates an archive table (honeypot_bears_archive) in the destination DB
+        and copies old records there before deleting them from the main table.
+
+        Args:
+            days: Number of days to retain. Records with timestamp older than
+                this many days will be archived. Defaults to 90.
+            dest_db: Path to the archive database file. If None, creates a file
+                named 'honeypot_archive_YYYYMMDD.sqlite' in the same directory
+                as the main database.
+
+        Returns:
+            Path to the created archive database, or None on failure.
+        """
+        if self._conn is None:
+            logger.error('SQLite storage is not initialised; skipping archive')
+            return None
+
+        cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        try:
+            with self._lock:
+                # Count records to archive
+                cursor = self._conn.execute(
+                    'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < ?',
+                    (cutoff,),
+                )
+                count = cursor.fetchone()[0]
+
+                if count == 0:
+                    logger.info('No records older than %d days to archive', days)
+                    return None
+
+                # Determine destination path
+                if dest_db is None:
+                    date_str = datetime.now().strftime('%Y%m%d')
+                    db_dir = os.path.dirname(self._db_path) or '.'
+                    dest_db = os.path.join(db_dir, f'honeypot_archive_{date_str}.sqlite')
+
+                # Create archive DB with same schema
+                archive_conn = sqlite3.connect(dest_db)
+                archive_conn.execute('PRAGMA journal_mode=WAL')
+                archive_conn.execute(
+                    _CREATE_TABLE_SQL.replace('honeypot_bears', 'honeypot_bears_archive')
+                )
+                archive_conn.commit()
+
+                # Copy old records to archive
+                rows = self._conn.execute(
+                    'SELECT * FROM honeypot_bears WHERE timestamp < ?',
+                    (cutoff,),
+                ).fetchall()
+
+                col_names = [
+                    desc[0]
+                    for desc in self._conn.execute(
+                        'SELECT * FROM honeypot_bears LIMIT 0'
+                    ).description
+                ]
+                placeholders = ','.join(['?' for _ in col_names])
+                insert_sql = f'INSERT INTO honeypot_bears_archive VALUES ({placeholders})'
+
+                with archive_conn:
+                    for row in rows:
+                        try:
+                            archive_conn.execute(insert_sql, row)
+                        except sqlite3.Error:
+                            logger.debug('Failed to archive row %s', row)
+
+                archive_conn.commit()
+                archive_conn.close()
+
+                # Delete archived records from main table
+                self._conn.execute('DELETE FROM honeypot_bears WHERE timestamp < ?', (cutoff,))
+                self._conn.commit()
+                logger.info('Archived %d records to %s', count, dest_db)
+
+                return dest_db
+
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error archiving old records from SQLite storage')
+            return None
 
     def __del__(self) -> None:
         self.close()
