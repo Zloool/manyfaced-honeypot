@@ -65,6 +65,10 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
         'continent': getattr(data, 'continent', '') or '',
         'login': getattr(data, 'login', '') or '',  # Captured credentials (user:pass or user only)
     }
+
+    # Bot profile data — accumulated state (escalation, dialogue, history) for this IP
+    if hasattr(data, 'bot_profile_data') and data.bot_profile_data:
+        data_dict['bot_profile_data'] = data.bot_profile_data
     identifier = sensor_id if sensor_id else client
     message = (identifier + ':').encode()
     message += cypher.encrypt(json.dumps(data_dict).encode()).encode()

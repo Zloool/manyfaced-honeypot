@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     detected_id  INTEGER,
     hive_id      INTEGER,
     login        TEXT,
+    bot_profile_data TEXT,
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -34,9 +35,9 @@ INSERT_SQL = """\
 INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data)
 VALUES
-    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 CREATE_TABLE_PG_SQL = """\
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     detected_id  INTEGER,
     hive_id      INTEGER,
     login        VARCHAR(255),
+    bot_profile_data TEXT,
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -65,9 +67,9 @@ INSERT_PG_SQL = """\
 INSERT INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data)
 VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT(bot_ip, timestamp) DO NOTHING
 """
 
@@ -81,7 +83,7 @@ def extract_record_fields(record: dict) -> tuple:
         record: Dict with keys like 'ip', 'parsed_request', 'timestamp', etc.
 
     Returns:
-        Tuple of 15 values matching the INSERT statement placeholders.
+        Tuple of 16 values matching the INSERT statement placeholders.
     """
     parsed = record.get('parsed_request') or {}
 
@@ -108,6 +110,18 @@ def extract_record_fields(record: dict) -> tuple:
     hive_id = record.get('hive_id')
     login = record.get('login') or ''
 
+    # Bot profile data — JSON-serialised full report from BotProfile.get_full_report()
+    bot_profile_data = record.get('bot_profile_data')
+    if isinstance(bot_profile_data, dict):
+        import json  # noqa: PLC0415
+
+        try:
+            bot_profile_data = json.dumps(bot_profile_data)
+        except (TypeError, ValueError):
+            bot_profile_data = None
+    elif bot_profile_data is not None:
+        bot_profile_data = str(bot_profile_data)
+
     # Convert timestamps to text if needed
     from datetime import datetime  # noqa: PLC0415
 
@@ -131,4 +145,5 @@ def extract_record_fields(record: dict) -> tuple:
         int(detected_id) if detected_id is not None else None,
         int(hive_id) if hive_id is not None else None,
         login,
+        bot_profile_data,
     )
