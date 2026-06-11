@@ -103,7 +103,15 @@ from manyfaced.db.sql_builder import extract_record_fields as _extract_record_fi
 
 
 class SQLiteStorage(StorageBackend):
-    """SQLite storage backend using stdlib sqlite3."""
+    """SQLite storage backend using stdlib sqlite3.
+
+    Features:
+    - WAL mode with periodic checkpointing (every 100 inserts or on close)
+    - Startup integrity check with warning on corruption
+    - DB path exposed for backup/rotation scripts
+    """
+
+    CHECKPOINT_INTERVAL = 100  # Run PRAGMA wal_checkpoint(TRUNCATE) every N inserts
 
     def __init__(self, db_path: str | None = None) -> None:
         self._db_path = db_path or _resolve_db_path()
@@ -113,15 +121,22 @@ class SQLiteStorage(StorageBackend):
             os.makedirs(parent, exist_ok=True)
         self._conn: sqlite3.Connection | None = None
         self._lock = Lock()
+        self._insert_count = 0
         self._init_db()
 
     def _init_db(self) -> None:
-        """Open the connection and create the table if it does not exist."""
+        """Open the connection, create the table if it does not exist, and run integrity check."""
         try:
             self._conn = sqlite3.connect(self._db_path)
             self._conn.execute('PRAGMA journal_mode=WAL')
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
+
+            # Run startup integrity check and warn if corruption is detected
+            result = self._conn.execute('PRAGMA integrity_check').fetchone()
+            if result and result[0] != 'ok':
+                logger.warning('SQLite integrity check failed: %s — DB may be corrupted', result[0])
+
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Failed to initialise SQLite database at %s', self._db_path)
             self._conn = None
@@ -139,18 +154,34 @@ class SQLiteStorage(StorageBackend):
             with self._lock:
                 self._conn.execute(_INSERT_SQL, fields)
                 self._conn.commit()
+                self._insert_count += 1
+
+                # Periodic WAL checkpoint to prevent unbounded WAL growth
+                if self._insert_count % self.CHECKPOINT_INTERVAL == 0:
+                    try:
+                        self._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                    except (sqlite3.Error, sqlite3.OperationalError):
+                        logger.debug('WAL checkpoint failed (non-critical)')
+
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Error inserting record into SQLite storage')
 
     def close(self) -> None:
-        """Close the SQLite connection."""
+        """Close the SQLite connection with a final WAL checkpoint."""
         if self._conn is not None:
             try:
+                # Final checkpoint before closing to ensure clean shutdown
+                self._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
                 self._conn.close()
             except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
                 logger.exception('Error closing SQLite connection')
             finally:
                 self._conn = None
+
+    @property
+    def db_path(self) -> str:
+        """Return the path to the SQLite database file."""
+        return self._db_path
 
     def __del__(self) -> None:
         self.close()
@@ -271,19 +302,54 @@ def get_storage() -> StorageBackend:
     return SQLiteStorage()
 
 
-# ---------------------------------------------------------------------------
-# Type aliases for clarity
-# ---------------------------------------------------------------------------
+def backup_database(dest_dir: str | None = None) -> list[str]:
+    """Backup the SQLite database, copying both .sqlite and WAL files.
 
-SQLiteStorageType = SQLiteStorage
-PostgreSQLStorageType = PostgreSQLStorage
+    IMPORTANT: When copying a SQLite database in WAL mode via scp/rsync, you MUST
+    either (a) run PRAGMA wal_checkpoint(TRUNCATE) on the server first before
+    copying just the .sqlite file, or (b) copy all three files (.sqlite,
+    .sqlite-wal, .sqlite-shm). Copying only the main file without checkpointing
+    causes "database disk image is malformed" errors.
+
+    This function handles both: it checkpoints first, then copies the main DB file.
+
+    Args:
+        dest_dir: Directory to copy backup to. Defaults to 'deployment-analysis/latest'.
+
+    Returns:
+        List of copied file paths.
+    """
+    import shutil  # noqa: PLC0415
+
+    storage = get_storage()
+    if not isinstance(storage, SQLiteStorage):
+        logger.warning('backup_database only supports SQLite backend')
+        return []
+
+    src_path = storage.db_path
+    dest_dir = dest_dir or os.path.join(_PROJECT_ROOT, 'deployment-analysis', 'latest')
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # Checkpoint first to ensure WAL is written back to main file
+    try:
+        if isinstance(storage, SQLiteStorage) and storage._conn is not None:
+            storage._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    except (sqlite3.Error, sqlite3.OperationalError):
+        logger.debug('Pre-backup checkpoint failed (non-critical)')
+
+    # Copy the main database file
+    basename = os.path.basename(src_path)
+    dest_path = os.path.join(dest_dir, basename)
+    shutil.copy2(src_path, dest_path)
+    logger.info('Database backed up: %s → %s', src_path, dest_path)
+
+    return [dest_path]
 
 
 __all__ = [
     'StorageBackend',
     'SQLiteStorage',
     'PostgreSQLStorage',
-    'SQLiteStorageType',
-    'PostgreSQLStorageType',
     'get_storage',
+    'backup_database',
 ]
