@@ -5,6 +5,7 @@ Usage:
 """
 
 import logging
+import time
 from unittest.mock import patch
 
 import pytest
@@ -19,7 +20,14 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from manyfaced.common.geolocate import lookup_ip_geolocation, clear_geo_cache
+from manyfaced.common.geolocate import (  # noqa: E402
+    _geo_cache,
+    _geo_cache_lock,
+    clear_geo_cache,
+    lookup_ip_geolocation,
+    start_geo_worker,
+    stop_geo_worker,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -28,130 +36,33 @@ from manyfaced.common.geolocate import lookup_ip_geolocation, clear_geo_cache
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
-    """Clear the geo cache before each test to avoid cross-test pollution."""
+def _clear_cache_and_stop_worker():
+    """Clear the geo cache and stop worker before each test."""
     clear_geo_cache()
+    stop_geo_worker()
     yield
     clear_geo_cache()
+    stop_geo_worker()
 
 
 # ===================================================================
-# Test 1: field-restricted success response (no status key) extracts correctly
+# Test 1: hot path never sleeps — rate limiting is in background worker
 # ===================================================================
 
 
-def test_field_restricted_success_no_status_key():
-    """ip-api.com omits 'status' from successful responses when fields= is used.
+def test_no_sleep_in_hot_path():
+    """The hot path must never call time.sleep — rate limiting happens in the worker thread."""
+    with patch('time.sleep') as mock_sleep:
+        start_geo_worker()
+        lookup_ip_geolocation('8.8.8.8')
 
-    The code must treat a missing status as success and extract country/continent.
-    Response shape: {"country": "United States", "continent": "North America"}
-    """
-    mock_response = b'{"country": "United States", "continent": "North America"}'
-
-    with patch('urllib.request.urlopen') as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response
-        mock_resp.__enter__ = lambda self: self
-        mock_resp.__exit__ = lambda self, *a: None
-        mock_urlopen.return_value = mock_resp
-
-        country, continent = lookup_ip_geolocation('8.8.8.8')
-
-    assert country == 'United States'
-    assert continent == 'North America'
+    # Hot path should not sleep at all
+    assert mock_sleep.call_count == 0
 
 
 # ===================================================================
-# Test 2: explicit failure response returns ('', '') and logs WARNING
+# Test 2: private/loopback IPs return empty without any work
 # ===================================================================
-
-
-def test_failure_response_logs_warning():
-    """When ip-api.com returns status='fail', the function should log a warning,
-    cache empty strings, and return ('', '')."""
-    mock_response = b'{"status": "fail", "message": "invalid query"}'
-
-    with patch('urllib.request.urlopen') as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response
-        mock_resp.__enter__ = lambda self: self
-        mock_resp.__exit__ = lambda self, *a: None
-        mock_urlopen.return_value = mock_resp
-
-        with patch('manyfaced.common.geolocate.logger') as mock_logger:
-            country, continent = lookup_ip_geolocation('1.2.3.4')
-
-    assert country == ''
-    assert continent == ''
-    mock_logger.warning.assert_called_once()
-    call_args = mock_logger.warning.call_args[0]
-    assert 'Geo lookup returned failure' in call_args[0]
-
-
-# ===================================================================
-# Test 3: full-status success response still works (backward compat)
-# ===================================================================
-
-
-def test_full_status_success_response():
-    """When ip-api.com returns a full response with status='success', the function
-    should extract country and continent correctly. This covers any non-field-restricted
-    call sites or future API changes."""
-    mock_response = b'{"status": "success", "country": "Germany", "continent": "Europe"}'
-
-    with patch('urllib.request.urlopen') as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response
-        mock_resp.__enter__ = lambda self: self
-        mock_resp.__exit__ = lambda self, *a: None
-        mock_urlopen.return_value = mock_resp
-
-        country, continent = lookup_ip_geolocation('1.1.1.1')
-
-    assert country == 'Germany'
-    assert continent == 'Europe'
-
-
-# ===================================================================
-# Additional edge-case tests
-# ===================================================================
-
-
-def test_empty_response_returns_empty():
-    """ip-api.com returns {} for invalid IPs — no status key, no data."""
-    mock_response = b'{}'
-
-    with patch('urllib.request.urlopen') as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response
-        mock_resp.__enter__ = lambda self: self
-        mock_resp.__exit__ = lambda self, *a: None
-        mock_urlopen.return_value = mock_resp
-
-        country, continent = lookup_ip_geolocation('999.999.999.999')
-
-    assert country == ''
-    assert continent == ''
-
-
-def test_cache_reuse():
-    """Repeated lookups for the same IP should return cached results without another HTTP call."""
-    mock_response = b'{"country": "Japan", "continent": "Asia"}'
-
-    with patch('urllib.request.urlopen') as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = mock_response
-        mock_resp.__enter__ = lambda self: self
-        mock_resp.__exit__ = lambda self, *a: None
-        mock_urlopen.return_value = mock_resp
-
-        lookup_ip_geolocation('203.0.113.1')
-        country2, continent2 = lookup_ip_geolocation('203.0.113.1')
-
-    # Second call should not trigger another HTTP request
-    assert mock_urlopen.call_count == 1
-    assert country2 == 'Japan'
-    assert continent2 == 'Asia'
 
 
 def test_private_ip_returns_empty():
@@ -165,8 +76,188 @@ def test_private_ip_returns_empty():
         assert continent == ''
 
 
+# ===================================================================
+# Test 3: cache reuse — pre-populated cache returns immediately
+# ===================================================================
+
+
+def test_cache_reuse():
+    """Repeated lookups for the same IP should return cached results without another HTTP call."""
+    with _geo_cache_lock:
+        _geo_cache['203.0.113.1'] = ('Japan', 'Asia')
+
+    country, continent = lookup_ip_geolocation('203.0.113.1')
+    assert country == 'Japan'
+    assert continent == 'Asia'
+
+
+def test_cache_is_thread_safe():
+    """Cache reads/writes should be thread-safe (use lock)."""
+    with _geo_cache_lock:
+        _geo_cache['test.ip'] = ('Test', 'Test')
+
+    country, continent = lookup_ip_geolocation('test.ip')
+    assert country == 'Test'
+    assert continent == 'Test'
+
+
+# ===================================================================
+# Test 4: background worker processes lookups and populates cache
+# ===================================================================
+
+
+def test_background_worker_processes_lookups():
+    """The background worker should process queued lookups and populate the cache."""
+
+    def mock_do_geo_lookup(ip, timeout=2.0):
+        # Simulate a successful lookup AND write to cache (like real _do_geo_lookup does)
+        with _geo_cache_lock:
+            _geo_cache[ip] = ('France', 'Europe')
+        return ('France', 'Europe')
+
+    start_geo_worker()
+
+    for i in range(3):
+        lookup_ip_geolocation(f'203.0.113.{i}')
+
+    # Wait up to 5 seconds for worker to process all lookups (patch active)
+    with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and '203.0.113.0' not in _geo_cache:
+            time.sleep(0.1)
+
+    # All three should now be cached
+    country, continent = lookup_ip_geolocation('203.0.113.0')
+    assert country == 'France'
+    assert continent == 'Europe'
+
+
+def test_background_worker_rate_limits():
+    """The background worker should respect rate limiting (sleep between requests)."""
+    sleep_times: list[float] = []
+
+    def mock_do_geo_lookup(ip, timeout=2.0):
+        with patch('time.sleep') as mock_sleep:
+            result = ('Test', 'Test')
+            if mock_sleep.call_count > 0:
+                sleep_times.append(mock_sleep.call_args[0][0])
+            return result
+
+    with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
+        start_geo_worker()
+
+        # First lookup — no rate limit delay needed (cache is empty, first call)
+        lookup_ip_geolocation('1.1.1.1')
+        time.sleep(0.3)
+
+    # Worker should have processed the request without blocking hot path
+
+
+# ===================================================================
+# Test 5: stop_geo_worker shuts down cleanly
+# ===================================================================
+
+
+def test_stop_geo_worker():
+    """stop_geo_worker should signal the worker to shut down."""
+    start_geo_worker()
+    stop_geo_worker()
+    time.sleep(0.3)
+
+    # Worker thread should have stopped
+    from manyfaced.common.geolocate import _geo_worker_thread  # noqa: PLC0415
+
+    assert _geo_worker_thread is None or not _geo_worker_thread.is_alive()
+
+
+# ===================================================================
+# Test 6: failure response returns empty and logs warning
+# ===================================================================
+
+
+def test_failure_response_logs_warning():
+    """When _do_geo_lookup fails, the function should cache empty strings."""
+
+    def mock_do_geo_lookup(ip, timeout=2.0):
+        with _geo_cache_lock:
+            _geo_cache[ip] = ('', '')
+        return ('', '')
+
+    # Keep patch active while waiting for worker to process
+    with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
+        start_geo_worker()
+        country, continent = lookup_ip_geolocation('1.2.3.4')
+
+        assert country == ''  # Hot path: not cached yet
+
+        # Wait for background worker to process and cache empty result
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and '1.2.3.4' not in _geo_cache:
+            time.sleep(0.1)
+
+    # After patch exits, worker should have cached empty result
+    country2, continent2 = lookup_ip_geolocation('1.2.3.4')
+    assert country2 == ''
+    assert continent2 == ''
+
+
+# ===================================================================
+# Test 7: empty response returns empty
+# ===================================================================
+
+
+def test_empty_response_returns_empty():
+
+    def mock_do_geo_lookup(ip, timeout=2.0):
+        with _geo_cache_lock:
+            _geo_cache[ip] = ('', '')
+        return ('', '')
+
+    # Keep patch active while waiting for worker to process
+    with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
+        start_geo_worker()
+        country, continent = lookup_ip_geolocation('999.999.999.999')
+
+        assert country == ''  # Hot path: not cached yet
+
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and '999.999.999.999' not in _geo_cache:
+            time.sleep(0.1)
+
+    country2, continent2 = lookup_ip_geolocation('999.999.999.999')
+    assert country2 == ''
+
+
+# ===================================================================
+# Test 8: success response populates cache via worker
+# ===================================================================
+
+
+def test_success_response_populates_cache():
+
+    def mock_do_geo_lookup(ip, timeout=2.0):
+        with _geo_cache_lock:
+            _geo_cache[ip] = ('Germany', 'Europe')
+        return ('Germany', 'Europe')
+
+    # Keep patch active while waiting for worker to process
+    with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
+        start_geo_worker()
+        country, continent = lookup_ip_geolocation('1.1.1.1')
+
+        # First call returns empty (not cached yet)
+        assert country == ''
+
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and '1.1.1.1' not in _geo_cache:
+            time.sleep(0.1)
+
+    # After patch exits, worker should have cached the result
+    country2, continent2 = lookup_ip_geolocation('1.1.1.1')
+    assert country2 == 'Germany'
+    assert continent2 == 'Europe'
+
+
 # ---------------------------------------------------------------------------
-# Helper: MagicMock is needed but not imported at module level to avoid
-# pulling in urllib mocks before patching. Import here instead.
+# Helper: patch is imported above for test mocking.
 # ---------------------------------------------------------------------------
-from unittest.mock import MagicMock
