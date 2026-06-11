@@ -19,6 +19,7 @@ from manyfaced.common.credential_extractor import extract_http_credentials, form
 from manyfaced.common.httphandler import HTTPRequest
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.protocol import detect_protocol, get_protocol_info
+from manyfaced.common.alerting import notify_credential_capture
 from manyfaced.common.status import (
     EMPTY_CONNECTION,
     SSH_CLIENT,
@@ -267,6 +268,12 @@ class HTTPHandler:
         if login_creds:
             bs.login = login_creds
             logger.info('Captured HTTP credentials from %s at %s', bot_ip, path)
+            notify_credential_capture(
+                ip=bot_ip,
+                credentials=login_creds,
+                path=path,
+                hostname=settings.HIVELOGIN,
+            )
 
         self._enrich_and_send(bs, bot_ip)
         return output_data
