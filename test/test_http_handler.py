@@ -665,3 +665,120 @@ class TestNonHTTPEnrichment:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+# ---------------------------------------------------------------------------
+# BotProfile Memory Bounds Tests (issue #111)
+# ---------------------------------------------------------------------------
+
+
+class TestBotProfileMemoryBounds:
+    """Tests for BotProfile memory bounds enforcement."""
+
+    def test_request_history_eviction(self):
+        """request_history should evict oldest entries when exceeding MAX_HISTORY."""
+        from manyfaced.handlers.bot_profile import BotProfile
+
+        profile = BotProfile(bot_ip='1.2.3.4')
+        # Fill beyond the cap
+        for i in range(profile.MAX_HISTORY + 10):
+            profile.record_request({'path': f'/path{i}', 'method': 'GET'})
+
+        assert len(profile.request_history) == profile.MAX_HISTORY
+        # Oldest entries should be evicted (first 10 missing)
+        paths = [r['path'] for r in profile.request_history]
+        assert paths[0] == '/path10'
+        assert paths[-1] == '/path509'
+
+    def test_dialogue_eviction(self):
+        """dialogue should evict oldest entries when exceeding MAX_DIALOGUE."""
+        from manyfaced.handlers.bot_profile import BotProfile
+
+        profile = BotProfile(bot_ip='5.6.7.8')
+        # Fill beyond the cap
+        for i in range(profile.MAX_DIALOGUE + 10):
+            profile.record_interaction(
+                request={'path': f'/dialogue{i}', 'method': 'GET', 'raw': ''},
+                response=b'HTTP/1.1 200 OK\r\n\r\n',
+                detected=1,
+            )
+
+        assert len(profile.dialogue) == profile.MAX_DIALOGUE
+        # Oldest entries should be evicted
+        paths = [d['request']['path'] for d in profile.dialogue]
+        assert paths[0] == '/dialogue10'
+        assert paths[-1] == '/dialogue509'
+
+
+class TestHandlerLRUCache:
+    """Tests for HTTPHandlerBase LRU bot_profiles cache (issue #111)."""
+
+    @pytest.fixture
+    def handler(self):
+        """Create a minimal GenericHandler instance."""
+        from manyfaced.handlers.generic_handler import GenericHandler
+
+        return GenericHandler()
+
+    def test_lru_eviction_on_capacity(self, handler):
+        """When MAX_PROFILES is exceeded, least-recently-used profile should be evicted."""
+        # Temporarily lower the cap for faster testing
+        original_max = handler.MAX_PROFILES
+        handler.MAX_PROFILES = 5
+
+        try:
+            # Create 7 profiles (exceeds capacity of 5)
+            for i in range(7):
+                handler.get_or_create_profile(f'10.0.0.{i}')
+
+            assert len(handler.bot_profiles) == 5
+            # First 2 IPs should have been evicted (LRU)
+            assert '10.0.0.0' not in handler.bot_profiles
+            assert '10.0.0.1' not in handler.bot_profiles
+            assert '10.0.0.2' in handler.bot_profiles
+            assert '10.0.0.6' in handler.bot_profiles
+
+        finally:
+            handler.MAX_PROFILES = original_max
+
+    def test_lru_access_moves_to_end(self, handler):
+        """Accessing a profile should move it to the end (most recently used)."""
+        # Lower cap for testing
+        original_max = handler.MAX_PROFILES
+        handler.MAX_PROFILES = 3
+
+        try:
+            # Create profiles in order
+            handler.get_or_create_profile('1.1.1.1')
+            handler.get_or_create_profile('2.2.2.2')
+            handler.get_or_create_profile('3.3.3.3')
+
+            # Access first profile — should move it to end
+            handler.get_profile('1.1.1.1')
+
+            # Now add a new one — oldest (2.2.2.2) should be evicted
+            handler.get_or_create_profile('4.4.4.4')
+
+            assert len(handler.bot_profiles) == 3
+            assert '2.2.2.2' not in handler.bot_profiles  # Evicted
+            assert '1.1.1.1' in handler.bot_profiles  # Still there (was accessed)
+
+        finally:
+            handler.MAX_PROFILES = original_max
+
+    def test_memory_stays_bounded_with_many_ips(self, handler):
+        """Memory should stay bounded even when many distinct IPs connect."""
+        original_max = handler.MAX_PROFILES
+        handler.MAX_PROFILES = 100
+
+        try:
+            # Simulate 1000 unique IPs
+            for i in range(1000):
+                profile = handler.get_or_create_profile(f'192.168.{i // 256}.{i % 256}')
+                profile.record_request({'path': f'/scan{i}', 'method': 'GET'})
+
+            # Cache should never exceed MAX_PROFILES
+            assert len(handler.bot_profiles) <= handler.MAX_PROFILES
+
+        finally:
+            handler.MAX_PROFILES = original_max
