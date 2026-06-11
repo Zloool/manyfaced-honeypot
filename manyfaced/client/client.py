@@ -23,8 +23,6 @@ import threading
 from multiprocessing import Event
 from typing import TYPE_CHECKING
 
-from manyfaced.client.report_sender import send_report
-from manyfaced.common.config import settings
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
 from manyfaced.common.status import BOT_TIMEOUT
