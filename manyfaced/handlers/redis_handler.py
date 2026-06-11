@@ -9,7 +9,6 @@ Protocol reference: https://redis.io/docs/latest/develop/interact/protocol/
 from __future__ import annotations
 
 import logging
-import random
 import re
 from typing import Tuple
 

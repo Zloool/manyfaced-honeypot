@@ -47,8 +47,6 @@ indent-style = "space"
 [tool.ruff.lint]
 ignore = [
     "E402",  # Module level import not at top of file (common in tests with sys.modules mocking)
-    "F401",  # Imported but unused (common for optional dependencies)
-    "F841",  # Local variable assigned but never used (common in tests for coverage)
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -146,7 +146,7 @@ def run() -> None:
         for p in procs.values():
             _terminate(p)
         # Gracefully shut down the report thread pool
-        from manyfaced.handlers.http_handler import shutdown_report_executor
+        from manyfaced.handlers.report_queue import shutdown_report_executor
 
         shutdown_report_executor()
         # Release lockfile
