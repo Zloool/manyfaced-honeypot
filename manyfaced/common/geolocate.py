@@ -1,15 +1,11 @@
 """IP geolocation lookup for honeypot bot tracking.
 
-Uses ip-api.com free tier (no API key required, 45 req/min limit) with an
-optional local GeoIP2/MaxMind MMDB fallback.
+Uses ip-api.com free tier (no API key required, 45 req/min limit).
 
 Hot-path behavior:
 - Cached results are returned immediately (zero latency).
 - Uncached IPs return ("", "") instantly and a background worker is scheduled
   to perform the lookup asynchronously — never blocks the request handler.
-
-Optional dependencies:
-    geoip2>=4.0  # Local MaxMind MMDB support for zero-latency lookups
 """
 
 from __future__ import annotations
