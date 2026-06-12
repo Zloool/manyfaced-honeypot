@@ -162,8 +162,14 @@ class Config:
     LOCKFILE: str  # path to the lockfile for instance management
 
     @staticmethod
-    def load(config_path: Path | None = None) -> Config:
-        """Build a Config resolving defaults → TOML → env var."""
+    def load(config_path: Path | None = None, validate_secrets: bool = True) -> Config:
+        """Build a Config resolving defaults → TOML → env var.
+
+        Args:
+            config_path: Optional path to TOML config file. If None, uses XDG discovery.
+            validate_secrets: If True (default), validates that HIVEPASS and DEFAULT_KEY
+                are set. Set to False for --generate-config which doesn't require secrets.
+        """
         if config_path is None:
             config_path = _find_config_file()
 
@@ -314,24 +320,43 @@ class Config:
 
 settings: Config = Config.load()
 
-# ── Validate required secrets ────────────────────────────────────────────────
-# HIVEPASS and DEFAULT_KEY must be explicitly configured.
-# Shipping a default secret is a security risk — anyone who reads the README
-# can encrypt forged reports and submit them under any identifier.
-if not settings.HIVEPASS:
-    import logging
 
-    logging.getLogger().critical(
-        'HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. '
-        'The honeypot cannot start without a secret encryption key. '
-        'Set it via the HONEY_HIVEPASS environment variable or in config.toml.'
-    )
+class ConfigValidationError(Exception):
+    """Raised when required configuration secrets are missing."""
 
-if not settings.DEFAULT_KEY:
-    import logging
+    pass
 
-    logging.getLogger().critical(
-        'security.default_key is not set and no [security]default_key was found in '
-        'config.toml. The honeypot cannot start without a default encryption key. '
-        'Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml.'
-    )
+
+def _validate_required_secrets(cfg: Config) -> None:
+    """Validate that HIVEPASS and DEFAULT_KEY are set.
+
+    Raises ConfigValidationError if either secret is missing.
+    This allows --generate-config to work without secrets by skipping validation.
+    """
+    errors = []
+    if not cfg.HIVEPASS:
+        errors.append(
+            'HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. '\
+            'The honeypot cannot start without a secret encryption key. '\
+            'Set it via the HONEY_HIVEPASS environment variable or in config.toml.'
+        )
+    if not cfg.DEFAULT_KEY:
+        errors.append(
+            'security.default_key is not set and no [security]default_key was found in '\
+            'config.toml. The honeypot cannot start without a default encryption key. '\
+            'Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml.'
+        )
+
+    if errors:
+        import logging
+
+        for error in errors:
+            logging.getLogger().critical(error)
+        raise ConfigValidationError(
+            'Missing required secrets:\n' + '\n'.join(f'  - {e}' for e in errors)
+        )
+
+
+# Validate on module load (normal startup path).
+# --generate-config bypasses this by calling validate_secrets() conditionally.
+_validate_required_secrets(settings)

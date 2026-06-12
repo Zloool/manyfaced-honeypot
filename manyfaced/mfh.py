@@ -11,7 +11,7 @@ import logging
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
-from manyfaced.common.config import settings, Config
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,23 @@ def _release_lockfile():
 
 def run() -> None:
     """CLI entry point – called by the ``manyfaced`` console_scripts command."""
+    # Parse args first to check for --generate-config before importing settings
+    from manyfaced.common.arguments import parse
+
+    args = parse()
+
+    # --generate-config: create config file and exit (no secrets required)
+    if args.generate_config:
+        from manyfaced.common.config import Config
+
+        cfg = Config.load(validate_secrets=False)
+        path = cfg.generate_config_file()
+        print(f'[manyfaced] Generated config at {path}', file=sys.stderr)
+        return
+
+    # Normal startup: import settings (triggers validation)
+    from manyfaced.common.config import settings, Config
+
     # Initialise system-wide logging early
     setup_logging(level='DEBUG', log_file=settings.LOG_FILE)
 
@@ -75,7 +92,6 @@ def run() -> None:
             file=sys.stderr,
         )
 
-    from manyfaced.common.arguments import parse
     from manyfaced.client import client
     from manyfaced.server import server
 
