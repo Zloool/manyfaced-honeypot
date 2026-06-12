@@ -376,4 +376,4 @@ pip install -e ".[dev]"   # runtime + dev
 ## Known Issues & TODOs
 
 - `tracert` field in BearStorage is marked TODO (never implemented)
-- `utils.py:dump_file()` uses unsafe pickle (see [`docs/DEVELOPER.md`](docs/DEVELOPER.md#security))
+- `utils.py:dump_file()` writes to DUMP_FILE (JSONL format) using json.dumps() — safe with untrusted data
