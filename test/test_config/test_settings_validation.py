@@ -235,7 +235,8 @@ class TestConfigRequiredSecrets:
 
         script = tmp_path / 'test_import.py'
         # Use raw string and os.path to avoid Windows path escaping issues
-        script.write_text(r"""
+        script.write_text(
+            r"""
 import os, sys
 from pathlib import Path
 
@@ -251,7 +252,8 @@ try:
     print('IMPORT_SUCCESS')
 except Exception as exc:
     print('EXCEPTION:' + type(exc).__name__ + ':' + str(exc))
-""" .format(xdg_dir=str(xdg_dir)))
+""".format(xdg_dir=str(xdg_dir))
+        )
 
         result = subprocess.run(
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
@@ -274,7 +276,8 @@ except Exception as exc:
         )
 
         script = tmp_path / 'test_import2.py'
-        script.write_text(r"""
+        script.write_text(
+            r"""
 import os, sys
 from pathlib import Path
 
@@ -290,7 +293,8 @@ try:
     print('IMPORT_SUCCESS')
 except Exception as exc:
     print('EXCEPTION:' + type(exc).__name__ + ':' + str(exc))
-""" .format(xdg_dir=str(xdg_dir)))
+""".format(xdg_dir=str(xdg_dir))
+        )
 
         result = subprocess.run(
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
@@ -311,9 +315,11 @@ except Exception as exc:
         script = tmp_path / 'test_generate.py'
         # Use pathlib to get forward-slash paths
         from pathlib import PureWindowsPath
+
         config_path = PureWindowsPath(xdg_dir / 'manyfaced' / 'config.toml').as_posix()
         xdg_dir_str = PureWindowsPath(xdg_dir).as_posix()
-        script.write_text(r"""
+        script.write_text(
+            r"""
 import os, sys
 
 # Set required secrets BEFORE importing config to bypass validation
@@ -335,7 +341,8 @@ from manyfaced.common.config import Config
 cfg = Config.load(validate_secrets=False)
 path = cfg.generate_config_file('{config_path}')
 print('GENERATED:' + str(path))
-""" .format(xdg_dir=xdg_dir_str, config_path=config_path))
+""".format(xdg_dir=xdg_dir_str, config_path=config_path)
+        )
 
         result = subprocess.run(
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
