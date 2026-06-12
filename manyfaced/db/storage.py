@@ -15,6 +15,11 @@ from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
 
+try:
+    import psycopg2  # noqa: F401  # Optional dependency for PostgreSQL backend  # pyright: ignore[reportMissingModuleSource]
+except ImportError:
+    pass  # psycopg2 not installed; PostgreSQL backend will raise ImportError at runtime
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
