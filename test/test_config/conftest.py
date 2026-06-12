@@ -11,14 +11,18 @@ project_root = os.path.abspath(os.path.join(__file__, '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Set required secrets before importing config to avoid validation errors
+os.environ.setdefault('HONEY_HIVEPASS', 'test_hivepass_for_tests')
+os.environ.setdefault('HONEY_DEFAULT_KEY', 'test_default_key_for_tests')
+
 geoip_mock = MagicMock()
 geoip_mock.geolite2.geolite2 = geoip_mock.geolite2
 sys.modules['geoip'] = geoip_mock
 sys.modules['geoip.geolite2'] = geoip_mock.geolite2
 sys.modules['GeoIP'] = MagicMock()
 
-from manyfaced.common.config import Config, _load_toml
-from manyfaced.common.config_resolver import resolve_setting as _resolve, env_prefix as _env_prefix
+from manyfaced.common.config import Config, _load_toml  # noqa: E402
+from manyfaced.common.config_resolver import resolve_setting as _resolve, env_prefix as _env_prefix  # noqa: E402
 
 
 def _write_toml(tmp_path: Path, content: str) -> Path:
