@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, cast
+
+if TYPE_CHECKING:
+    from manyfaced.handlers.base_handler import HTTPHandlerBase  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -146,13 +149,19 @@ class Router:
                     # Reuse existing handler or create new one for this route
                     if idx not in self._handler_instances:
                         self._handler_instances[idx] = route.handler_cls()
-                    handler = self._handler_instances[idx]
+                    handler = cast('HTTPHandlerBase', self._handler_instances[idx])
                     response_bytes, detected_flag = handler.generate_response(
                         path=path,
                         raw_request=raw_request,
                         bot_ip=bot_ip,
                         headers=headers,
                     )
+
+                    # Wire up record_interaction to build the dialogue artifact
+                    self._record_interaction(
+                        handler, path, raw_request, bot_ip, headers, response_bytes, detected_flag
+                    )
+
                     logger.debug(
                         'Route %d (%s) matched – handler=%s, size=%d',
                         idx,
@@ -164,6 +173,41 @@ class Router:
                 except Exception as e:
                     logger.warning('Handler %s failed for path %s: %s', route.name, path, e)
         return None  # pragma: no cover – should never happen with Any() catch-all
+
+    def _record_interaction(
+        self,
+        handler: 'HTTPHandlerBase',  # noqa: F821
+        path: str,
+        raw_request: str,
+        bot_ip: str,
+        headers: dict[str, str] | None,
+        response_bytes: bytes,
+        detected_flag: int,
+    ) -> None:
+        """Record a full request/response interaction in the BotProfile.
+
+        This wires up record_interaction() centrally so every handler benefits
+        and it can't be forgotten per-handler.
+        """
+        # Extract HTTP method from raw request (same logic as handlers)
+        parts = raw_request.split()
+        method = parts[0].upper() if parts else 'GET'
+
+        # Construct request_data dict (same structure as handlers use)
+        request_data = {
+            'path': path,
+            'method': method,
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+        }
+
+        # Get profile and record interaction
+        profile = handler.get_profile(bot_ip)
+        if profile is not None:
+            try:
+                profile.record_interaction(request_data, response_bytes, detected_flag)
+            except Exception as e:
+                logger.warning('Failed to record interaction for %s: %s', bot_ip, e)
 
     def clear_handler_instances(self) -> None:
         """Clear persisted handler instances (e.g., at end of connection)."""
