@@ -336,14 +336,14 @@ def _validate_required_secrets(cfg: Config) -> None:
     errors = []
     if not cfg.HIVEPASS:
         errors.append(
-            'HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. '\
-            'The honeypot cannot start without a secret encryption key. '\
+            'HONEY_HIVEPASS is not set and no [hive]hivepass was found in config.toml. '
+            'The honeypot cannot start without a secret encryption key. '
             'Set it via the HONEY_HIVEPASS environment variable or in config.toml.'
         )
     if not cfg.DEFAULT_KEY:
         errors.append(
-            'security.default_key is not set and no [security]default_key was found in '\
-            'config.toml. The honeypot cannot start without a default encryption key. '\
+            'security.default_key is not set and no [security]default_key was found in '
+            'config.toml. The honeypot cannot start without a default encryption key. '
             'Set it via the HONEY_DEFAULT_KEY environment variable or in config.toml.'
         )
 
