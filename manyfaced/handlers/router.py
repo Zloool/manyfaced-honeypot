@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, cast
+
+if TYPE_CHECKING:
+    from manyfaced.handlers.base_handler import HTTPHandlerBase  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +149,7 @@ class Router:
                     # Reuse existing handler or create new one for this route
                     if idx not in self._handler_instances:
                         self._handler_instances[idx] = route.handler_cls()
-                    handler = self._handler_instances[idx]
+                    handler = cast('HTTPHandlerBase', self._handler_instances[idx])
                     response_bytes, detected_flag = handler.generate_response(
                         path=path,
                         raw_request=raw_request,
@@ -155,7 +158,9 @@ class Router:
                     )
 
                     # Wire up record_interaction to build the dialogue artifact
-                    self._record_interaction(handler, path, raw_request, bot_ip, headers, response_bytes, detected_flag)
+                    self._record_interaction(
+                        handler, path, raw_request, bot_ip, headers, response_bytes, detected_flag
+                    )
 
                     logger.debug(
                         'Route %d (%s) matched – handler=%s, size=%d',
