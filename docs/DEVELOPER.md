@@ -101,7 +101,7 @@ Each handler:
 
 SERVER-side handler. When a report arrives:
 1. Extends `BaseHandler` for encrypted message processing
-2. `get_key()` looks up `AUTHORIZED_BEANS` dict by identifier
+2. `get_key()` looks up `AUTHORIZED_BEES` dict by identifier
 3. `process_request()` spawns `save_data()` process to insert into DB
 4. Returns "200 OK" as response
 
@@ -156,8 +156,8 @@ Dataclass: `ip`, `raw_request`, `timestamp`, `parsed_request`, `is_detected`, `H
 | request_version  | text   | `data.parsed_request.version`|
 | request_raw      | text   | `data["raw_request"]`     |
 | bot_user_agent   | text   | `data.parsed_request.ua`  |
-| bot_country      | text   | geoip2 lookup             |
-| bot_continent    | text   | geoip2 lookup             |
+| bot_country      | text   | ip-api.com HTTP lookup             |
+| bot_continent    | text   | ip-api.com HTTP lookup             |
 | bot_tracert      | text   | TODO (never implemented)  |
 | bot_dns_name     | text   | socket.gethostbyaddr      |
 | detected_id      | int    | `data.is_detected`        |
@@ -227,7 +227,7 @@ See `bitrix_handler.py` + `routes_bitrix.py` for a clean, minimal reference impl
 
 ### Run all tests
 ```bash
-cd /home/zlol/manyfaced-honeypot
+# cd to project root (e.g., cd ~/projects/manyfaced-honeypot)
 /usr/bin/python3 -m pytest test/ -v
 ```
 
@@ -235,11 +235,13 @@ cd /home/zlol/manyfaced-honeypot
 ```
 test/
 ├── conftest.py               # Shared test utilities
-├── test_integration.py       # Full pipeline: socket -> decrypt -> DB -> query
-├── test_client.py            # Client-specific unit tests
+├── test_config/              # Config system tests (env resolution, settings validation)
+├── test_handlers/            # Handler unit tests (bot_profile, generic, service handlers)
+├── test_integration/         # Integration tests (e2e pipeline, enrichment, protocol handlers)
 ├── test_http_handler.py      # HTTPHandler tests
-├── test_config.py            # Config system tests
-├── test_storage.py           # Storage backend tests
+├── test_bearstorage.py       # BearStorage tests
+├── test_geolocate.py         # Geolocation tests
+├── test_mfh.py               # Entry point tests
 └── test_*.py                 # Other test modules
 ```
 
@@ -247,18 +249,17 @@ test/
 - Use `multiprocessing.Process` to test server/client behavior
 - Use real `AESCipher` for encryption roundtrips
 - Check SQLite DB directly for persistence tests
-- Mock the `geoip2` module (it can't be imported in tests)
-- Set `AUTHORIZED_BEANS` via `sys.modules` dict, not env var
+- Mock urllib.request.urlopen() for geo lookups
+- Set `AUTHORIZED_BEES` via `sys.modules` dict, not env var
 
 ## Security Notes
 
-1. **pickle.dump_file()** — `common/utils.py` uses `pickle` for fallback data storage. This is unsafe with untrusted data. The file is written to `temp.db` in the working directory.
+1. **JSON dump file** — `common/utils.py` writes to DUMP_FILE (default: `dump.jsonl`) using `json.dumps()` in JSONL format. This is safe with untrusted data. This is unsafe with untrusted data. The file is written to DUMP_FILE (JSONL format) in the working directory.
 
 2. **Shared secrets** — `HIVEPASS` is the shared encryption key. Never commit real keys. Use environment variables or `settings.toml.example` (gitignored).
 
-3. **AUTHORIZED_BEANS** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
+3. **AUTHORIZED_BEES** — In server mode, this dict determines which bots are authorized. If empty/no entries match, decryption will fail.
 
-4. **geoip2 dependency** — The `geoip2` package requires a MaxMind GeoLite2 `.mmdb` database to be installed separately. Without it, country/continent fields will be empty.
 
 ## Handler Coverage Analysis
 
@@ -316,7 +317,7 @@ See existing handlers for patterns — `bitrix_handler.py` + `routes_bitrix.py` 
 - [ ] Set `HONEY_HIVEHOST` to your actual server IP
 - [ ] Set `HONEY_HIVEPORT` to the correct port
 - [ ] Configure `DB_BACKEND` and `DB_*` settings
-- [ ] Add authorized bears to `AUTHORIZED_BEANS` if needed
+- [ ] Add authorized bears to `AUTHORIZED_BEES` if needed
 - [ ] Verify `temp.db` directory is writable
 - [ ] Set up monitoring/alerting for bot connection volume
 - [ ] Consider rate limiting to avoid abuse of honeypot ports
