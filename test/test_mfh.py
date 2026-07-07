@@ -318,7 +318,9 @@ class TestRunPortModeFromConfig(unittest.TestCase):
 class TestRunChildSupervision(unittest.TestCase):
     """Test the supervision loop: backoff + crash-loop guard (#180)."""
 
-    def _run_with_dead_child(self, kill_parent_after_n_restarts, window_constants, event_toggles_true_at=0):
+    def _run_with_dead_child(
+        self, kill_parent_after_n_restarts, window_constants, event_toggles_true_at=0
+    ):
         """Drive run() with a child that is never alive.
 
         Args:
@@ -333,18 +335,20 @@ class TestRunChildSupervision(unittest.TestCase):
         """
         import manyfaced.mfh as mfh
 
-        with patch('manyfaced.mfh._acquire_lockfile'), \
-             patch('manyfaced.mfh.setup_logging'), \
-             patch('manyfaced.mfh.os.path.isfile', return_value=True), \
-             patch('manyfaced.mfh.settings', _make_mock_settings()), \
-             patch('manyfaced.common.arguments.parse') as mock_parse, \
-             patch('manyfaced.mfh.Process') as mock_process_cls, \
-             patch('manyfaced.mfh.Event') as mock_event_cls, \
-             patch('manyfaced.mfh.time.sleep'), \
-             patch.object(mfh, '_BACKOFF_BASE', window_constants['base']), \
-             patch.object(mfh, '_BACKOFF_MAX', window_constants['max']), \
-             patch.object(mfh, '_MAX_RESTARTS_PER_WINDOW', window_constants['max_restarts']), \
-             patch.object(mfh, '_RESTART_WINDOW_SEC', window_constants['window']):
+        with (
+            patch('manyfaced.mfh._acquire_lockfile'),
+            patch('manyfaced.mfh.setup_logging'),
+            patch('manyfaced.mfh.os.path.isfile', return_value=True),
+            patch('manyfaced.mfh.settings', _make_mock_settings()),
+            patch('manyfaced.common.arguments.parse') as mock_parse,
+            patch('manyfaced.mfh.Process') as mock_process_cls,
+            patch('manyfaced.mfh.Event') as mock_event_cls,
+            patch('manyfaced.mfh.time.sleep'),
+            patch.object(mfh, '_BACKOFF_BASE', window_constants['base']),
+            patch.object(mfh, '_BACKOFF_MAX', window_constants['max']),
+            patch.object(mfh, '_MAX_RESTARTS_PER_WINDOW', window_constants['max_restarts']),
+            patch.object(mfh, '_RESTART_WINDOW_SEC', window_constants['window']),
+        ):
             mock_args = MagicMock()
             mock_args.client = 8080
             mock_args.server = 9090
@@ -394,15 +398,17 @@ class TestRunChildSupervision(unittest.TestCase):
         """A child that stays alive is never restarted (no crash-loop)."""
         import manyfaced.mfh as mfh
 
-        with patch('manyfaced.mfh._acquire_lockfile'), \
-             patch('manyfaced.mfh.setup_logging'), \
-             patch('manyfaced.mfh.os.path.isfile', return_value=True), \
-             patch('manyfaced.mfh.settings', _make_mock_settings()), \
-             patch('manyfaced.common.arguments.parse') as mock_parse, \
-             patch('manyfaced.mfh.Process') as mock_process_cls, \
-             patch('manyfaced.mfh.Event') as mock_event_cls, \
-             patch('manyfaced.mfh.time.sleep'), \
-             patch.object(mfh, 'sys') as mock_sys:
+        with (
+            patch('manyfaced.mfh._acquire_lockfile'),
+            patch('manyfaced.mfh.setup_logging'),
+            patch('manyfaced.mfh.os.path.isfile', return_value=True),
+            patch('manyfaced.mfh.settings', _make_mock_settings()),
+            patch('manyfaced.common.arguments.parse') as mock_parse,
+            patch('manyfaced.mfh.Process') as mock_process_cls,
+            patch('manyfaced.mfh.Event') as mock_event_cls,
+            patch('manyfaced.mfh.time.sleep'),
+            patch.object(mfh, 'sys') as mock_sys,
+        ):
             mock_args = MagicMock()
             mock_args.client = 8080
             mock_args.server = 9090

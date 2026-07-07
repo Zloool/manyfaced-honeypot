@@ -176,8 +176,7 @@ def run() -> None:
     # off between restarts and, if a child keeps dying, fail the whole service
     # so systemd escalates recovery (and its own alerting can fire).
     supervise: dict[str, dict] = {
-        key: {'attempts': 0, 'last': 0.0, 'times': []}
-        for key in ('client_proc', 'server_proc')
+        key: {'attempts': 0, 'last': 0.0, 'times': []} for key in ('client_proc', 'server_proc')
     }
 
     def _maybe_restart(key: str, spawn) -> None:
@@ -198,7 +197,9 @@ def run() -> None:
                 int(_RESTART_WINDOW_SEC),
             )
             sys.exit(1)
-        logger.warning('%s child exited unexpectedly -- restarting (attempt %d)', key, st['attempts'] + 1)
+        logger.warning(
+            '%s child exited unexpectedly -- restarting (attempt %d)', key, st['attempts'] + 1
+        )
         new_proc = spawn()
         new_proc.start()
         procs[key] = new_proc
