@@ -384,7 +384,7 @@ cp templates/honeypot.env.example .env   # edit secrets (HIVEPASS etc.)
 docker compose up --build
 
 # One-off config generation inside the image:
-docker compose run --rm honeypot manyfaced --generate-config
+docker compose run --rm honeypot --generate-config
 
 # Validate the compose file without starting anything:
 docker compose config --quiet

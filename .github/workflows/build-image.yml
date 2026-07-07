@@ -34,7 +34,9 @@ jobs:
 
       - name: "Smoke: generate-config runs inside the image"
         # Confirms the installed package + console script work in the container.
-        run: docker run --rm manyfaced:ci manyfaced --generate-config
+        # The ENTRYPOINT is the `manyfaced` console script, so the arg is just
+        # the flag (no repeated `manyfaced`).
+        run: docker run --rm manyfaced:ci --generate-config
 
       - name: "Smoke: compose config is valid"
         run: docker compose config --quiet

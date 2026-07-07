@@ -39,4 +39,5 @@ VOLUME ["/opt/manyfaced/bots"]
 USER honeypot
 
 # Container entrypoint: run the honeypot (both client + server by default).
-ENTRYPOINT ["python3", "-m", "manyfaced.mfh"]
+# Use the installed console script (pip install . provides `manyfaced`).
+ENTRYPOINT ["manyfaced"]
