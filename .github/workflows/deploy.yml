@@ -38,16 +38,17 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
 
       - name: Check formatting
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Check linting
-        run: ruff check .
+        run: uv run ruff check .
 
   test:
     # Run on PRs, push-to-master, and manual dispatch for validation.
@@ -65,13 +66,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
 
       - name: Run tests
-        run: pytest -v --tb=short
+        run: uv run pytest -v --tb=short
 
   typecheck:
     # Run on PRs, push-to-master, and manual dispatch for validation.
@@ -89,13 +91,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
 
       - name: Type check with basedpyright
-        run: basedpyright manyfaced/
+        run: uv run basedpyright manyfaced/
 
   actionlint:
     name: Lint GitHub Actions workflows
@@ -225,15 +228,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
 
       - name: Canary smoke — synthetic report reaches DB
         # Smoke gate only; coverage is enforced by the `test` job, so disable
         # cov here (a single-file run would otherwise fail the 76% gate).
-        run: pytest -q --no-cov test/test_integration/test_canary_smoke.py
+        run: uv run pytest -q --no-cov test/test_integration/test_canary_smoke.py
 
   deploy:
     needs: [lint, actionlint, shellcheck, security-scan, test, typecheck, canary]
@@ -338,9 +342,20 @@ jobs:
           # Install BEFORE symlink swap so the swap can't expose a release
           # whose deps aren't installed. Full pip output shown in workflow log;
           # tee also saves to droplet-side file for debugging.
+          #
+          # Pinned via the committed uv.lock (issue #220): bootstrap uv if
+          # absent, export the locked runtime requirements, install them into
+          # the existing pip-created venv with uv pip install -r, then install
+          # the project editable on top (its deps are already pinned, so pip
+          # does not re-resolve). Transitive versions match the lock exactly.
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
-            /opt/manyfaced/venv/bin/pip install -e ${STAGING_DIR} 2>&1 | tee /opt/manyfaced/deploy-${SHORT_SHA}.log"
+            command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh && \
+            export PATH=\"\$HOME/.local/bin:\$PATH\" && \
+            cd ${STAGING_DIR} && \
+            uv export --locked --no-dev --format requirements-txt -o /tmp/mfh-req.lock.txt && \
+            uv pip install --python /opt/manyfaced/venv -r /tmp/mfh-req.lock.txt 2>&1 | tee /opt/manyfaced/deploy-${SHORT_SHA}.log && \
+            /opt/manyfaced/venv/bin/pip install -e ${STAGING_DIR} >> /opt/manyfaced/deploy-${SHORT_SHA}.log 2>&1"
 
       - name: Atomically swap release symlink
         env:
