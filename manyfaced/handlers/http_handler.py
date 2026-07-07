@@ -7,6 +7,7 @@ to protocol_responses module; report queue management to report_queue module.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -52,20 +53,25 @@ from manyfaced.handlers.report_queue import _get_report_queue
 logger = get_logger(__name__)
 
 
-# Singleton router – initialized on first use
+# Singleton router – initialized on first use. Double-checked locking mirrors
+# _get_report_queue() so concurrent first requests on different multiport
+# accept-loop threads can't each build a separate Router instance.
 _router: Router | None = None
+_router_lock = threading.Lock()
 
 
 def _get_router() -> Router:
     """Get or create the module-level router (singleton)."""
     global _router
     if _router is None:
-        from manyfaced.handlers.routes import ROUTES  # noqa: F811
+        with _router_lock:
+            if _router is None:
+                from manyfaced.handlers.routes import ROUTES  # noqa: F811
 
-        from manyfaced.handlers.router import Router
+                from manyfaced.handlers.router import Router
 
-        _router = Router(ROUTES)
-        logger.info('Router initialized with %d routes', len(_router.routes))
+                _router = Router(ROUTES)
+                logger.info('Router initialized with %d routes', len(_router.routes))
     return _router
 
 
