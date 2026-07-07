@@ -97,7 +97,6 @@ Client internal:
 | `-c [PORT]` | disabled | Start CLIENT on PORT (impersonates web services) |
 | `-s [PORT]` | disabled | Start SERVER on PORT (receives encrypted reports) |
 | `-v` | false | Verbose logging mode |
-| `-p` | false | Proxy mode (sets X-Forwarded-For handling) |
 | `--port-mode` | `single` | Port listening mode: `single`, `top`, or `all` |
 | `--top-ports` | empty | Comma-separated port list when `--port-mode=top` |
 
@@ -361,7 +360,6 @@ Messages between client and server use AES-256-CBC with:
 | Package | Purpose |
 |------|-------|
 | cryptography>=41.0 | AES-256-CBC encryption for client-server comms |
-| geoip2 (optional) | IP geolocation via MaxMind GeoLite2 .mmdb database |
 | pytest + pytest-cov (dev) | Testing framework with coverage reporting |
 | basedpyright (dev) | Static type checking |
 | ruff==0.15.13 (dev) | Linting and formatting |
