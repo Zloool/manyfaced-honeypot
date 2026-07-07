@@ -1,0 +1,6 @@
+USER admin
+PASS admin
+SYST
+PASV
+LIST
+

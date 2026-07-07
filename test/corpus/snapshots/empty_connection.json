@@ -1,0 +1,6 @@
+{
+  "normalized_response": "HTTP/1.1 200 OK\nContent-Type: text/html; charset=UTF-8\nContent-Length: 166\nConnection: close\n\n<!DOCTYPE html>\n<html><head><title>Server</title></head>\n<body><h1>Welcome to zlol's manyface!</h1>\n<p>Server: Apache/2.4.57 (Ubuntu)</p>\n<p>Path: </p>\n</body></html>",
+  "protocol": "dns",
+  "response_length": 334,
+  "scenario": "empty_connection"
+}
