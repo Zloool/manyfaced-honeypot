@@ -20,13 +20,19 @@ def test_incr_unknown_name_is_ignored():
 
 
 def test_incr_response_labels_by_domain():
-    before = metrics.snapshot()['responses_by_domain'].get('wordpress', 0)
+    # Metrics are a process-wide singleton, so assert on deltas (other tests in
+    # the session also exercise router.dispatch and increment these counters).
+    before = metrics.snapshot()['responses_by_domain']
+    wp_before = before.get('wordpress', 0)
+    pm_before = before.get('phpmyadmin', 0)
+
     metrics.incr_response('wordpress')
     metrics.incr_response('wordpress')
     metrics.incr_response('phpmyadmin')
-    snap = metrics.snapshot()['responses_by_domain']
-    assert snap['wordpress'] == before + 2
-    assert snap['phpmyadmin'] == 1
+
+    after = metrics.snapshot()['responses_by_domain']
+    assert after.get('wordpress', 0) == wp_before + 2
+    assert after.get('phpmyadmin', 0) == pm_before + 1
 
 
 def test_set_gauge():
