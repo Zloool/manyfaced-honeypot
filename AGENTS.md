@@ -27,9 +27,12 @@ systemd/                # manyfaced.service + logrotate config
 ## Local development
 
 1. **Install deps:** `pip install -e ".[dev]"`
-2. **Run tests:** `pytest -v --tb=short` (coverage enforced at 76%, matches CI exactly)
-3. **Lint/format:** `ruff check . && ruff format .`
-4. **Run a bot locally:** `python3 mfh.py -c 8888 -s 9999 -v`
+2. **Install pre-commit hooks (one-time):** `pre-commit install` — runs
+   ruff + docs-drift + basedpyright + actionlint locally, matching the fast
+   CI gates (see [Definition of Done](#definition-of-done-pre-pr-contract)).
+3. **Run tests:** `pytest -v --tb=short` (coverage enforced at 76%, matches CI exactly)
+4. **Lint/format:** `ruff check . && ruff format .`
+5. **Run a bot locally:** `python3 mfh.py -c 8888 -s 9999 -v`
 
 See [`docs/DEVELOPER.md`](docs/DEVELOPER.md) for architecture deep-dive and how to add new faces.
 
