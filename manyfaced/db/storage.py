@@ -209,6 +209,15 @@ class SQLiteStorage(StorageBackend):
                 'Giving up insert after lock contention (database is locked): %s',
                 last_exc,
             )
+            # Don't silently lose the record: fall back to the JSONL dump file
+            # (the same safety valve report_sender/server use) so the capture
+            # survives a transient DB outage and can be replayed later.
+            try:
+                from manyfaced.common.utils import dump_file
+
+                dump_file({'_dump_reason': 'sqlite_lock_contention', **record})
+            except Exception:  # noqa: BLE001 — last-resort fallback must never raise
+                logger.exception('Failed to dump record after lock contention')
 
     def close(self) -> None:
         """Close the SQLite connection with a final WAL checkpoint."""
