@@ -18,6 +18,7 @@ The route table is defined in manyfaced.handlers.routes.ROUTES.
 from __future__ import annotations
 
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, NamedTuple, cast
 
@@ -128,6 +129,8 @@ class Router:
         # Persist handler instances keyed by route index so BotProfile state
         # survives across multiple requests on the same TCP connection.
         self._handler_instances: dict[int, object] = {}
+        # Lock to protect _handler_instances from concurrent access (issue #139)
+        self._lock = threading.Lock()
 
     # -- public API --------------------------------------------------------
 
@@ -146,10 +149,11 @@ class Router:
         for idx, route in enumerate(self._routes):
             if route.matcher.match(path):
                 try:
-                    # Reuse existing handler or create new one for this route
-                    if idx not in self._handler_instances:
-                        self._handler_instances[idx] = route.handler_cls()
-                    handler = cast('HTTPHandlerBase', self._handler_instances[idx])
+                    # Reuse existing handler or create new one for this route (thread-safe)
+                    with self._lock:
+                        if idx not in self._handler_instances:
+                            self._handler_instances[idx] = route.handler_cls()
+                        handler = cast('HTTPHandlerBase', self._handler_instances[idx])
                     response_bytes, detected_flag = handler.generate_response(
                         path=path,
                         raw_request=raw_request,
@@ -211,7 +215,8 @@ class Router:
 
     def clear_handler_instances(self) -> None:
         """Clear persisted handler instances (e.g., at end of connection)."""
-        self._handler_instances.clear()
+        with self._lock:
+            self._handler_instances.clear()
 
     def explain(self, path: str) -> str:
         """Return a debug string for the matched route."""
@@ -238,7 +243,11 @@ class Router:
         subclasses are inspected.
         """
         result: dict[str, Any] = {}
-        for idx, instance in self._handler_instances.items():
+        # Snapshot under lock (thread safety), then release before calling
+        # get_profile (which may do I/O and should not hold the lock).
+        with self._lock:
+            instances = list(self._handler_instances.items())
+        for idx, instance in instances:
             get_profile = getattr(instance, 'get_profile', None)
             if get_profile is not None:
                 profile = get_profile(bot_ip)
