@@ -567,11 +567,20 @@ class TestInsertLockContention:
         assert calls['n'] >= 2  # at least one failure + one success
 
     def test_insert_gives_up_after_persistent_lock(self, tmp_path):
-        """Persistently locked DB is logged and the insert is dropped (no crash)."""
+        """Persistently locked DB is logged and the record is dumped (not lost)."""
         import sqlite3
+        from unittest.mock import patch
 
         db_path = str(tmp_path / 'locked2.db')
         storage = self._make_storage_with_mock_conn(db_path)
         storage._conn.execute.side_effect = sqlite3.OperationalError('database is locked')
-        storage.insert({'ip': '10.0.0.6'})  # must not raise
+
+        with patch('manyfaced.common.utils.dump_file') as mock_dump:
+            storage.insert({'ip': '10.0.0.6'})  # must not raise
         storage.close()
+
+        # The record must survive via the JSONL dump fallback, not be dropped.
+        mock_dump.assert_called_once()
+        dumped = mock_dump.call_args.args[0]
+        assert dumped['ip'] == '10.0.0.6'
+        assert dumped['_dump_reason'] == 'sqlite_lock_contention'
