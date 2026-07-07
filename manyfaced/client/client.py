@@ -20,7 +20,7 @@ from __future__ import annotations
 import signal
 import socket
 import threading
-from multiprocessing import Event
+from multiprocessing.synchronize import Event as _MpEvent  # type: ignore[attr-defined]
 from typing import TYPE_CHECKING
 
 from manyfaced.common.logging_setup import get_logger
@@ -225,7 +225,7 @@ def _handle_bot_connection(
     connection_socket: 'socket.socket',
     args,
     bot_addr: tuple,
-    update_event: Event,
+    update_event: _MpEvent,
 ) -> None:
     """Handle a single bot connection: receive request, generate response, send reply.
 
@@ -289,7 +289,7 @@ def _handle_bot_connection(
         connection_socket.close()
 
 
-def create_server(args, update_event: Event, port: int) -> bool:
+def create_server(args, update_event: _MpEvent, port: int) -> bool:
     """Create a single-port honeypot server.
 
     Args:
@@ -323,7 +323,7 @@ def create_server(args, update_event: Event, port: int) -> bool:
     return True
 
 
-def create_multiport_server(args, update_event: Event, ports: list[int]) -> None:
+def create_multiport_server(args, update_event: _MpEvent, ports: list[int]) -> None:
     """Create a multi-port honeypot server that listens on multiple ports simultaneously.
 
     Each port runs in its own thread. All threads share the same update_event for shutdown.

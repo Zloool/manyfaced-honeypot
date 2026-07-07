@@ -63,7 +63,7 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
 
     # Not cached — schedule background lookup and return empty immediately
     start_geo_worker()
-    assert _geo_queue is not None  # type: ignore[unreachable] — started above
+    assert _geo_queue is not None  # type: ignore[assertion-error]
     _geo_queue.put((ip, timeout))  # noqa: SLF001
     return ('', '')
 

@@ -117,7 +117,7 @@ def get_protocol_info(raw_data: bytes) -> dict:
         info['protocol'] = 'ssh'
         info['version'] = ssh_match.group(1).decode('latin-1', errors='replace')
         # Try to extract client name
-        client_match = re.match(r'SSH-\d\.\d-(.+)', info['version'])
+        client_match = re.match(r'SSH-\d\.\d-(.+)', info['version'] or '')
         if client_match:
             info['client'] = client_match.group(1).split('\r\n')[0].split('\n')[0].strip()
         return info
@@ -204,5 +204,5 @@ def get_protocol_info(raw_data: bytes) -> dict:
 
     # Unknown binary
     info['protocol'] = 'unknown'
-    info['is_binary'] = True
+    info['is_binary'] = True  # type: ignore[assignment]
     return info
