@@ -144,7 +144,12 @@ jobs:
 
       - name: Static security scan (bandit) on input-parsing modules
         # Focus on the attacker-input parsing surface; high-severity findings fail CI.
-        run: bandit -ll -ii -r manyfaced/ -f txt --skip B101,B310,B601,B608,B311
+        # NOTE: B608 (SQL injection) is intentionally NOT skipped repo-wide. The
+        # one legitimate f-string-built query (storage.py archive delete) is scoped
+        # with `# nosec B608` at the call site. Unscoped B608 failures now fail CI
+        # — this is exactly the class of bug worth catching in a honeypot handling
+        # untrusted input (issue #221).
+        run: bandit -ll -ii -r manyfaced/ -f txt --skip B101,B310,B601,B311
 
   build-and-push-image:
     # Issue #149 (partial): make the container image a real, pinned, reproducible

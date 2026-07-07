@@ -136,11 +136,17 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
             if os.path.exists(sidecar):
                 shutil.copy2(sidecar, f'{backup_path}{sidecar[len(db_path) :]}')
     except OSError as exc:
-        print(
-            f'[migrate] WARNING: backup copy failed ({exc}); proceeding without backup.',
-            file=sys.stderr,
-        )
-        return None
+        # Fail closed: if we cannot take a restore point, abort the migration
+        # rather than altering the live schema with no backup (issue #223). The
+        # original risk #181 guarded against — a migration with no revert point —
+        # is exactly the case where a failed backup matters most.
+        print(f'[migrate] ERROR: backup copy failed ({exc}); aborting migration.', file=sys.stderr)
+        if os.path.exists(backup_path):
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
+        raise
     print(f'[migrate] backup written: {backup_path}')
     _prune_backups(db_path, keep)
     return backup_path
@@ -148,7 +154,14 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
 
 def migrate(db_path: str, backup: bool = True, keep: int = 3) -> int:
     if backup:
-        _backup(db_path, keep)
+        # Fail closed: a backup failure must abort the migration rather than
+        # silently proceeding to alter the live schema with no revert point
+        # (issue #223). Any error from _backup aborts here with a non-zero code.
+        try:
+            _backup(db_path, keep)
+        except OSError as exc:
+            print(f'[migrate] ERROR: {exc}', file=sys.stderr)
+            return 1
     conn = None
     try:
         conn = sqlite3.connect(db_path)
