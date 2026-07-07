@@ -76,7 +76,11 @@ class ServerHandler(BaseHandler):
 
 
 def _handle_client(connection_socket, addr, args, update_event):
-    """Handle a single client connection in its own thread."""
+    """Handle a single client connection in its own thread.
+
+    Any unexpected error is contained here: a malformed or failing report must
+    never terminate the handler thread (or, if unhandled, the server process).
+    """
     try:
         message = receive_timeout(connection_socket)
         handler = ServerHandler(args, update_event)
@@ -90,6 +94,12 @@ def _handle_client(connection_socket, addr, args, update_event):
         logger.warning('Socket error from %s: %s', addr, e)
     except (ValueError, TypeError, KeyError, ImportError) as e:
         logger.error('Unexpected error handling request from %s: %s', addr, e)
+        try:
+            connection_socket.send(b'CODE 300 ERROR')
+        except socket_error:
+            pass
+    except Exception as e:  # noqa: BLE001 - last-resort containment
+        logger.exception('Unhandled error handling request from %s: %s', addr, e)
         try:
             connection_socket.send(b'CODE 300 ERROR')
         except socket_error:
@@ -116,6 +126,11 @@ def main(args, update_event):
             connection_socket, addr = server_socket.accept()
         except KeyboardInterrupt:
             break
+        except OSError as e:
+            # Transient accept error (e.g. socket temporarily unavailable).
+            # Do not crash the server; keep serving.
+            logger.warning('Accept error, continuing: %s', e)
+            continue
         # Handle each client in a separate thread to avoid blocking new connections
         t = threading.Thread(
             target=_handle_client,
