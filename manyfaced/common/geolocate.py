@@ -22,7 +22,15 @@ logger = logging.getLogger(__name__)
 # Rate limiting: ip-api.com allows 45 requests per minute
 _RATE_LIMIT_DELAY = 60 / 45  # ~1.33 seconds between requests
 _last_geo_lookup_time: float = 0
-_geo_cache: dict[str, tuple[str, str]] = {}
+
+# Bounded cache: a honeypot is hit by a high volume of distinct attacker IPs
+# over its lifetime, so an unbounded module-level dict would grow monotonically
+# and eventually OOM (see issue #175). Entries expire after _GEO_CACHE_TTL
+# seconds and the dict is capped at _GEO_CACHE_MAX_SIZE entries (LRU eviction).
+_GEO_CACHE_TTL = 24 * 60 * 60  # 24h
+_GEO_CACHE_MAX_SIZE = 10_000
+# value -> (country, continent, expires_at)
+_geo_cache: dict[str, tuple[str, str, float]] = {}
 _geo_cache_lock = threading.Lock()
 
 # Background worker for async geo lookups
@@ -55,11 +63,16 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
     if ip in ('127.0.0.1', '::1') or ip.startswith(('10.', '192.168.', '172.')):
         return ('', '')
 
-    # Check cache first (thread-safe)
+    # Check cache first (thread-safe); entries past their TTL are treated as
+    # a miss so stale geo data is eventually refreshed and memory is reclaimed.
+    now = time.monotonic()
     with _geo_cache_lock:
-        cached = _geo_cache.get(ip)
-        if cached:
-            return cached
+        entry = _geo_cache.get(ip)
+        if entry is not None and entry[2] > now:
+            # Move to the end to mark as most-recently-used (LRU).
+            del _geo_cache[ip]
+            _geo_cache[ip] = entry
+            return entry[0], entry[1]
 
     # Not cached — schedule background lookup and return empty immediately
     start_geo_worker()
@@ -95,17 +108,34 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str]:
             result = (country, continent)
 
         # Update cache and rate-limit timestamp
-        with _geo_cache_lock:
-            _geo_cache[ip] = result
+        _store_geo(ip, result)
         _last_geo_lookup_time = time.monotonic()
         return result
 
     except Exception as e:
         logger.warning('Geo lookup failed for %s: %s', ip, e)
         # On failure, cache empty result to avoid repeated lookups
-        with _geo_cache_lock:
-            _geo_cache[ip] = ('', '')
+        _store_geo(ip, ('', ''))
         return ('', '')
+
+
+def _store_geo(ip: str, result: tuple[str, str]) -> None:
+    """Store a geo result in the bounded, TTL-scoped cache.
+
+    Marks the entry as most-recently-used and evicts the oldest entries when
+    the cache exceeds ``_GEO_CACHE_MAX_SIZE`` (LRU eviction) — this caps process
+    memory regardless of how many distinct attacker IPs are seen (issue #175).
+    """
+    expires_at = time.monotonic() + _GEO_CACHE_TTL
+    with _geo_cache_lock:
+        _geo_cache.pop(ip, None)
+        if len(_geo_cache) >= _GEO_CACHE_MAX_SIZE:
+            # Evict the oldest entries; dicts preserve insertion order so the
+            # first key is the least-recently-used.
+            evict_count = len(_geo_cache) - _GEO_CACHE_MAX_SIZE + 1
+            for stale_ip in list(_geo_cache)[:evict_count]:
+                _geo_cache.pop(stale_ip, None)
+        _geo_cache[ip] = (result[0], result[1], expires_at)
 
 
 def start_geo_worker() -> None:

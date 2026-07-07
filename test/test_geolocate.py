@@ -84,7 +84,7 @@ def test_private_ip_returns_empty():
 def test_cache_reuse():
     """Repeated lookups for the same IP should return cached results without another HTTP call."""
     with _geo_cache_lock:
-        _geo_cache['203.0.113.1'] = ('Japan', 'Asia')
+        _geo_cache['203.0.113.1'] = ('Japan', 'Asia', time.monotonic() + 1000)
 
     country, continent = lookup_ip_geolocation('203.0.113.1')
     assert country == 'Japan'
@@ -94,7 +94,7 @@ def test_cache_reuse():
 def test_cache_is_thread_safe():
     """Cache reads/writes should be thread-safe (use lock)."""
     with _geo_cache_lock:
-        _geo_cache['test.ip'] = ('Test', 'Test')
+        _geo_cache['test.ip'] = ('Test', 'Test', time.monotonic() + 1000)
 
     country, continent = lookup_ip_geolocation('test.ip')
     assert country == 'Test'
@@ -112,7 +112,7 @@ def test_background_worker_processes_lookups():
     def mock_do_geo_lookup(ip, timeout=2.0):
         # Simulate a successful lookup AND write to cache (like real _do_geo_lookup does)
         with _geo_cache_lock:
-            _geo_cache[ip] = ('France', 'Europe')
+            _geo_cache[ip] = ('France', 'Europe', time.monotonic() + 1000)
         return ('France', 'Europe')
 
     start_geo_worker()
@@ -138,7 +138,7 @@ def test_background_worker_rate_limits():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with patch('time.sleep') as mock_sleep:
-            result = ('Test', 'Test')
+            result = ('Test', 'Test', time.monotonic() + 1000)
             if mock_sleep.call_count > 0:
                 sleep_times.append(mock_sleep.call_args[0][0])
             return result
@@ -180,7 +180,7 @@ def test_failure_response_logs_warning():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('', '')
+            _geo_cache[ip] = ('', '', time.monotonic() + 1000)
         return ('', '')
 
     # Keep patch active while waiting for worker to process
@@ -210,7 +210,7 @@ def test_empty_response_returns_empty():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('', '')
+            _geo_cache[ip] = ('', '', time.monotonic() + 1000)
         return ('', '')
 
     # Keep patch active while waiting for worker to process
@@ -237,7 +237,7 @@ def test_success_response_populates_cache():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('Germany', 'Europe')
+            _geo_cache[ip] = ('Germany', 'Europe', time.monotonic() + 1000)
         return ('Germany', 'Europe')
 
     # Keep patch active while waiting for worker to process
@@ -261,3 +261,41 @@ def test_success_response_populates_cache():
 # ---------------------------------------------------------------------------
 # Helper: patch is imported above for test mocking.
 # ---------------------------------------------------------------------------
+
+
+# ===================================================================
+# Test 9: cache is bounded — no unbounded memory growth (issue #175)
+# ===================================================================
+
+
+def test_cache_evicts_oldest_when_over_max_size():
+    """_store_geo evicts the least-recently-used entries past _GEO_CACHE_MAX_SIZE."""
+    from manyfaced.common.geolocate import _GEO_CACHE_MAX_SIZE, _store_geo
+
+    # Fill to the cap with valid (unexpired) entries.
+    for i in range(_GEO_CACHE_MAX_SIZE):
+        _store_geo(f'10.0.0.{i}', (f'C{i}', 'X'))
+
+    with _geo_cache_lock:
+        assert len(_geo_cache) == _GEO_CACHE_MAX_SIZE
+
+    # One more insertion must evict exactly one oldest entry, never exceed the cap.
+    _store_geo('10.255.255.255', ('New', 'Y'))
+    with _geo_cache_lock:
+        assert len(_geo_cache) == _GEO_CACHE_MAX_SIZE
+        # The very first (LRU) entry should have been evicted.
+        assert '10.0.0.0' not in _geo_cache
+        # The newest entry is present.
+        assert '10.255.255.255' in _geo_cache
+
+
+def test_cache_expired_entries_are_not_returned():
+    """A cached entry past its TTL behaves as a miss (issue #175 — TTL scope)."""
+    # Store with an already-expired timestamp.
+    with _geo_cache_lock:
+        _geo_cache['9.9.9.9'] = ('Old', 'Country', time.monotonic() - 1)
+
+    # The lookup must not return the stale value; it schedules a refresh.
+    country, continent = lookup_ip_geolocation('9.9.9.9')
+    assert country == ''
+    assert continent == ''
