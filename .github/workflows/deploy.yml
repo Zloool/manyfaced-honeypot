@@ -106,8 +106,24 @@ jobs:
       - name: Run actionlint
         uses: raven-actions/actionlint@v2
 
+  shellcheck:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Syntax-check shell scripts with bash -n
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r -d '' f; do
+            echo "Checking $f"
+            bash -n "$f" || status=1
+          done < <(find . -name '*.sh' -print0)
+          exit $status
+
   deploy:
-    needs: [lint, actionlint, test, typecheck]
+    needs: [lint, actionlint, shellcheck, test, typecheck]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
