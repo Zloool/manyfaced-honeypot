@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import smtplib
+import threading
 from dataclasses import dataclass
 from email.mime.text import MIMEText
 from typing import Any
@@ -54,6 +56,20 @@ class AlertConfig:
     LOG_ONLY: bool = True  # If True, only log alerts (no external notifications)
 
 
+def _as_bool(value: Any, default: bool) -> bool:
+    """Coerce a TOML bool or env-string value to a bool.
+
+    Handles the case where TOML parses ``log_only = false`` to the Python value
+    ``False`` (which a naive ``value or 'true'`` would wrongly treat as
+    "falsy -> default true").
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ('true', '1', 'yes', 'on')
+
+
 def _load_alert_config() -> AlertConfig:
     """Load alerting configuration from config.toml or environment variables."""
     try:
@@ -73,12 +89,12 @@ def _load_alert_config() -> AlertConfig:
 
     prefix = 'HONEY_ALERT_'
 
-    def env(key: str, default: Any = '') -> str:
-        return (
-            settings.__dict__.get(f'{prefix}{key}', default)
-            if hasattr(settings, f'{prefix}{key}')
-            else ''
-        )
+    def env(key: str, default: str = '') -> str:
+        # Read real process environment variables (the documented HONEY_ALERT_*
+        # config path). Previously this consulted settings.__dict__, which never
+        # carries these keys, so every lookup fell through to '' and silently
+        # discarded the caller's default too.
+        return os.environ.get(f'{prefix}{key}', default)
 
     # Load from TOML first, then override with environment variables
     telegram_token = alerting.get('telegram_bot_token', env('TELEGRAM_BOT_TOKEN', '')) or ''
@@ -95,10 +111,8 @@ def _load_alert_config() -> AlertConfig:
     to_emails_str = alerting.get('to_emails', env('TO_EMAILS', '')) or ''
     webhook_url = alerting.get('webhook_url', env('WEBHOOK_URL', '')) or ''
 
-    enabled_str = alerting.get('enabled', env('ENABLED', 'false')) or 'false'
-    log_only_str = alerting.get('log_only', env('LOG_ONLY', 'true')) or 'true'
-    enabled = str(enabled_str).lower() in ('true', '1', 'yes')
-    log_only = str(log_only_str).lower() in ('true', '1', 'yes')
+    enabled = _as_bool(alerting.get('enabled', env('ENABLED', 'false')), False)
+    log_only = _as_bool(alerting.get('log_only', env('LOG_ONLY', 'true')), True)
 
     to_emails = (
         tuple(e.strip() for e in to_emails_str.split(',') if e.strip()) if to_emails_str else ()
@@ -235,39 +249,19 @@ def send_webhook_alert(url: str, payload: dict[str, Any]) -> bool:
         return False
 
 
-def notify_credential_capture(
+def _deliver_credential_capture(
     ip: str,
     credentials: str,
-    path: str = '/',
-    hostname: str = '',
+    path: str,
+    hostname: str,
 ) -> None:
-    """Send notification when credentials are captured from a honeypot connection.
+    """Deliver credential-capture alerts via configured external channels.
 
-    This is the primary entry point for credential capture alerts. It logs at ERROR level
-    and optionally sends notifications via configured channels (Telegram, email, webhook).
-
-    Args:
-        ip: IP address of the bot that submitted credentials.
-        credentials: Captured credentials string (e.g., 'admin:password123').
-        path: Request path where credentials were captured.
-        hostname: Honeypot hostname/identifier that received the credentials.
+    Runs on a daemon background thread so the request-handling path that calls
+    ``notify_credential_capture`` is never blocked by a slow/unreachable
+    Telegram/SMTP/webhook endpoint (each has a 10s timeout; sequential delivery
+    could otherwise stall the request thread for ~30s — see issue #174).
     """
-    # Always log at ERROR level for visibility in logs
-    alert_message = (
-        f'⚠️ CREDENTIAL CAPTURE DETECTED\n'
-        f'IP: {ip}\n'
-        f'Credentials: {credentials}\n'
-        f'Path: {path}\n'
-        f'Honeypot: {hostname or "unknown"}\n'
-        f'Timestamp: {__import__("datetime").datetime.now().isoformat()}'
-    )
-
-    logger.error(alert_message)
-
-    # If only logging, don't send external notifications
-    if alert_config.LOG_ONLY:
-        return
-
     # Send Telegram notification if configured
     if alert_config.TELEGRAM_BOT_TOKEN and alert_config.TELEGRAM_CHAT_ID:
         telegram_msg = (
@@ -320,24 +314,54 @@ def notify_credential_capture(
         send_webhook_alert(alert_config.WEBHOOK_URL, payload)
 
 
-def send_alert(title: str, message: str) -> None:
-    """Send a generic alert via configured channels.
+def notify_credential_capture(
+    ip: str,
+    credentials: str,
+    path: str = '/',
+    hostname: str = '',
+) -> None:
+    """Send notification when credentials are captured from a honeypot connection.
 
-    This is a general-purpose alert function for future use (e.g., system warnings,
-    database errors, etc.). Currently only logs at ERROR level unless external
-    notification channels are configured.
+    This is the primary entry point for credential capture alerts. It logs at ERROR level
+    and optionally sends notifications via configured channels (Telegram, email, webhook).
+
+    The ERROR-level log is written synchronously (cheap); external delivery is dispatched
+    to a daemon background thread so a slow/unreachable channel cannot stall the request
+    thread that reported the capture (issue #174).
 
     Args:
-        title: Alert title/summary.
-        message: Detailed alert message.
+        ip: IP address of the bot that submitted credentials.
+        credentials: Captured credentials string (e.g., 'admin:password123').
+        path: Request path where credentials were captured.
+        hostname: Honeypot hostname/identifier that received the credentials.
     """
-    alert_text = f'⚠️ {title}\n{message}'
-    logger.error(alert_text)
+    # Always log at ERROR level for visibility in logs
+    alert_message = (
+        f'⚠️ CREDENTIAL CAPTURE DETECTED\n'
+        f'IP: {ip}\n'
+        f'Credentials: {credentials}\n'
+        f'Path: {path}\n'
+        f'Honeypot: {hostname or "unknown"}\n'
+        f'Timestamp: {__import__("datetime").datetime.now().isoformat()}'
+    )
 
+    logger.error(alert_message)
+
+    # If only logging, don't send external notifications
     if alert_config.LOG_ONLY:
         return
 
-    # Send via all configured channels
+    # Dispatch external notifications off the request thread (issue #174).
+    threading.Thread(
+        target=_deliver_credential_capture,
+        args=(ip, credentials, path, hostname),
+        daemon=True,
+        name='alert-delivery',
+    ).start()
+
+
+def _deliver_alert(title: str, message: str) -> None:
+    """Deliver a generic alert via configured channels (background worker)."""
     if alert_config.TELEGRAM_BOT_TOKEN and alert_config.TELEGRAM_CHAT_ID:
         send_telegram_message(
             alert_config.TELEGRAM_BOT_TOKEN,
@@ -362,6 +386,34 @@ def send_alert(title: str, message: str) -> None:
             alert_config.WEBHOOK_URL,
             {'event': 'alert', 'title': title, 'message': message},
         )
+
+
+def send_alert(title: str, message: str) -> None:
+    """Send a generic alert via configured channels.
+
+    This is a general-purpose alert function for future use (e.g., system warnings,
+    database errors, etc.). Currently only logs at ERROR level unless external
+    notification channels are configured.
+
+    External delivery is dispatched to a daemon background thread so it cannot
+    block the caller (issue #174).
+
+    Args:
+        title: Alert title/summary.
+        message: Detailed alert message.
+    """
+    alert_text = f'⚠️ {title}\n{message}'
+    logger.error(alert_text)
+
+    if alert_config.LOG_ONLY:
+        return
+
+    threading.Thread(
+        target=_deliver_alert,
+        args=(title, message),
+        daemon=True,
+        name='alert-delivery',
+    ).start()
 
 
 __all__ = [
