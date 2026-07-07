@@ -782,3 +782,49 @@ class TestHandlerLRUCache:
 
         finally:
             handler.MAX_PROFILES = original_max
+
+
+class TestGetRouterSingleton:
+    """_get_router() must be a safe, single-instance lazy singleton (#184)."""
+
+    def test_concurrent_first_calls_return_one_instance(self):
+        """Many threads racing to build the router must share one instance.
+
+        Mirrors the multi-port startup race: several accept-loop threads can
+        each see _router is None and try to construct a Router simultaneously.
+        """
+        import threading
+
+        from manyfaced.handlers import http_handler as hh
+
+        # Force a fresh build so the race is exercised.
+        hh._router = None
+
+        results: list = []
+        barrier = threading.Barrier(8)
+        threads = []
+
+        def worker() -> None:
+            barrier.wait()  # release all threads at once
+            results.append(hh._get_router())
+
+        for _ in range(8):
+            t = threading.Thread(target=worker, daemon=True)
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(results) == 8
+        # All callers must receive the *same* singleton instance.
+        first = results[0]
+        assert all(r is first for r in results)
+        assert type(first).__name__ == 'Router'
+
+    def test_second_call_returns_cached_instance(self):
+        from manyfaced.handlers import http_handler as hh
+
+        hh._router = None
+        a = hh._get_router()
+        b = hh._get_router()
+        assert a is b
