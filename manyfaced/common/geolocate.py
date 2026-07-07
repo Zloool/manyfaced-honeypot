@@ -116,6 +116,10 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str]:
 
     except Exception as e:
         logger.warning('Geo lookup failed for %s: %s', ip, e)
+        # Observability: count geo-lookup failures (issue #166).
+        from manyfaced.common.metrics import incr
+
+        incr('geo_lookup_failure')
         # On failure, cache empty result to avoid repeated lookups
         _store_geo(ip, ('', ''))
         return ('', '')

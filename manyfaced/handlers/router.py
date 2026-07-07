@@ -22,6 +22,8 @@ from threading import Lock
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, NamedTuple, cast
 
+from manyfaced.common.metrics import incr, incr_response
+
 if TYPE_CHECKING:
     from manyfaced.handlers.base_handler import HTTPHandlerBase  # noqa: F401
 
@@ -174,9 +176,12 @@ class Router:
                         handler.domain,
                         len(response_bytes),
                     )
+                    # Observability: count responses per handler domain (issue #166).
+                    incr_response(handler.domain)
                     return response_bytes, detected_flag
                 except Exception as e:
                     logger.warning('Handler %s failed for path %s: %s', route.name, path, e)
+                    incr('handler_exception')
         return None  # pragma: no cover – should never happen with Any() catch-all
 
     def _record_interaction(

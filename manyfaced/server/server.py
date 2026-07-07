@@ -112,6 +112,10 @@ def main(args, update_event):
     logger.info('Server honeypot listening on port %d', args.server)
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    # Observability: start periodic structured stats logging (issue #166).
+    from manyfaced.common.metrics import start_stats_logger
+
+    start_stats_logger()
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(('', args.server))

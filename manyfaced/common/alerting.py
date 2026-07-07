@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from email.mime.text import MIMEText
 from typing import Any
 
+from manyfaced.common.metrics import incr
+
 logger = logging.getLogger(__name__)
 
 
@@ -346,6 +348,10 @@ def notify_credential_capture(
     )
 
     logger.error(alert_message)
+
+    # Observability: count every credential capture (issue #166). This is the
+    # signal source the #125 alerting can fire on.
+    incr('credential_captures')
 
     # If only logging, don't send external notifications
     if alert_config.LOG_ONLY:
