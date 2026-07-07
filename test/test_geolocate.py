@@ -301,6 +301,44 @@ def test_cache_expired_entries_are_not_returned():
     assert continent == ''
 
 
+def test_start_geo_worker_serialized_by_lock() -> None:
+    """Issue #214: start_geo_worker()/stop_geo_worker() must be serialized by
+    `_geo_state_lock` so the check-then-act on the module globals is atomic and
+    a concurrent stop cannot raise AttributeError on the request thread.
+
+    Deterministic proof: hold `_geo_state_lock` externally and call
+    start_geo_worker() from another thread. The fixed code acquires the lock at
+    the top of start_geo_worker(), so the thread BLOCKS until we release it. The
+    buggy version (no lock) returns immediately, which fails this test.
+    """
+    import threading
+
+    import manyfaced.common.geolocate as geo
+
+    lock = geo._geo_state_lock
+    lock.acquire()
+    try:
+        done = []
+
+        def caller():
+            geo.start_geo_worker()
+            done.append(True)
+
+        th = threading.Thread(target=caller, daemon=True)
+        th.start()
+        # The fixed start_geo_worker must block on the held lock.
+        th.join(timeout=0.3)
+        assert th.is_alive(), (
+            'start_geo_worker did not block on _geo_state_lock (issue #214: '
+            'the check-then-act on the geo globals is no longer atomic)'
+        )
+    finally:
+        lock.release()
+    th.join(timeout=2)
+    assert done, 'start_geo_worker must complete once the lock is released'
+    geo.stop_geo_worker()
+
+
 def test_stop_worker_does_not_crash_producer_or_consumer():
     """Concurrent stop_geo_worker() must not crash the request thread or worker (#171)."""
     import concurrent.futures

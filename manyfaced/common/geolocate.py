@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 import urllib.request  # noqa: PLC0415 — imported at module level for test patching
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,10 @@ _geo_cache_lock = threading.Lock()
 # Background worker for async geo lookups
 _geo_queue: Queue[tuple[str, float] | None] | None = None
 _geo_worker_thread: threading.Thread | None = None
+# Serializes start/stop/lookup against the module globals so check-then-act
+# on _geo_queue / _geo_worker_thread is atomic (issue #214 — completes the
+# #171 TOCTOU fix that only guarded _geo_worker_loop()).
+_geo_state_lock = threading.Lock()
 
 
 def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
@@ -74,9 +78,10 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
             _geo_cache[ip] = entry
             return entry[0], entry[1]
 
-    # Not cached — schedule background lookup and return empty immediately
-    start_geo_worker()
-    queue = _geo_queue
+    # Not cached — schedule background lookup and return empty immediately.
+    # Capture the queue under the state lock so a concurrent stop_geo_worker()
+    # can't leave us holding a stale/None reference (issue #214).
+    queue = start_geo_worker()
     if queue is None:  # Worker failed to start; don't block the hot path
         return ('', '')
     queue.put((ip, timeout))  # noqa: SLF001
@@ -144,16 +149,28 @@ def _store_geo(ip: str, result: tuple[str, str]) -> None:
         _geo_cache[ip] = (result[0], result[1], expires_at)
 
 
-def start_geo_worker() -> None:
-    """Start the background geolocation worker thread if not already running."""
+def start_geo_worker() -> Queue[tuple[str, float] | None] | None:
+    """Start the background geolocation worker thread if not already running.
+
+    Returns the live queue (never None on success) so callers can enqueue
+    without re-reading the module global (issue #214). Callers must treat a
+    None return as "worker unavailable".
+    """
     global _geo_queue, _geo_worker_thread
 
-    if _geo_worker_thread is not None and _geo_worker_thread.is_alive():
-        return
+    with _geo_state_lock:
+        # Capture to a local first: a concurrent stop_geo_worker() setting the
+        # global to None between the `is not None` check and `.is_alive()` would
+        # otherwise raise AttributeError on the request-handling thread.
+        worker = _geo_worker_thread
+        if worker is not None and worker.is_alive():
+            return _geo_queue
 
-    _geo_queue = Queue()
-    _geo_worker_thread = threading.Thread(target=_geo_worker_loop, daemon=True)
-    _geo_worker_thread.start()
+        queue: Queue[tuple[str, float] | None] = Queue()
+        _geo_queue = queue
+        _geo_worker_thread = threading.Thread(target=_geo_worker_loop, daemon=True)
+        _geo_worker_thread.start()
+        return queue
 
 
 def _geo_worker_loop() -> None:
@@ -180,14 +197,19 @@ def stop_geo_worker() -> None:
     """Signal the background geo worker to shut down."""
     global _geo_queue, _geo_worker_thread
 
-    if _geo_queue is not None:
-        try:
-            _geo_queue.put(None, block=False)  # Shutdown signal
-        except Exception:
-            pass
+    # Capture under the state lock so the queue we signal can't be swapped to a
+    # new one (and the worker reference can't race) mid-shutdown (issue #214).
+    with _geo_state_lock:
+        queue = _geo_queue
+        if queue is not None:
+            # Unconditionally signal shutdown; swallow a full/closed queue rather
+            # than masking other errors with a blanket except.
+            try:
+                queue.put(None, block=False)  # Shutdown signal
+            except (Full, OSError):
+                pass
         _geo_queue = None
-
-    _geo_worker_thread = None
+        _geo_worker_thread = None
 
 
 def batch_lookup_geolocation(ips: list[str], max_concurrent: int = 5) -> dict[str, tuple[str, str]]:
