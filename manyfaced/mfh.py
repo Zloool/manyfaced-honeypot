@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import fcntl
 import os
-import signal
 import sys
 import time
 import logging
@@ -26,6 +25,10 @@ def _acquire_lockfile():
     Uses fcntl.flock() for atomic lock acquisition. If the lock is already
     held (another instance running), exits with an error.
     """
+    # Lazily import settings so this module-level helper can see it without
+    # requiring the deferred import inside run() to have executed first.
+    from manyfaced.common.config import settings
+
     global _lock_fd
     try:
         os.makedirs(os.path.dirname(settings.LOCKFILE), exist_ok=True)
@@ -43,6 +46,8 @@ def _acquire_lockfile():
 
 def _release_lockfile():
     """Release the lockfile and clean up."""
+    from manyfaced.common.config import settings
+
     global _lock_fd
     if _lock_fd is not None:
         try:
@@ -133,35 +138,49 @@ def run() -> None:
         'server_proc': None,
     }
 
+    def _spawn_client() -> Process:
+        return Process(args=(args, update_event), name='client', target=client.main)
+
+    def _spawn_server() -> Process:
+        return Process(args=(args, update_event), name='server', target=server.main)
+
     def _terminate(proc: Process | None) -> None:
         if proc is not None and proc.is_alive():
             proc.terminate()
             proc.join()
 
     if args.client is not None:
-        procs['client_proc'] = Process(
-            args=(args, update_event),
-            name='client',
-            target=client.main,
-        )
-        assert procs['client_proc'] is not None
+        procs['client_proc'] = _spawn_client()
         procs['client_proc'].start()
 
     if args.server is not None:
-        procs['server_proc'] = Process(
-            args=(args, update_event),
-            name='server',
-            target=server.main,
-        )
-        assert procs['server_proc'] is not None
+        procs['server_proc'] = _spawn_server()
         procs['server_proc'].start()
 
-    _sigchld = getattr(signal, 'SIGCHLD', None)
-    if _sigchld is not None:
-        signal.signal(_sigchld, signal.SIG_IGN)
-
+    # NOTE: we deliberately do NOT ignore SIGCHLD. The parent supervises its
+    # children and restarts any that exit unexpectedly (see loop below). If a
+    # child dies (e.g. the server / DB-writer crashes) and is left unrestarted,
+    # the client keeps capturing bots but can never deliver reports, so
+    # recording goes silently silent while the service still reports "active".
     try:
         while not update_event.is_set():
+            # Supervise children: restart any that have exited. A dead server
+            # child means reports can't be persisted; a dead client child means
+            # no bots are captured. Either way we must recover without a full
+            # service restart (which Restart=on-failure would otherwise miss,
+            # since the parent process itself stays alive).
+            if args.client is not None and (
+                procs['client_proc'] is None or not procs['client_proc'].is_alive()
+            ):
+                logger.warning('client child exited unexpectedly -- restarting')
+                procs['client_proc'] = _spawn_client()
+                procs['client_proc'].start()
+            if args.server is not None and (
+                procs['server_proc'] is None or not procs['server_proc'].is_alive()
+            ):
+                logger.warning('server child exited unexpectedly -- restarting')
+                procs['server_proc'] = _spawn_server()
+                procs['server_proc'].start()
             time.sleep(1)
     except KeyboardInterrupt:
         pass

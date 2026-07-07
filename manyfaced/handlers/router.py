@@ -18,7 +18,7 @@ The route table is defined in manyfaced.handlers.routes.ROUTES.
 from __future__ import annotations
 
 import logging
-import threading
+from threading import Lock
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, NamedTuple, cast
 
@@ -129,8 +129,9 @@ class Router:
         # Persist handler instances keyed by route index so BotProfile state
         # survives across multiple requests on the same TCP connection.
         self._handler_instances: dict[int, object] = {}
-        # Lock to protect _handler_instances from concurrent access (issue #139)
-        self._lock = threading.Lock()
+        # Guards _handler_instances (mutated during dispatch and clear()) against
+        # concurrent access from the per-connection daemon threads.
+        self._lock = Lock()
 
     # -- public API --------------------------------------------------------
 
@@ -149,7 +150,7 @@ class Router:
         for idx, route in enumerate(self._routes):
             if route.matcher.match(path):
                 try:
-                    # Reuse existing handler or create new one for this route (thread-safe)
+                    # Reuse existing handler or create new one for this route
                     with self._lock:
                         if idx not in self._handler_instances:
                             self._handler_instances[idx] = route.handler_cls()
