@@ -12,6 +12,8 @@ from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
 
+from manyfaced.common.config import Config, settings  # noqa: F401  (re-exported for tests; import does not trigger validation)
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,16 +63,18 @@ def run() -> None:
     args = parse()
 
     # --generate-config: create config file and exit (no secrets required)
+    # (Config is available at module level)
     if args.generate_config:
-        from manyfaced.common.config import Config
-
         cfg = Config.load(validate_secrets=False)
         path = cfg.generate_config_file()
         print(f'[manyfaced] Generated config at {path}', file=sys.stderr)
         return
 
-    # Normal startup: import settings (triggers validation)
-    from manyfaced.common.config import settings, Config
+    # settings/Config are imported at module level (see top of file). Using the
+    # module-level names (rather than re-importing here) lets tests patch
+    # manyfaced.mfh.settings / .Config. Importing the names does not trigger
+    # secret validation; only attribute access does (and --generate-config
+    # returns before touching settings).
 
     # Initialise system-wide logging early
     setup_logging(level='DEBUG', log_file=settings.LOG_FILE)
@@ -140,6 +144,7 @@ def run() -> None:
             name='client',
             target=client.main,
         )
+        assert procs['client_proc'] is not None
         procs['client_proc'].start()
 
     if args.server is not None:
@@ -148,9 +153,12 @@ def run() -> None:
             name='server',
             target=server.main,
         )
+        assert procs['server_proc'] is not None
         procs['server_proc'].start()
 
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    _sigchld = getattr(signal, 'SIGCHLD', None)
+    if _sigchld is not None:
+        signal.signal(_sigchld, signal.SIG_IGN)
 
     try:
         while not update_event.is_set():

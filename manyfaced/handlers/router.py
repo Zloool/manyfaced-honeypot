@@ -239,8 +239,9 @@ class Router:
         """
         result: dict[str, Any] = {}
         for idx, instance in self._handler_instances.items():
-            if hasattr(instance, 'get_profile'):
-                profile = instance.get_profile(bot_ip)
+            get_profile = getattr(instance, 'get_profile', None)
+            if get_profile is not None:
+                profile = get_profile(bot_ip)
                 if profile is not None:
                     domain = getattr(instance, 'domain', f'route_{idx}')
                     result[domain] = profile.get_full_report()

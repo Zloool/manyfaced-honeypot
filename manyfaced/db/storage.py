@@ -16,7 +16,7 @@ from threading import Lock
 from typing import Any
 
 try:
-    import psycopg2  # noqa: F401  # Optional dependency for PostgreSQL backend  # pyright: ignore[reportMissingModuleSource]
+    import psycopg2  # type: ignore[import-untyped,unused-ignore]  # noqa: F401  # Optional dependency for PostgreSQL backend
 except ImportError:
     pass  # psycopg2 not installed; PostgreSQL backend will raise ImportError at runtime
 
