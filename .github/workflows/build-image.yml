@@ -39,4 +39,8 @@ jobs:
         run: docker run --rm manyfaced:ci --generate-config
 
       - name: "Smoke: compose config is valid"
-        run: docker compose config --quiet
+        # compose.yaml references .env via env_file; seed it from the example
+        # (git-ignored in real use) so `docker compose config` can validate.
+        run: |
+          cp templates/honeypot.env.example .env
+          docker compose config --quiet
