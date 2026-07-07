@@ -24,14 +24,61 @@ import json
 import logging
 import os
 import smtplib
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from email.mime.text import MIMEText
-from typing import Any
+from typing import Any, Callable
 
 from manyfaced.common.metrics import incr
 
 logger = logging.getLogger(__name__)
+
+# Bounded executor for off-request-thread alert delivery (#216). Caps concurrent
+# delivery threads so a burst of credential captures can't spawn unbounded OS
+# threads; excess alerts queue and are drained by the fixed worker pool.
+_ALERT_MAX_WORKERS = 8
+_alert_executor: ThreadPoolExecutor | None = None
+
+
+def _get_alert_executor() -> ThreadPoolExecutor:
+    """Lazily create the shared alert-delivery executor (module-level singleton)."""
+    global _alert_executor
+    if _alert_executor is None or _alert_executor._shutdown:  # noqa: SLF001
+        _alert_executor = ThreadPoolExecutor(
+            max_workers=_ALERT_MAX_WORKERS, thread_name_prefix='alert-delivery'
+        )
+    return _alert_executor
+
+
+def submit_alert(task: Callable[[], None]) -> None:
+    """Submit an alert-delivery task to the bounded pool.
+
+    Falls back to running inline (best-effort) if the pool is shut down, so a
+    late delivery during shutdown is still attempted rather than silently
+    dropped.
+    """
+    try:
+        _get_alert_executor().submit(task)
+    except Exception:  # pragma: no cover - defensive; never block the caller
+        logger.warning('Alert executor unavailable; delivering inline')
+        try:
+            task()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def shutdown_alert_executor(wait: bool = True) -> None:
+    """Drain and shut down the alert-delivery executor (call on shutdown).
+
+    With ``wait=True`` (default) any in-flight alert deliveries are allowed to
+    finish before returning, so a credential capture that happened just before
+    a restart isn't silently killed mid-send (#216). Safe to call multiple times.
+    """
+    global _alert_executor
+    exc = _alert_executor
+    _alert_executor = None
+    if exc is not None and not exc._shutdown:  # noqa: SLF001
+        exc.shutdown(wait=wait, cancel_futures=False)
 
 
 @dataclass(frozen=True)
@@ -73,19 +120,30 @@ def _as_bool(value: Any, default: bool) -> bool:
 
 
 def _load_alert_config() -> AlertConfig:
-    """Load alerting configuration from config.toml or environment variables."""
+    """Load alerting configuration from config.toml or environment variables.
+
+    TOML precedence (both are merged, env vars still override individual keys
+    below): first the ``[alerting]`` section of the main config.toml (now
+    exposed as ``settings.ALERTING`` — issue #215), then an explicit
+    ``ALERT_CONFIG`` file path / ``HONEY_ALERT_CONFIG`` env var if set.
+    """
+    alerting: dict[str, Any] = {}
     try:
         from manyfaced.common.config import settings  # noqa: PLC0415
 
-        toml_path = getattr(settings, 'ALERT_CONFIG', None)
-        if toml_path:
+        # Primary: the [alerting] section of the operator's config.toml.
+        alerting = dict(getattr(settings, 'ALERTING', {}) or {})
+        # Backward-compat: a standalone ALERT_CONFIG TOML file (file path or
+        # HONEY_ALERT_CONFIG env var) overrides/extends the section above.
+        alert_config_path = os.environ.get('HONEY_ALERT_CONFIG') or getattr(
+            settings, 'ALERT_CONFIG', None
+        )
+        if alert_config_path:
             import tomllib  # noqa: PLC0415
 
-            with open(toml_path, 'rb') as f:
+            with open(alert_config_path, 'rb') as f:
                 raw = tomllib.load(f)
-            alerting = raw.get('alerting', {})
-        else:
-            alerting = {}
+            alerting.update(raw.get('alerting', {}))
     except Exception:
         alerting = {}
 
@@ -357,13 +415,9 @@ def notify_credential_capture(
     if alert_config.LOG_ONLY:
         return
 
-    # Dispatch external notifications off the request thread (issue #174).
-    threading.Thread(
-        target=_deliver_credential_capture,
-        args=(ip, credentials, path, hostname),
-        daemon=True,
-        name='alert-delivery',
-    ).start()
+    # Dispatch external notifications off the request thread via the bounded
+    # pool (issue #174 off-thread; #216 bounded + drainable on shutdown).
+    submit_alert(lambda: _deliver_credential_capture(ip, credentials, path, hostname))
 
 
 def _deliver_alert(title: str, message: str) -> None:
@@ -414,12 +468,9 @@ def send_alert(title: str, message: str) -> None:
     if alert_config.LOG_ONLY:
         return
 
-    threading.Thread(
-        target=_deliver_alert,
-        args=(title, message),
-        daemon=True,
-        name='alert-delivery',
-    ).start()
+    # Dispatch off the request thread via the bounded pool (issue #174 off-thread;
+    # #216 bounded + drainable on shutdown).
+    submit_alert(lambda: _deliver_alert(title, message))
 
 
 __all__ = [

@@ -162,17 +162,48 @@ class TestAlertingFixes:
         assert cfg.TELEGRAM_BOT_TOKEN == 'tok123'
         assert cfg.SMTP_HOST == 'smtp.example.test'
 
-    def test_log_only_false_from_toml(self, tmp_path, monkeypatch):
-        """#173: log_only = false in config.toml must take effect (not coerce to true)."""
-        from types import SimpleNamespace
-
+    def test_alerting_section_read_from_config_toml(self, tmp_path, monkeypatch):
+        """#215: the [alerting] section of the operator's config.toml is read
+        end-to-end via Config.load() -> settings.ALERTING, not a phantom
+        ALERT_CONFIG attribute. log_only=false and enabled=true must take effect.
+        """
         from manyfaced.common import config
 
-        cfg_path = tmp_path / 'alert.toml'
+        cfg_path = tmp_path / 'config.toml'
+        cfg_path.write_text(
+            '[alerting]\n'
+            'enabled = true\n'
+            'log_only = false\n'
+            'webhook_url = "https://example.test/hook"\n',
+            encoding='utf-8',
+        )
+        # Build a REAL Config from this file (no secrets needed for alerting).
+        real_cfg = config.Config.load(config_path=cfg_path, validate_secrets=False)
+        assert real_cfg.ALERTING == {
+            'enabled': True,
+            'log_only': False,
+            'webhook_url': 'https://example.test/hook',
+        }
+        # _load_alert_config must pick the section up from settings.ALERTING.
+        monkeypatch.setattr(config, 'settings', real_cfg)
+        monkeypatch.delenv('HONEY_ALERT_CONFIG', raising=False)
+
+        from manyfaced.common.alerting import _load_alert_config
+
+        cfg = _load_alert_config()
+        assert cfg.LOG_ONLY is False
+        assert cfg.ENABLED is True
+        assert cfg.WEBHOOK_URL == 'https://example.test/hook'
+
+    def test_log_only_false_from_toml(self, tmp_path, monkeypatch):
+        """#173: log_only = false in config.toml must take effect (not coerce to true)."""
+        from manyfaced.common import config
+
+        cfg_path = tmp_path / 'config.toml'
         cfg_path.write_text('[alerting]\nenabled = true\nlog_only = false\n', encoding='utf-8')
-        # _load_alert_config reads settings.ALERT_CONFIG (frozen Config can't be
-        # setattr'd), so swap the module-level settings object for a stand-in.
-        monkeypatch.setattr(config, 'settings', SimpleNamespace(ALERT_CONFIG=str(cfg_path)))
+        real_cfg = config.Config.load(config_path=cfg_path, validate_secrets=False)
+        monkeypatch.setattr(config, 'settings', real_cfg)
+        monkeypatch.delenv('HONEY_ALERT_CONFIG', raising=False)
 
         from manyfaced.common.alerting import _load_alert_config
 
@@ -191,9 +222,10 @@ class TestAlertingFixes:
         assert _as_bool(None, True) is True
 
     def test_notify_dispatches_background_thread(self, caplog):
-        """#174: notify_credential_capture must not block the caller; it spawns a daemon thread."""
+        """#174: notify_credential_capture must not block the caller; it dispatches to the pool."""
         import logging
         import threading
+        import time
 
         from manyfaced.common import alerting
         from manyfaced.common.alerting import notify_credential_capture
@@ -204,11 +236,41 @@ class TestAlertingFixes:
         ):
             with caplog.at_level(logging.ERROR):
                 notify_credential_capture(ip='9.9.9.9', credentials='u:p', path='/x')
-            # The caller returns immediately; delivery runs on a background thread.
-            threads = [t for t in threading.enumerate() if t.name == 'alert-delivery']
-            assert threads, 'expected an alert-delivery background thread to be spawned'
-            for t in threads:
-                t.join(timeout=2)
+            # The caller returns immediately; delivery runs on a pool worker
+            # (the executor may start the worker lazily, so allow a tick).
+            import time
+
+            for _ in range(50):
+                threads = [t for t in threading.enumerate() if 'alert-delivery' in t.name]
+                if threads:
+                    break
+                time.sleep(0.02)
+            assert threads, 'expected an alert-delivery pool worker to be running'
+
+    def test_alert_executor_is_bounded_and_drains_on_shutdown(self):
+        """#216: submissions go to a bounded pool and shutdown drains in-flight tasks."""
+        import threading
+
+        from manyfaced.common import alerting
+
+        alerting.shutdown_alert_executor()  # ensure a fresh pool
+        try:
+            started = threading.Event()
+            finished = threading.Event()
+
+            def _task():
+                started.wait(5)
+                finished.set()
+
+            alerting.submit_alert(_task)
+            # A worker thread exists (bounded pool, not unbounded per-alert threads).
+            assert any('alert-delivery' in t.name for t in threading.enumerate())
+            # Drain: shutdown(wait=True) must let the in-flight task finish.
+            started.set()
+            alerting.shutdown_alert_executor(wait=True)
+            assert finished.wait(5), 'shutdown did not drain the in-flight alert task'
+        finally:
+            alerting.shutdown_alert_executor()
 
 
 __all__ = [
