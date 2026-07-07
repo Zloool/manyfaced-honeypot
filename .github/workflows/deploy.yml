@@ -228,10 +228,9 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DROPLET_SSH_KEY }}
 
-      - name: Add droplet host key
-        run: |
-          set -euo pipefail
-          ssh-keyscan -p "${{ secrets.DROPLET_SSH_PORT }}" "${{ secrets.DROPLET_SERVER_IP }}" >> ~/.ssh/known_hosts
+      # Host keys are accepted on first connection via StrictHostKeyChecking=
+      # accept-new on each ssh call below (no separate ssh-keyscan, which can
+      # hang/fail intermittently over a custom port).
 
       - name: Migrate legacy deployment to release-symlink scheme
         env:
@@ -242,7 +241,7 @@ jobs:
           set -euo pipefail
 
           # Only migrate if current is not yet a symlink (first deploy with new mechanism)
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             if [ ! -L /opt/manyfaced/current ]; then \
               mkdir -p /opt/manyfaced/releases && \
@@ -270,7 +269,7 @@ jobs:
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
           # Clean staging dir if re-deploying same commit (idempotent)
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${STAGING_DIR} && mkdir -p ${STAGING_DIR}"
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${STAGING_DIR} && mkdir -p ${STAGING_DIR}"
 
           # Rsync ALL repo files into staging dir. --delete is safe because
           # the staging directory is per-commit and starts empty.
@@ -306,7 +305,7 @@ jobs:
           # Install BEFORE symlink swap so the swap can't expose a release
           # whose deps aren't installed. Full pip output shown in workflow log;
           # tee also saves to droplet-side file for debugging.
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             /opt/manyfaced/venv/bin/pip install -e ${STAGING_DIR} 2>&1 | tee /opt/manyfaced/deploy-${SHORT_SHA}.log"
 
@@ -324,7 +323,7 @@ jobs:
           # ln -sfn alone is NOT atomic (it unlinks then symlinks).
           # The current.new intermediate + mv -Tf guarantees a single
           # rename(2) syscall — the service never observes a partial state.
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             ln -sfn '${STAGING_DIR}' '/opt/manyfaced/current.new' && \
             mv -Tf '/opt/manyfaced/current.new' '/opt/manyfaced/current'"
@@ -340,7 +339,7 @@ jobs:
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
 
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             cp ${STAGING_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
             systemctl daemon-reload && \
@@ -364,7 +363,7 @@ jobs:
           # Uses per-port ss filter syntax (sport = :PORT) — no regex over ss output.
           # Expands ranges (e.g. 11300-11311 → individual ports). Retries up to
           # 10 times with 3s sleep for a total 30-second budget on startup.
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" 'bash -c '"'"'
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" 'bash -c '"'"'
             set -euo pipefail
 
             # Read HONEY_TOP_PORTS from the droplet env file (source of truth)
@@ -434,7 +433,7 @@ jobs:
           DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
         run: |
           set -euo pipefail
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "bash /opt/manyfaced/scripts/verify_deploy.sh"
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "bash /opt/manyfaced/scripts/verify_deploy.sh"
 
       - name: Clean up old releases (keep last 5)
         env:
@@ -446,7 +445,7 @@ jobs:
 
           # Keep last 5 releases under /opt/manyfaced/releases/. Never delete
           # current's target even if it falls outside the last 5 (defensive).
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
             ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | tail -n +6 | xargs -r rm -rf && \
@@ -462,7 +461,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
             CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
             PREV_RELEASE=\$(ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | head -1) && \
