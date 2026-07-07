@@ -1,6 +1,7 @@
 """Tests for SQLiteStorage (init, insert, close, context manager, multiple inserts)."""
 
 import os
+import sqlite3
 from datetime import datetime
 from unittest.mock import patch
 
@@ -584,3 +585,103 @@ class TestInsertLockContention:
         dumped = mock_dump.call_args.args[0]
         assert dumped['ip'] == '10.0.0.6'
         assert dumped['_dump_reason'] == 'sqlite_lock_contention'
+
+
+class TestRetentionArchiveDelete:
+    """Coverage for retention jobs using the module-wide _WRITE_LOCK (#179)
+    and the archive-doesn't-lose-rows guarantee (#178)."""
+
+    def _seed(self, storage, rows):
+        """Insert rows directly into the storage connection (bypasses insert()).
+
+        rows: list of (id, bot_ip, hostname, timestamp) tuples.
+        """
+        ph = ','.join(['?'] * 4)
+        storage._conn.executemany(
+            f'INSERT INTO honeypot_bears (id, bot_ip, hostname, timestamp) VALUES ({ph})', rows
+        )
+        storage._conn.commit()
+
+    def test_archive_deletes_only_archived_rows(self, tmp_path):
+        """archive_old_records deletes only rows that were copied to archive."""
+        db = tmp_path / 'h.db'
+        storage = SQLiteStorage(db_path=str(db))
+        old_ts = '2000-01-01 00:00:00.000000'
+        new_ts = '2099-01-01 00:00:00.000000'
+        self._seed(
+            storage,
+            [
+                (1, '10.0.0.1', 'h1', old_ts),
+                (2, '10.0.0.2', 'h2', old_ts),
+                (3, '10.0.0.3', 'h3', new_ts),
+            ],
+        )
+
+        dest = str(tmp_path / 'archive.sqlite')
+        result = storage.archive_old_records(days=1, dest_db=dest)
+        storage.close()
+
+        assert result == dest
+        # Old rows gone from main, new row preserved.
+        main = sqlite3.connect(str(db))
+        remaining = {r[0] for r in main.execute('SELECT id FROM honeypot_bears')}
+        main.close()
+        assert remaining == {3}
+        # Both old rows present in archive.
+        arc = sqlite3.connect(dest)
+        archived = {r[0] for r in arc.execute('SELECT id FROM honeypot_bears_archive')}
+        arc.close()
+        assert archived == {1, 2}
+
+    def test_archive_keeps_rows_when_copy_fails(self, tmp_path):
+        """If the archive copy fails, no rows are deleted (no data loss)."""
+        db = tmp_path / 'h.db'
+        storage = SQLiteStorage(db_path=str(db))
+        old_ts = '2000-01-01 00:00:00.000000'
+        self._seed(storage, [(1, '10.0.0.1', 'h1', old_ts), (2, '10.0.0.2', 'h2', old_ts)])
+
+        # Break the archive DB so every row insert fails, but keep the main conn alive.
+        real_connect = sqlite3.connect
+
+        class _BrokenConn:
+            def __init__(self, conn):
+                self._conn = conn
+
+            def __getattr__(self, name):
+                return getattr(self._conn, name)
+
+            def execute(self, *args, **kwargs):
+                raise sqlite3.Error('disk full')
+
+        def _connect(path, *args, **kwargs):
+            conn = real_connect(path, *args, **kwargs)
+            if 'archive' in str(path):
+                return _BrokenConn(conn)
+            return conn
+
+        with patch('manyfaced.db.storage.sqlite3.connect', side_effect=_connect):
+            result = storage.archive_old_records(days=1)
+        storage.close()
+
+        # Archive aborted; main table must be untouched.
+        assert result is None
+        main = sqlite3.connect(str(db))
+        remaining = {r[0] for r in main.execute('SELECT id FROM honeypot_bears')}
+        main.close()
+        assert remaining == {1, 2}
+
+    def test_delete_old_records_removes_old_rows(self, tmp_path):
+        db = tmp_path / 'h.db'
+        storage = SQLiteStorage(db_path=str(db))
+        old_ts = '2000-01-01 00:00:00.000000'
+        new_ts = '2099-01-01 00:00:00.000000'
+        self._seed(storage, [(1, '10.0.0.1', 'h1', old_ts), (2, '10.0.0.2', 'h2', new_ts)])
+
+        deleted = storage.delete_old_records(days=1)
+        storage.close()
+
+        assert deleted == 1
+        main = sqlite3.connect(str(db))
+        remaining = {r[0] for r in main.execute('SELECT id FROM honeypot_bears')}
+        main.close()
+        assert remaining == {2}
