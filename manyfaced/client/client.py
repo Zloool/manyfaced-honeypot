@@ -317,7 +317,14 @@ def create_server(args, update_event: _MpEvent, port: int) -> bool:
                 connection_socket, bot_addr = server_socket.accept()
             except KeyboardInterrupt:
                 break
-            _handle_bot_connection(connection_socket, args, bot_addr, update_event)
+            # Handle each bot in a daemon thread so slow bots don't block other connections
+            t = threading.Thread(
+                target=_handle_bot_connection,
+                args=(connection_socket, args, bot_addr, update_event),
+                name=f'honey-{port}-{bot_addr[0]}',
+                daemon=True,
+            )
+            t.start()
     finally:
         server_socket.close()
     return True
