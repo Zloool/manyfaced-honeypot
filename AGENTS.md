@@ -108,6 +108,24 @@ To add a new signal: call `metrics.incr(name)` / `metrics.set_gauge(name, value)
 at the relevant hook point (router dispatch, report send, storage insert,
 geo lookup, credential capture). No new dependency is introduced.
 
+## Handler-replay corpus (#163)
+
+Deterministic, offline validation of handler behavior: feed a raw probe, check
+what each face returns. No live bots, no network.
+
+- **Corpus:** `test/corpus/*.raw` — one representative raw probe per scenario
+  (WordPress login, phpMyAdmin, `.env` disclosure, SSH banner, FTP creds,
+  Redis/VNC handshakes, path traversal, empty/malformed, WebDAV/Jenkins/XML-RPC).
+- **Harness:** `test/test_handler_replay.py` runs every probe through
+  `HTTPHandler.handle_request` and snapshots the normalized response under
+  `test/corpus/snapshots/<scenario>.json`. A handler/route change shows up as a
+  snapshot diff — the reviewable blast-radius of the change.
+- **Regen:** after an intentional behavior change, run
+  `REGEN_SNAPSHOTS=1 pytest test/test_handler_replay.py` and commit the updated
+  golden files. Volatile content (Date/Server/Set-Cookie headers, the random
+  fake OpenSSH version) is normalized out so snapshots reflect handler *logic*,
+  not server clock or randomness.
+
 ## Container / Docker (#146)
 
 The honeypot has a `Dockerfile`, `.dockerignore`, and `compose.yaml` for
