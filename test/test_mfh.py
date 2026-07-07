@@ -335,6 +335,17 @@ class TestRunChildSupervision(unittest.TestCase):
         """
         import manyfaced.mfh as mfh
 
+        # Fake clock: advance by a large fixed step on every time.time() call so
+        # the exponential backoff cooldown always elapses immediately. This lets
+        # the crash-loop guard be exercised with REAL production backoff
+        # constants (which would otherwise make the loop wait ~30s between
+        # restarts and time out) without slowing the test (#222).
+        fake_clock = {'t': 0.0}
+
+        def _fake_time():
+            fake_clock['t'] += 31.0  # > _BACKOFF_MAX, so cooldown always passes
+            return fake_clock['t']
+
         with (
             patch('manyfaced.mfh._acquire_lockfile'),
             patch('manyfaced.mfh.setup_logging'),
@@ -344,6 +355,7 @@ class TestRunChildSupervision(unittest.TestCase):
             patch('manyfaced.mfh.Process') as mock_process_cls,
             patch('manyfaced.mfh.Event') as mock_event_cls,
             patch('manyfaced.mfh.time.sleep'),
+            patch('manyfaced.mfh.time.time', _fake_time),
             patch.object(mfh, '_BACKOFF_BASE', window_constants['base']),
             patch.object(mfh, '_BACKOFF_MAX', window_constants['max']),
             patch.object(mfh, '_MAX_RESTARTS_PER_WINDOW', window_constants['max_restarts']),
@@ -378,17 +390,27 @@ class TestRunChildSupervision(unittest.TestCase):
             return mock_process_cls.call_count
 
     def test_crash_loop_guard_exits_parent_after_cap(self):
-        """A child that keeps dying must trip the cap and sys.exit(1)."""
+        """A continuously-crashing child must trip the cap and sys.exit(1) even
+        with the REAL production constants (backoff saturating at 30s), which is
+        exactly the unreachable case from #222 — the old sliding-window guard
+        could never accumulate 10 timestamps in 60s when restarts are 30s apart.
+        """
         import manyfaced.mfh as mfh
 
-        # Cap at 3 restarts in a 1000s window; backoff tiny so all restarts
-        # happen in the first loop iteration sequence.
-        constants = {'base': 0.0, 'max': 0.0, 'max_restarts': 3, 'window': 1000.0}
+        # Real production constants: base=1.0, max=30.0, cap=10. With saturated
+        # 30s backoff the windowed count could never reach 10, so this only
+        # passes because the guard now counts cumulative attempts.
+        constants = {
+            'base': 1.0,
+            'max': 30.0,
+            'max_restarts': mfh._MAX_RESTARTS_PER_WINDOW,
+            'window': mfh._RESTART_WINDOW_SEC,
+        }
         with patch.object(mfh, 'sys') as mock_sys:
             mock_sys.exit.side_effect = SystemExit(1)
             with self.assertRaises(SystemExit) as cm:
                 self._run_with_dead_child(
-                    kill_parent_after_n_restarts=3,
+                    kill_parent_after_n_restarts=mfh._MAX_RESTARTS_PER_WINDOW,
                     window_constants=constants,
                 )
             self.assertEqual(cm.exception.code, 1)
