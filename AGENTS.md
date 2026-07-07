@@ -33,6 +33,29 @@ systemd/                # manyfaced.service + logrotate config
 
 See [`docs/DEVELOPER.md`](docs/DEVELOPER.md) for architecture deep-dive and how to add new faces.
 
+## Definition of Done (pre-PR contract)
+
+Before opening a PR, ALL of the following must be GREEN locally. These are
+exactly the gates CI enforces — no drift between this checklist and CI:
+
+- `ruff check .`
+- `ruff format --check .`
+- `basedpyright manyfaced/`
+- `pytest` (coverage gate is enforced at 76% — if local coverage drops, CI fails)
+- `python .github/workflows/scripts/check_docs_drift.py` (doc/code drift check)
+
+Additional rules:
+
+- **Behavior change** → add or update a test that fails without the fix.
+- **Doc-affecting change** → re-run the docs-drift check (and update `docs/` if a referenced symbol/CLI changed).
+- **New CI job or required status check** → add it to branch protection's required
+  checks and to `deploy.yml`'s `needs:` so it actually blocks merges.
+- Once #146 lands: also verify `docker compose config` for container-buildable changes.
+
+The PR template (`.github/pull_request_template.md`) links here; fill it out on
+every PR. Pairs with #152 (these same gates wired as pre-commit hooks for a
+tighter agent loop).
+
 ## Deployment
 
 Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). For a quick health check, use the **prod-healthcheck** skill; for the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis** skill.
