@@ -25,7 +25,8 @@ def test_dockerfile_exists_and_is_sane():
     text = DOCKERFILE.read_text(encoding='utf-8')
     # Must install the package and expose the console script as entrypoint.
     assert 'pip install .' in text
-    assert 'manyfaced.mfh' in text
+    # Entrypoint is the installed `manyfaced` console script (pip install .).
+    assert 'ENTRYPOINT ["manyfaced"]' in text
     # Runs as non-root (security requirement from #146).
     assert 'USER honeypot' in text
 
