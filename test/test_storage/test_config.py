@@ -74,6 +74,21 @@ class TestResolveDbPath:
         assert result.endswith(os.path.join('data', 'nested', 'honeypot.db'))
         assert result.startswith(_PROJECT_ROOT)
 
+    def test_relative_path_rewritten_to_stable_data_dir_not_release_dir(self):
+        """Relative DB path rewrites under a deploy-independent data dir, NOT the
+        ephemeral release dir (_PROJECT_ROOT), so routine release cleanup can't
+        delete the DB (issue #224)."""
+        stable = os.path.abspath('/opt/manyfaced/bots')
+        with (
+            patch.dict(os.environ, {'HONEY_DB_PATH': 'data/honeypot.db'}, clear=True),
+            patch.object(storage, '_resolve_data_dir', return_value=stable),
+        ):
+            result = _resolve_db_path()
+        assert os.path.isabs(result)
+        assert result.startswith(stable)
+        # The rewrite target must NOT be the release directory.
+        assert not result.startswith(_PROJECT_ROOT)
+
     def test_validate_db_path_absolute_true_for_absolute(self):
         """validate_db_path_absolute() returns True when the configured path is absolute."""
         abs_path = os.path.abspath('/abs/path/db.sqlite')

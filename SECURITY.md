@@ -24,9 +24,9 @@ Instead, use **GitHub Private Vulnerability Reporting**:
 1. Go to the repository's **Security** tab → **Report a vulnerability**.
 2. Fill in the form. Only the maintainers can see it.
 
-If private reporting is unavailable, email the maintainer (see the repo
-description / `CODEOWNERS`) with the subject `SECURITY: <short summary>` and
-include:
+If private reporting is unavailable, email the maintainer (see `CODEOWNERS`
+for the current owner, or the repository's GitHub owner profile) with the
+subject `SECURITY: <short summary>` and include:
 - a description of the vulnerability and impact,
 - steps to reproduce (or a proof-of-concept),
 - the affected version/commit.
