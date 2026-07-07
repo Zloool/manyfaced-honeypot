@@ -142,22 +142,73 @@ class TestAlertConfigDataclass:
         assert config.LOG_ONLY is True
 
 
-class TestIntegration:
-    """Integration tests for alerting system."""
+class TestAlertingFixes:
+    """Regression tests for issues #172, #173, #174."""
 
-    def test_notify_credential_capture_integration(self):
-        """Test full integration of credential capture notification."""
-        from manyfaced.common.alerting import notify_credential_capture, alert_config
+    def test_env_vars_are_read(self, monkeypatch):
+        """#172: HONEY_ALERT_* environment variables must be picked up."""
+        import os
 
-        # This should not raise any exceptions even with default config
-        notify_credential_capture(
-            ip='192.168.1.100',
-            credentials='admin:secret123',
-            path='/login',
-            hostname='production-honeypot',
-        )
+        monkeypatch.setenv('HONEY_ALERT_WEBHOOK_URL', 'https://example.test/hook')
+        monkeypatch.setenv('HONEY_ALERT_TELEGRAM_BOT_TOKEN', 'tok123')
+        monkeypatch.setenv('HONEY_ALERT_SMTP_HOST', 'smtp.example.test')
+        # Ensure no TOML overrides it.
+        monkeypatch.delenv('HONEY_ALERT_CONFIG', raising=False)
 
-        # Verify it completed without errors (logging is the only action with default config)
+        from manyfaced.common.alerting import _load_alert_config
+
+        cfg = _load_alert_config()
+        assert cfg.WEBHOOK_URL == 'https://example.test/hook'
+        assert cfg.TELEGRAM_BOT_TOKEN == 'tok123'
+        assert cfg.SMTP_HOST == 'smtp.example.test'
+
+    def test_log_only_false_from_toml(self, tmp_path, monkeypatch):
+        """#173: log_only = false in config.toml must take effect (not coerce to true)."""
+        from types import SimpleNamespace
+
+        from manyfaced.common import config
+
+        cfg_path = tmp_path / 'alert.toml'
+        cfg_path.write_text('[alerting]\nenabled = true\nlog_only = false\n', encoding='utf-8')
+        # _load_alert_config reads settings.ALERT_CONFIG (frozen Config can't be
+        # setattr'd), so swap the module-level settings object for a stand-in.
+        monkeypatch.setattr(config, 'settings', SimpleNamespace(ALERT_CONFIG=str(cfg_path)))
+
+        from manyfaced.common.alerting import _load_alert_config
+
+        cfg = _load_alert_config()
+        assert cfg.LOG_ONLY is False
+        assert cfg.ENABLED is True
+
+    def test_as_bool_coerces_toml_false(self):
+        """#173: _as_bool must treat a TOML-parsed False as False (not fall back to default)."""
+        from manyfaced.common.alerting import _as_bool
+
+        assert _as_bool(False, True) is False
+        assert _as_bool(True, False) is True
+        assert _as_bool('false', True) is False
+        assert _as_bool('true', False) is True
+        assert _as_bool(None, True) is True
+
+    def test_notify_dispatches_background_thread(self, caplog):
+        """#174: notify_credential_capture must not block the caller; it spawns a daemon thread."""
+        import logging
+        import threading
+
+        from manyfaced.common import alerting
+        from manyfaced.common.alerting import notify_credential_capture
+
+        # Force external delivery path (not LOG_ONLY).
+        with patch.object(
+            alerting, 'alert_config', alerting.AlertConfig(LOG_ONLY=False, WEBHOOK_URL='https://x')
+        ):
+            with caplog.at_level(logging.ERROR):
+                notify_credential_capture(ip='9.9.9.9', credentials='u:p', path='/x')
+            # The caller returns immediately; delivery runs on a background thread.
+            threads = [t for t in threading.enumerate() if t.name == 'alert-delivery']
+            assert threads, 'expected an alert-delivery background thread to be spawned'
+            for t in threads:
+                t.join(timeout=2)
 
 
 __all__ = [
@@ -165,5 +216,5 @@ __all__ = [
     'TestAlertConfig',
     'TestSendFunctions',
     'TestAlertConfigDataclass',
-    'TestIntegration',
+    'TestAlertingFixes',
 ]
