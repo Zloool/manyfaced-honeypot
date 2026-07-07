@@ -14,9 +14,12 @@ adding any missing columns.  It is:
   actually missing.
 * **Non-destructive** — it never drops or renames columns, and it runs a WAL
   checkpoint first so no uncommitted transactions are lost.
+* **Self-backing** — by default it writes a timestamped ``.bak`` copy of the
+  live DB (with WAL sidecars) before altering the schema, so a migration can
+  always be reverted.  Pass ``--no-backup`` to skip this.
 
 Usage:
-    python scripts/migrate_db.py [--db /path/to/honeypot.sqlite]
+    python scripts/migrate_db.py [--db /path/to/honeypot.sqlite] [--no-backup]
 
 Exit codes:
     0  migration applied successfully (or nothing to do)
@@ -26,7 +29,10 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import datetime
+import os
 import re
+import shutil
 import sqlite3
 import sys
 
@@ -66,7 +72,42 @@ def _parse_target_columns(create_sql: str) -> list[str]:
     return columns
 
 
-def migrate(db_path: str) -> int:
+def _backup(db_path: str) -> str | None:
+    """Copy the live DB (and WAL sidecars) to a timestamped ``.bak`` beside it.
+
+    SQLite in WAL mode keeps uncommitted data in the ``.sqlite-wal`` /
+    ``.sqlite-shm`` sidecars, so a backup must include them — or checkpoint
+    first and copy the main file.  We checkpoint into the main file, then copy
+    just the main file (plus any residual sidecars for safety) so the backup is
+    self-contained.
+
+    Returns the backup path, or None if the source does not exist.
+    """
+    if not os.path.exists(db_path):
+        return None
+    stamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    backup_path = f'{db_path}.{stamp}.bak'
+    try:
+        src = sqlite3.connect(db_path)
+        src.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        src.close()
+    except sqlite3.Error as exc:
+        print(f'[migrate] WARNING: pre-backup checkpoint failed ({exc}); copying as-is.', file=sys.stderr)
+    try:
+        shutil.copy2(db_path, backup_path)
+        for sidecar in (f'{db_path}-wal', f'{db_path}-shm'):
+            if os.path.exists(sidecar):
+                shutil.copy2(sidecar, f'{backup_path}{sidecar[len(db_path):]}')
+    except OSError as exc:
+        print(f'[migrate] WARNING: backup copy failed ({exc}); proceeding without backup.', file=sys.stderr)
+        return None
+    print(f'[migrate] backup written: {backup_path}')
+    return backup_path
+
+
+def migrate(db_path: str, backup: bool = True) -> int:
+    if backup:
+        _backup(db_path)
     conn = None
     try:
         conn = sqlite3.connect(db_path)
@@ -108,8 +149,13 @@ def main() -> int:
         default='/opt/manyfaced/bots/honeypot.sqlite',
         help='Path to the honeypot SQLite database.',
     )
+    parser.add_argument(
+        '--no-backup',
+        action='store_true',
+        help='Skip the timestamped .bak copy written before migrating.',
+    )
     args = parser.parse_args()
-    return migrate(args.db)
+    return migrate(args.db, backup=not args.no_backup)
 
 
 if __name__ == '__main__':
