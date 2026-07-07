@@ -75,8 +75,8 @@ class StorageBackend(ABC):
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
-def _resolve_db_path() -> str:
-    """Return the SQLite database path.
+def _raw_db_path() -> str:
+    """Return the configured DB path WITHOUT the relative->absolute rewrite.
 
     Precedence (highest to lowest):
       1. HONEY_DB_PATH environment variable
@@ -98,6 +98,49 @@ def _resolve_db_path() -> str:
         pass
 
     return 'bots/honeypot.sqlite'
+
+
+def _resolve_db_path() -> str:
+    """Return the absolute SQLite database path, rewriting relative paths.
+
+    A relative path is a footgun: the server's CWD (the ``current`` release
+    symlink) is orphaned on every deploy, so writes would land in a fresh,
+    empty file each deploy while operators inspect the long-lived DB — the
+    "honeypot silently not recording" symptom (issue #188). Relative paths are
+    therefore rewritten to absolute paths under the project root and a loud
+    warning is emitted so the operator notices the misconfiguration.
+
+    Use :func:`validate_db_path_absolute` to detect a relative *configuration*
+    (before the rewrite) so a deploy/CI gate can fail fast.
+    """
+    resolved = _raw_db_path()
+    if not os.path.isabs(resolved):
+        # Rewrite relative -> absolute under the project root so the DB at
+        # least survives deploys instead of being orphaned by the CWD symlink.
+        abs_path = os.path.abspath(os.path.join(_PROJECT_ROOT, resolved))
+        logger.warning(
+            'DB path %r is relative; under systemd the CWD (%s) is orphaned on '
+            'every deploy and writes would be lost. Rewriting to absolute %r '
+            '(issue #188). Set HONEY_DB_PATH (or database.path in config) to an '
+            'absolute, long-lived path to silence this.',
+            resolved,
+            _PROJECT_ROOT,
+            abs_path,
+        )
+        return abs_path
+
+    return resolved
+
+
+def validate_db_path_absolute() -> bool:
+    """Return True if the *configured* (raw) DB path is absolute (deploy/CI guard).
+
+    Unlike :func:`_resolve_db_path`, this does NOT apply the defensive
+    relative->absolute rewrite, so it reports the actual configuration. A
+    deploy/CI step should fail when this returns False to prevent recording
+    from splitting onto an orphaned CWD-relative database (issue #188).
+    """
+    return os.path.isabs(_raw_db_path())
 
 
 def _resolve_backend() -> str:
@@ -544,4 +587,5 @@ __all__ = [
     'PostgreSQLStorage',
     'get_storage',
     'backup_database',
+    'validate_db_path_absolute',
 ]

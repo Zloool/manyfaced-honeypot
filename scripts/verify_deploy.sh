@@ -19,6 +19,26 @@ if [ -f /opt/manyfaced/honeypot.env ]; then
   set -a; . /opt/manyfaced/honeypot.env; set +a
 fi
 
+# 0) Guard: the resolved DB path MUST be absolute. A relative path under the
+# systemd CWD (the orphaned `current` symlink) would split recording onto a
+# deploy-orphaned file while operators inspect the real DB — the 2026-07
+# silent-stop (issue #188). The code rewrites relative->absolute defensively,
+# but a deploy onto a misconfigured droplet must FAIL here rather than ship
+# silent data loss.
+echo "== Verifying DB path is absolute =="
+"$VENV" - <<'PY'
+from manyfaced.db.storage import validate_db_path_absolute
+
+if not validate_db_path_absolute():
+    print("ERROR: configured DB path is NOT absolute (relative to CWD).")
+    print("A relative HONEY_DB_PATH/database.path under the systemd CWD (the")
+    print("orphaned 'current' symlink) splits recording onto a deploy-orphaned")
+    print("file while operators inspect the real DB (issue #188). Set it to an")
+    print("absolute, long-lived path such as /opt/manyfaced/bots/honeypot.sqlite.")
+    raise SystemExit(1)
+print("OK: DB path is absolute")
+PY
+
 CURRENT_TARGET="$(readlink -f /opt/manyfaced/current 2>/dev/null || echo /opt/manyfaced/releases/current)"
 VENV="${CURRENT_TARGET}/venv/bin/python3"
 [ -x "$VENV" ] || VENV="/opt/manyfaced/venv/bin/python3"
