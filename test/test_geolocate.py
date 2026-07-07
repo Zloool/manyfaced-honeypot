@@ -299,3 +299,28 @@ def test_cache_expired_entries_are_not_returned():
     country, continent = lookup_ip_geolocation('9.9.9.9')
     assert country == ''
     assert continent == ''
+
+
+def test_stop_worker_does_not_crash_producer_or_consumer():
+    """Concurrent stop_geo_worker() must not crash the request thread or worker (#171)."""
+    import concurrent.futures
+
+    start_geo_worker()
+
+    def hammer():
+        # Repeatedly look up + stop the worker; races must not raise AttributeError.
+        for _ in range(50):
+            try:
+                lookup_ip_geolocation('198.51.100.7')
+            except AttributeError:
+                raise  # TOCTOU crash would surface here
+            stop_geo_worker()
+
+    # Run several threads hammering lookup/stop concurrently.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(hammer) for _ in range(4)]
+        for f in futures:
+            f.result()  # raises if any thread hit the AttributeError race
+
+    # No assertion failure == no crash. Worker cleanup.
+    stop_geo_worker()
