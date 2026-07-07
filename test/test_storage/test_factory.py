@@ -1,10 +1,23 @@
 """Tests for get_storage() factory and edge cases."""
 
 import os
+import pytest
 from unittest.mock import MagicMock, patch
 
 # Imports handled by conftest.py sys.path setup
-from manyfaced.db.storage import SQLiteStorage, PostgreSQLStorage, get_storage  # noqa: E402
+from manyfaced.db.storage import (  # noqa: E402
+    SQLiteStorage,
+    PostgreSQLStorage,
+    get_storage,
+    reset_storage,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_storage_singleton():
+    """get_storage() caches a singleton; reset it so each test starts fresh."""
+    yield
+    reset_storage()
 
 
 # ---------------------------------------------------------------------------
@@ -192,3 +205,22 @@ class TestEdgeCases:
         assert row[9] == 'US'  # bot_country from record
         assert row[15] == 'admin'  # login from record
         storage.close()
+
+
+class TestStorageSingleton:
+    """get_storage() must cache a single instance and reuse its connection."""
+
+    def test_get_storage_returns_same_instance_on_repeat_calls(self):
+        with patch.dict(os.environ, {}, clear=True):
+            a = get_storage()
+            b = get_storage()
+        assert a is b
+        reset_storage()
+
+    def test_reset_storage_forces_rebuild(self):
+        with patch.dict(os.environ, {}, clear=True):
+            a = get_storage()
+            reset_storage()
+            b = get_storage()
+        assert a is not b
+        reset_storage()

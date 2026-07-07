@@ -23,11 +23,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Process-wide lock serializing all SQLite writes. get_storage() returns a
-# fresh SQLiteStorage (and thus a fresh connection) on every call, so the
-# per-instance lock cannot coordinate concurrent writer threads. A single
-# module-level lock is what actually prevents 'database is locked' under
-# the WAL backend when many report threads insert at once.
+# Process-wide lock serializing all SQLite writes. Because get_storage() now
+# returns a cached singleton (one shared connection -- see issue #141), the
+# per-instance lock alone would suffice, but a single module-level lock is kept
+# as defence-in-depth so that even if multiple connections ever exist (e.g.
+# tests, backups) concurrent writes can never hit 'database is locked' under the
+# WAL backend.
 _WRITE_LOCK = Lock()
 
 # ---------------------------------------------------------------------------
@@ -454,17 +455,45 @@ class PostgreSQLStorage(StorageBackend):
 # ---------------------------------------------------------------------------
 
 
-def get_storage() -> StorageBackend:
-    """Factory to get the storage backend based on HONEY_DB_BACKEND env var.
+# Module-level cached storage instance. get_storage() returns this singleton so
+# that every insert reuses a single DB connection instead of opening a brand-new
+# connection (and re-running CREATE TABLE / PRAGMA per call) on every insert.
+# Reusing one connection is what keeps SQLite WAL mode stable under concurrent
+# report load (see issue #141) -- multiple simultaneous writer connections were
+# the root cause of intermittent "database is locked" errors.
+_storage_singleton: StorageBackend | None = None
 
-    Returns a :class:`SQLiteStorage` or :class:`PostgreSQLStorage` depending on
-    the value of the ``HONEY_DB_BACKEND`` environment variable (case-insensitive).
+
+def get_storage() -> StorageBackend:
+    """Factory + cache to get the storage backend based on HONEY_DB_BACKEND env var.
+
+    Returns a cached :class:`SQLiteStorage` or :class:`PostgreSQLStorage` instance
+    (singleton). The instance -- and its underlying DB connection -- is created
+    once and reused for every subsequent call, so inserts don't open a new
+    connection each time (issue #141).
+
+    Call :func:`reset_storage` to drop the cached instance (e.g. after changing
+    ``HONEY_DB_BACKEND`` or for tests).
     """
-    backend = _resolve_backend()
-    if backend == 'postgresql':
-        return PostgreSQLStorage()
-    # default to SQLite
-    return SQLiteStorage()
+    global _storage_singleton
+    if _storage_singleton is None:
+        backend = _resolve_backend()
+        if backend == 'postgresql':
+            _storage_singleton = PostgreSQLStorage()
+        else:
+            _storage_singleton = SQLiteStorage()
+    return _storage_singleton
+
+
+def reset_storage() -> None:
+    """Drop the cached storage singleton so the next get_storage() rebuilds it."""
+    global _storage_singleton
+    if _storage_singleton is not None:
+        try:
+            _storage_singleton.close()
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+    _storage_singleton = None
 
 
 def backup_database(dest_dir: str | None = None) -> list[str]:
