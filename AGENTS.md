@@ -108,6 +108,21 @@ To add a new signal: call `metrics.incr(name)` / `metrics.set_gauge(name, value)
 at the relevant hook point (router dispatch, report send, storage insert,
 geo lookup, credential capture). No new dependency is introduced.
 
+## Container / Docker (#146)
+
+The honeypot has a `Dockerfile`, `.dockerignore`, and `compose.yaml` for
+reproducible local dev, CI, and a future containerized deploy (#149).
+
+- Image runs as the non-root `honeypot` user; captures persist in a named
+  volume at `/opt/manyfaced/bots` (mirrors the droplet path).
+- Config is wired from `HONEY_*` env vars via `compose.yaml`'s `env_file` (an
+  `.env` git-ignored file, seeded from `templates/honeypot.env.example`).
+- The **Build Image** workflow builds the image and smoke-tests
+  `manyfaced --generate-config` + `docker compose config` on every push/PR. It
+  is intentionally NOT a required status check, so it never blocks merges.
+- When adding a port/handler, update `compose.yaml` ports and the env example in
+  lockstep so the container exposes what prod does.
+
 ## Guardrails
 
 - **Never push to `master`** — always work on a feature branch and open a PR
