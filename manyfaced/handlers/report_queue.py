@@ -14,6 +14,7 @@ import queue as _queue
 import threading
 
 from manyfaced.common.logging_setup import get_logger
+from manyfaced.common.metrics import set_gauge
 
 logger = get_logger(__name__)
 
@@ -35,12 +36,14 @@ def _report_worker():
     while _report_queue_alive:
         try:
             fn, args = q.get(timeout=1)
+            set_gauge('report_queue_depth', q.qsize())
             try:
                 fn(*args)
             except Exception:
                 logger.exception('Report worker error')
             finally:
                 q.task_done()
+                set_gauge('report_queue_depth', q.qsize())
         except _queue.Empty:
             continue
 

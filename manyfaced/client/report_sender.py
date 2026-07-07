@@ -8,6 +8,7 @@ import time
 from socket import AF_INET, SOCK_STREAM, error as socket_error, socket
 
 from manyfaced.common.logging_setup import get_logger
+from manyfaced.common.metrics import incr
 from manyfaced.common.myenc import AESCipher
 from manyfaced.common.utils import dump_file
 
@@ -91,6 +92,7 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
                 print(response)
             s.close()
             logger.info('Report sent for %s', client)
+            incr('report_send_success')
             return  # success – stop retrying
         except socket_error:
             s.close()
@@ -110,6 +112,7 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
                     client,
                     REPORT_SEND_MAX_RETRIES,
                 )
+                incr('report_send_failure')
                 dump_file(data)
         except KeyboardInterrupt:
             s.close()
