@@ -118,3 +118,38 @@ def test_main_returns_error_code_on_failure(tmp_path: Path):
     with mock.patch.object(sys, 'argv', argv):
         rc = migrate_db.main()
     assert rc == 1
+
+
+def test_migrate_writes_backup_before_altering(tmp_path: Path):
+    """migrate() writes a timestamped .bak copy of the live DB by default."""
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])  # missing bot_profile_data
+    conn.close()
+
+    before = list(tmp_path.glob('*.bak'))
+    rc = migrate_db.migrate(str(db))
+    after = list(tmp_path.glob('*.bak'))
+
+    assert rc == 0
+    # Exactly one new .bak file appeared and it is a copy of the pre-migration DB.
+    assert len(after) == len(before) + 1
+    bak = after[0]
+    assert bak.name.startswith('h.db.') and bak.name.endswith('.bak')
+    # The backup predates the migration: it lacks bot_profile_data.
+    bconn = sqlite3.connect(bak)
+    bnames = {r[1] for r in bconn.execute('PRAGMA table_info(honeypot_bears)')}
+    bconn.close()
+    assert 'bot_profile_data' not in bnames
+
+
+def test_migrate_skips_backup_with_flag(tmp_path: Path):
+    """backup=False leaves no .bak file behind."""
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])
+    conn.close()
+
+    rc = migrate_db.migrate(str(db), backup=False)
+    assert rc == 0
+    assert not list(tmp_path.glob('*.bak'))
