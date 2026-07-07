@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from pathlib import Path
 from unittest import mock
@@ -189,3 +190,34 @@ def test_migrate_retention_flag_default_keep(tmp_path: Path):
 
     backups = sorted(tmp_path.glob('h.db.*.bak'))
     assert len(backups) <= 3, f'expected <=3 backups, found {len(backups)}'
+
+
+def test_migrate_aborts_when_backup_fails(tmp_path: Path):
+    """A failed backup aborts the migration (fail-closed, issue #223).
+
+    The 2026-07 disk-full outage showed that altering the live schema with no
+    revert point is the worst possible moment for a silent backup failure. If
+    the backup copy raises, migrate() must NOT proceed to ALTER the schema.
+    """
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])  # missing bot_profile_data
+    conn.close()
+
+    # Force the backup copy to raise (e.g. disk full / permission error).
+    real_copy2 = shutil.copy2
+
+    def _boom(src, dst, *a, **k):
+        if str(dst).endswith('.bak'):
+            raise OSError('simulated backup failure')
+        return real_copy2(src, dst, *a, **k)
+
+    with mock.patch.object(shutil, 'copy2', _boom):
+        rc = migrate_db.migrate(str(db))
+
+    # Migration must fail closed: non-zero exit, schema untouched.
+    assert rc == 1
+    conn = sqlite3.connect(db)
+    names = {r[1] for r in conn.execute('PRAGMA table_info(honeypot_bears)')}
+    conn.close()
+    assert 'bot_profile_data' not in names, 'schema was altered despite failed backup'

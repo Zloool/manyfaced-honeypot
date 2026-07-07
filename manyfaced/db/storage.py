@@ -408,8 +408,11 @@ class SQLiteStorage(StorageBackend):
 
                 # Delete only the rows that were actually archived.
                 placeholders_ids = ','.join(['?' for _ in archived_ids])
+                # `placeholders_ids` is a fixed string of "?" markers (one per
+                # archived id), never attacker-controlled; `archived_ids` are bound
+                # as parameters. See issue #221.
                 self._conn.execute(
-                    f'DELETE FROM honeypot_bears WHERE id IN ({placeholders_ids})',
+                    f'DELETE FROM honeypot_bears WHERE id IN ({placeholders_ids})',  # nosec B608
                     archived_ids,
                 )
                 self._conn.commit()
