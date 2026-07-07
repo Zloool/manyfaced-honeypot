@@ -371,6 +371,36 @@ pip install -e .          # runtime only
 pip install -e ".[dev]"   # runtime + dev
 ```
 
+## Container / Docker
+
+The honeypot ships a `Dockerfile`, `.dockerignore`, and `compose.yaml` (issue
+#146) for reproducible local dev, CI, and a future containerized deploy
+(#149). The image runs as the non-root `honeypot` user and persists captures in
+a named volume at `/opt/manyfaced/bots`.
+
+```bash
+# Local dev / test:
+cp templates/honeypot.env.example .env   # edit secrets (HIVEPASS etc.)
+docker compose up --build
+
+# One-off config generation inside the image:
+docker compose run --rm honeypot --generate-config
+
+# Validate the compose file without starting anything:
+docker compose config --quiet
+```
+
+Honeypot ports are wired from the `HONEY_*` env scheme (see
+`templates/honeypot.env.example`). In `top` mode the honeypot binds high
+container ports (privileged host ports are redirected via iptables — see
+`templates/setup-iptables-privileged-ports.sh`); `compose.yaml` maps a
+representative subset for local testing. To bind low host ports directly, grant
+the container `NET_BIND_SERVICE` (commented in `compose.yaml`).
+
+The image build is verified on every push/PR by the **Build Image** workflow,
+which builds the image and smoke-tests `manyfaced --generate-config` plus
+`docker compose config`.
+
 ## Known Issues & TODOs
 
 - `tracert` field in BearStorage is marked TODO (never implemented)

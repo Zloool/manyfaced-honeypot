@@ -1,0 +1,37 @@
+# VCS / CI
+.git/
+.github/
+.gitattributes
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+
+# Local data / secrets — never bake real captures or secrets into an image
+bots/
+*.db
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+honeypot.env
+.env
+.env.local
+deployment-analysis/
+prod-backup/
+
+# Docs / analysis that don't belong in the runtime image
+docs/
+deployment-analysis/
+coverage.xml
+
+# Misc
+*.md
+!pyproject.toml
