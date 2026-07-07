@@ -72,7 +72,38 @@ def _parse_target_columns(create_sql: str) -> list[str]:
     return columns
 
 
-def _backup(db_path: str) -> str | None:
+def _prune_backups(db_path: str, keep: int) -> None:
+    """Delete oldest timestamped .bak copies so at most ``keep`` remain.
+
+    The DB is 200+ MB; on a small droplet an unbounded .bak on every deploy
+    silently fills the disk and stops all writes (issue: 2026-07 disk-full
+    silent-stop). Capping retention keeps a revertible backup without growing
+    without bound.
+    """
+    if keep < 0:
+        return
+    directory = os.path.dirname(db_path) or '.'
+    pattern = re.compile(re.escape(db_path) + r'\.\d{14}\.bak$')
+    backups = sorted(
+        os.path.join(directory, p)
+        for p in os.listdir(directory)
+        if pattern.match(os.path.join(directory, p))
+    )
+    excess = backups[:-keep] if keep > 0 else backups
+    for old in excess:
+        try:
+            os.remove(old)
+            # Drop any orphaned sidecars from the same backup stamp.
+            for suffix in ('-wal', '-shm'):
+                sc = old + suffix
+                if os.path.exists(sc):
+                    os.remove(sc)
+            print(f'[migrate] pruned old backup: {old}')
+        except OSError as exc:
+            print(f'[migrate] WARNING: could not prune {old}: {exc}', file=sys.stderr)
+
+
+def _backup(db_path: str, keep: int = 3) -> str | None:
     """Copy the live DB (and WAL sidecars) to a timestamped ``.bak`` beside it.
 
     SQLite in WAL mode keeps uncommitted data in the ``.sqlite-wal`` /
@@ -80,6 +111,9 @@ def _backup(db_path: str) -> str | None:
     first and copy the main file.  We checkpoint into the main file, then copy
     just the main file (plus any residual sidecars for safety) so the backup is
     self-contained.
+
+    After writing, old backups beyond ``keep`` are pruned so repeated deploys
+    cannot fill the disk.
 
     Returns the backup path, or None if the source does not exist.
     """
@@ -108,12 +142,13 @@ def _backup(db_path: str) -> str | None:
         )
         return None
     print(f'[migrate] backup written: {backup_path}')
+    _prune_backups(db_path, keep)
     return backup_path
 
 
-def migrate(db_path: str, backup: bool = True) -> int:
+def migrate(db_path: str, backup: bool = True, keep: int = 3) -> int:
     if backup:
-        _backup(db_path)
+        _backup(db_path, keep)
     conn = None
     try:
         conn = sqlite3.connect(db_path)
@@ -160,8 +195,14 @@ def main() -> int:
         action='store_true',
         help='Skip the timestamped .bak copy written before migrating.',
     )
+    parser.add_argument(
+        '--keep',
+        type=int,
+        default=3,
+        help='Number of most-recent .bak backups to retain (default 3; 0 prunes all, -1 keeps everything).',
+    )
     args = parser.parse_args()
-    return migrate(args.db, backup=not args.no_backup)
+    return migrate(args.db, backup=not args.no_backup, keep=args.keep)
 
 
 if __name__ == '__main__':
