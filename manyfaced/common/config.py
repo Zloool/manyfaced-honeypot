@@ -54,7 +54,7 @@ TOML config file layout (the file is auto-generated if run with --generate-confi
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +90,8 @@ _DEFAULT_LOG_FILE: str = os.path.join(
 )
 _DEFAULT_DUMP_FILE: str = 'dump.jsonl'
 _DEFAULT_LOCKFILE: str = os.path.join('/opt/manyfaced/bots', 'lockfile')
+
+_DEFAULT_ALERTING: dict[str, Any] = {}
 
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
@@ -160,6 +162,13 @@ class Config:
 
     # Lockfile (prevents multiple instances)
     LOCKFILE: str  # path to the lockfile for instance management
+
+    # Alerting: the raw [alerting] section from config.toml (webhook URL, SMTP
+    # settings, log_only, enabled, ...). Exposed so alerting.py can read
+    # operator TOML config end-to-end instead of requiring a separate
+    # ALERT_CONFIG file path (issue #215). Environment variables (HONEY_ALERT_*)
+    # still override individual keys in alerting.py.
+    ALERTING: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def load(config_path: Path | None = None, validate_secrets: bool = False) -> Config:
@@ -237,6 +246,12 @@ class Config:
             LOG_FILE=str(resolve_setting('file', _DEFAULT_LOG_FILE, 'logging', toml, prefix)),  # type: ignore[arg-type]
             DUMP_FILE=str(resolve_setting('dump_file', _DEFAULT_DUMP_FILE, 'dump', toml, prefix)),  # type: ignore[arg-type]
             LOCKFILE=str(resolve_setting('lockfile', _DEFAULT_LOCKFILE, 'lockfile', toml, prefix)),  # type: ignore[arg-type]
+            # Reconstruct the [alerting] section from the flattened TOML
+            # (section.key -> value) so alerting.py can read operator config
+            # end-to-end (issue #215).
+            ALERTING={
+                k.split('.', 1)[1]: v for k, v in (toml or {}).items() if k.startswith('alerting.')
+            },
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -291,6 +306,22 @@ class Config:
             '[lockfile]',
             '# Path to the lockfile (prevents multiple instances)',
             f'lockfile = "{self.LOCKFILE}"',
+            '',
+            '[alerting]',
+            '# Alerting / notification config (issue #215). Env vars HONEY_ALERT_* override these.',
+            '# log_only = true  -> only log alerts, no external delivery',
+            '# enabled = false  -> alerting disabled',
+            'log_only = true',
+            'enabled = false',
+            '# telegram_bot_token = ""',
+            '# telegram_chat_id = ""',
+            '# smtp_host = "localhost"',
+            '# smtp_port = 587',
+            '# smtp_user = ""',
+            '# smtp_password = ""',
+            '# from_email = ""',
+            '# to_emails = ""',
+            '# webhook_url = ""',
             '',
         ]
         path.write_text('\n'.join(lines))

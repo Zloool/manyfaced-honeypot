@@ -47,6 +47,12 @@ GENERATED_CONFIG_ALLOWLIST: set[str] = {
     'logging',
     'dump',
     'lockfile',
+    'alerting',  # [alerting] section header written by generate_config_file()
+    # [alerting] keys written by generate_config_file() — these are TOML
+    # section keys consumed by alerting.py via settings.ALERTING, not direct
+    # Config dataclass attributes (issue #215).
+    'enabled',
+    'log_only',
     # Derived/compound fields that are documented but not direct Config attrs
     'authorized_bees',  # stored as dict, written as string in config file
 }
@@ -80,6 +86,7 @@ INTENTIONALLY_OMITTED: set[str] = {
 
 ENV_EXAMPLE_ALLOWLIST: set[str] = {
     'DB_BACKENDS',  # not a user-facing env var
+    'ALERTING',  # derived dict reconstructed from the [alerting] TOML section, not an env var
 }
 
 
