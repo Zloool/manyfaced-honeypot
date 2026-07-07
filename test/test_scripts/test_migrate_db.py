@@ -153,3 +153,39 @@ def test_migrate_skips_backup_with_flag(tmp_path: Path):
     rc = migrate_db.migrate(str(db), backup=False)
     assert rc == 0
     assert not list(tmp_path.glob('*.bak'))
+
+
+def test_prune_backups_caps_retention(tmp_path: Path):
+    """_prune_backups keeps only the newest `keep` backups.
+
+    Regression guard for the 2026-07 disk-full silent-stop: an unbounded .bak
+    on every deploy filled the droplet disk and stopped all writes. Capping
+    retention keeps a revertible backup without growing without bound.
+    """
+    db = tmp_path / 'h.db'
+    # Create 6 timestamped .bak files (oldest -> newest by name sort).
+    stamps = [f'{d:014d}' for d in range(20260101000000, 20260101000000 + 6 * 100)]
+    for s in stamps:
+        (tmp_path / f'h.db.{s}.bak').write_text('x')
+
+    migrate_db._prune_backups(str(db), keep=3)
+
+    remaining = sorted(tmp_path.glob('h.db.*.bak'))
+    assert len(remaining) == 3
+    # The 3 newest stamps survive.
+    assert [p.name for p in remaining] == [f'h.db.{s}.bak' for s in stamps[-3:]]
+
+
+def test_migrate_retention_flag_default_keep(tmp_path: Path):
+    """migrate() prunes to keep=3 by default so repeated deploys can't fill disk."""
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])
+    conn.close()
+
+    # Run migrate 5 times; each writes one .bak then prunes to keep=3.
+    for _ in range(5):
+        migrate_db.migrate(str(db))
+
+    backups = sorted(tmp_path.glob('h.db.*.bak'))
+    assert len(backups) <= 3, f'expected <=3 backups, found {len(backups)}'
