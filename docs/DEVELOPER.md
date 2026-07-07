@@ -254,7 +254,7 @@ test/
 
 ## Security Notes
 
-1. **JSON dump file** — `common/utils.py` writes to DUMP_FILE (default: `dump.jsonl`) using `json.dumps()` in JSONL format. This is safe with untrusted data. This is unsafe with untrusted data. The file is written to DUMP_FILE (JSONL format) in the working directory.
+1. **JSON dump file** — `common/utils.py` writes to DUMP_FILE (default: `dump.jsonl`) using `json.dumps()` in JSONL format. This is safe with untrusted data. The file is written to DUMP_FILE (JSONL format) in the working directory.
 
 2. **Shared secrets** — `HIVEPASS` is the shared encryption key. Never commit real keys. Use environment variables or `settings.toml.example` (gitignored).
 
@@ -306,7 +306,7 @@ See existing handlers for patterns — `bitrix_handler.py` + `routes_bitrix.py` 
 ## Debugging Tips
 
 - `-v` (verbose) mode prints every bot interaction
-- Check `temp.db` for failed reports (pickle-fallback)
+- Check `dump.jsonl` (DUMP_FILE) for failed reports that fell back to the JSONL dump
 - Check `bots/honeypot.db` for saved bear data
 - Server sends `CODE 300 ERROR: {exception}` for unhandled errors
 - Client sends `200 OK` or `207 Multi-Status` for WebDAV
@@ -318,6 +318,6 @@ See existing handlers for patterns — `bitrix_handler.py` + `routes_bitrix.py` 
 - [ ] Set `HONEY_HIVEPORT` to the correct port
 - [ ] Configure `DB_BACKEND` and `DB_*` settings
 - [ ] Add authorized bears to `AUTHORIZED_BEES` if needed
-- [ ] Verify `temp.db` directory is writable
+- [ ] Verify `dump.jsonl` (DUMP_FILE) directory is writable
 - [ ] Set up monitoring/alerting for bot connection volume
 - [ ] Consider rate limiting to avoid abuse of honeypot ports
