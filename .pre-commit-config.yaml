@@ -5,3 +5,34 @@ repos:
       - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
+
+  # Docs/code drift check (matches CI `docs-drift` job).
+  - repo: local
+    hooks:
+      - id: docs-drift
+        name: docs-drift
+        entry: uv run python .github/workflows/scripts/check_docs_drift.py
+        language: system
+        pass_filenames: false
+        files: ^(manyfaced/|docs/|\.github/workflows/scripts/)
+
+  # basedpyright type check (matches CI `Typecheck` jobs).
+  - repo: local
+    hooks:
+      - id: basedpyright
+        name: basedpyright
+        entry: uv run basedpyright manyfaced/
+        language: system
+        pass_filenames: false
+        files: ^manyfaced/
+
+  # actionlint for GitHub Actions workflow edits (matches CI `Lint GitHub Actions workflows`).
+  # Uses uvx to fetch the actionlint binary on demand (no git mirror needed).
+  - repo: local
+    hooks:
+      - id: actionlint
+        name: actionlint
+        entry: uvx actionlint
+        language: system
+        files: ^\.github/workflows/
+        pass_filenames: false
