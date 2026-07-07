@@ -224,17 +224,17 @@ class TestConfigResolvePorts:
 
 
 class TestConfigRequiredSecrets:
-    """Tests that required secrets (HIVEPASS, DEFAULT_KEY) are enforced."""
+    """Tests that required secrets (HIVEPASS, DEFAULT_KEY) are enforced on the
+    normal startup path, but import and --generate-config do not require them (issue #177)."""
 
-    def test_hivepass_required_raises_configvalidationerror(self, tmp_path, monkeypatch):
-        """Config.load() with no HIVEPASS raises ConfigValidationError."""
+    def test_import_succeeds_without_secrets(self, tmp_path, monkeypatch):
+        """Importing manyfaced.common.config must NOT raise when secrets are absent (issue #177)."""
         xdg_dir = tmp_path / 'xdg'
         xdg_dir.mkdir(parents=True, exist_ok=True)
         (xdg_dir / 'manyfaced').mkdir(exist_ok=True)
         (xdg_dir / 'manyfaced' / 'config.toml').write_text('[honeypot]\nhoneyport = 80\n')
 
         script = tmp_path / 'test_import.py'
-        # Use raw string and os.path to avoid Windows path escaping issues
         script.write_text(
             r"""
 import os, sys
@@ -258,16 +258,51 @@ except Exception as exc:
         result = subprocess.run(
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
-        # The exception is caught and printed, so we check stdout for the error
+        assert 'IMPORT_SUCCESS' in result.stdout, (
+            f'Import must not raise without secrets (issue #177); got {result.stdout!r} {result.stderr!r}'
+        )
+
+    def test_validate_secrets_raises_without_hivepass(self, tmp_path, monkeypatch):
+        """validate_secrets() raises ConfigValidationError when HIVEPASS is missing."""
+        xdg_dir = tmp_path / 'xdg'
+        xdg_dir.mkdir(parents=True, exist_ok=True)
+        (xdg_dir / 'manyfaced').mkdir(exist_ok=True)
+        (xdg_dir / 'manyfaced' / 'config.toml').write_text('[honeypot]\nhoneyport = 80\n')
+
+        script = tmp_path / 'test_validate.py'
+        script.write_text(
+            r"""
+import os, sys
+from pathlib import Path
+
+xdg_dir = r'{xdg_dir}'
+os.environ['XDG_CONFIG_HOME'] = xdg_dir
+
+for p in Path.home().glob('.config/manyfaced/config.toml'):
+    p.unlink()
+
+sys.path.insert(0, '/home/zlol/manyfaced-honeypot')
+from manyfaced.common.config import validate_secrets
+try:
+    validate_secrets()
+    print('NO_RAISE')
+except Exception as exc:
+    print('EXCEPTION:' + type(exc).__name__ + ':' + str(exc))
+""".format(xdg_dir=str(xdg_dir))
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(script)], capture_output=True, text=True, timeout=10
+        )
         assert 'EXCEPTION:ConfigValidationError' in result.stdout, (
-            f'Expected ConfigValidationError, got {result.stdout!r}'
+            f'Expected ConfigValidationError from validate_secrets(), got {result.stdout!r}'
         )
         assert 'HONEY_HIVEPASS' in result.stdout, (
             f'Expected HONEY_HIVEPASS error message, got {result.stdout!r}'
         )
 
-    def test_default_key_required_raises_configvalidationerror(self, tmp_path, monkeypatch):
-        """Config.load() with no DEFAULT_KEY raises ConfigValidationError."""
+    def test_validate_secrets_raises_without_default_key(self, tmp_path, monkeypatch):
+        """validate_secrets() raises ConfigValidationError when DEFAULT_KEY is missing."""
         xdg_dir = tmp_path / 'xdg'
         xdg_dir.mkdir(parents=True, exist_ok=True)
         (xdg_dir / 'manyfaced').mkdir(exist_ok=True)
@@ -275,7 +310,7 @@ except Exception as exc:
             '[honeypot]\nhoneyport = 80\n\n[hive]\nhivepass = "testpass"\n'
         )
 
-        script = tmp_path / 'test_import2.py'
+        script = tmp_path / 'test_validate2.py'
         script.write_text(
             r"""
 import os, sys
@@ -288,9 +323,10 @@ for p in Path.home().glob('.config/manyfaced/config.toml'):
     p.unlink()
 
 sys.path.insert(0, '/home/zlol/manyfaced-honeypot')
+from manyfaced.common.config import validate_secrets
 try:
-    import manyfaced.common.config as config_mod
-    print('IMPORT_SUCCESS')
+    validate_secrets()
+    print('NO_RAISE')
 except Exception as exc:
     print('EXCEPTION:' + type(exc).__name__ + ':' + str(exc))
 """.format(xdg_dir=str(xdg_dir))
@@ -300,20 +336,19 @@ except Exception as exc:
             [sys.executable, str(script)], capture_output=True, text=True, timeout=10
         )
         assert 'EXCEPTION:ConfigValidationError' in result.stdout, (
-            f'Expected ConfigValidationError, got {result.stdout!r}'
+            f'Expected ConfigValidationError from validate_secrets(), got {result.stdout!r}'
         )
         assert 'default_key' in result.stdout.lower(), (
             f'Expected default_key error message, got {result.stdout!r}'
         )
 
     def test_generate_config_works_without_secrets(self, tmp_path, monkeypatch):
-        """--generate-config should work even without HIVEPASS/DEFAULT_KEY set."""
+        """--generate-config should work even WITHOUT HIVEPASS/DEFAULT_KEY set (real path, issue #177)."""
         xdg_dir = tmp_path / 'xdg'
         xdg_dir.mkdir(parents=True, exist_ok=True)
         (xdg_dir / 'manyfaced').mkdir(exist_ok=True)
 
         script = tmp_path / 'test_generate.py'
-        # Use pathlib to get forward-slash paths
         from pathlib import PureWindowsPath
 
         config_path = PureWindowsPath(xdg_dir / 'manyfaced' / 'config.toml').as_posix()
@@ -321,11 +356,6 @@ except Exception as exc:
         script.write_text(
             r"""
 import os, sys
-
-# Set required secrets BEFORE importing config to bypass validation
-os.environ['HONEY_HIVEPASS'] = 'test_hivepass_for_generate_config'
-os.environ['HONEY_DEFAULT_KEY'] = 'test_default_key_for_generate_config'
-
 from pathlib import Path
 
 xdg_dir = r'{xdg_dir}'
@@ -336,7 +366,8 @@ for p in Path.home().glob('.config/manyfaced/config.toml'):
 
 sys.path.insert(0, '/home/zlol/manyfaced-honeypot')
 
-# Simulate --generate-config by loading config without validation
+# Real --generate-config path: NO secrets set; importing config and loading
+# must not raise (issue #177 fix).
 from manyfaced.common.config import Config
 cfg = Config.load(validate_secrets=False)
 path = cfg.generate_config_file('{config_path}')
