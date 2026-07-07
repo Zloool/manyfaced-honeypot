@@ -226,7 +226,9 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Canary smoke — synthetic report reaches DB
-        run: pytest -q test/test_integration/test_canary_smoke.py
+        # Smoke gate only; coverage is enforced by the `test` job, so disable
+        # cov here (a single-file run would otherwise fail the 76% gate).
+        run: pytest -q --no-cov test/test_integration/test_canary_smoke.py
 
   deploy:
     needs: [lint, actionlint, shellcheck, security-scan, test, typecheck, canary]
