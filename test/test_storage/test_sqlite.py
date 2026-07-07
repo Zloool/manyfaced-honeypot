@@ -530,3 +530,48 @@ class TestSQLiteStorageMultipleInserts:
         count = cursor.fetchone()[0]
         assert count == 2
         storage.close()
+
+
+class TestInsertLockContention:
+    """Coverage for the process-wide _WRITE_LOCK + 'database is locked' retry."""
+
+    def _make_storage_with_mock_conn(self, db_path):
+        from unittest.mock import MagicMock
+
+        storage = SQLiteStorage(db_path=db_path)
+        # Replace the real (read-only) connection with a mock so we can
+        # script execute() failures without touching sqlite internals.
+        storage._conn = MagicMock()
+        storage._conn.execute.return_value = None
+        return storage
+
+    def test_insert_retries_on_database_locked(self, tmp_path):
+        """A transient 'database is locked' is retried and the insert returns."""
+        import sqlite3
+
+        db_path = str(tmp_path / 'locked.db')
+        storage = self._make_storage_with_mock_conn(db_path)
+
+        calls = {'n': 0}
+
+        def flaky(sql, params=None):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise sqlite3.OperationalError('database is locked')
+            return None
+
+        storage._conn.execute.side_effect = flaky
+        storage.insert({'ip': '10.0.0.5'})  # must not raise
+        storage.close()
+
+        assert calls['n'] >= 2  # at least one failure + one success
+
+    def test_insert_gives_up_after_persistent_lock(self, tmp_path):
+        """Persistently locked DB is logged and the insert is dropped (no crash)."""
+        import sqlite3
+
+        db_path = str(tmp_path / 'locked2.db')
+        storage = self._make_storage_with_mock_conn(db_path)
+        storage._conn.execute.side_effect = sqlite3.OperationalError('database is locked')
+        storage.insert({'ip': '10.0.0.6'})  # must not raise
+        storage.close()
