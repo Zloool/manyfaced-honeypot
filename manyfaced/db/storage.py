@@ -252,6 +252,9 @@ class SQLiteStorage(StorageBackend):
                 'Giving up insert after lock contention (database is locked): %s',
                 last_exc,
             )
+            from manyfaced.common.metrics import incr
+
+            incr('db_insert_failure')
             # Don't silently lose the record: fall back to the JSONL dump file
             # (the same safety valve report_sender/server use) so the capture
             # survives a transient DB outage and can be replayed later.

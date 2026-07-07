@@ -235,6 +235,7 @@ def _handle_bot_connection(
         bot_addr: Tuple of (ip, port) from the accepting socket.
         update_event: Event to signal shutdown.
     """
+    from manyfaced.common.metrics import incr, set_gauge  # noqa: PLC0415
     from manyfaced.common.utils import receive_timeout  # noqa: PLC0415
 
     message = receive_timeout(connection_socket, BOT_TIMEOUT)
@@ -247,6 +248,10 @@ def _handle_bot_connection(
     if bot_ip in _INTERNAL_IPS:
         logger.debug('Dropping connection from internal IP %s', bot_ip)
         return
+
+    # Observability: count each real bot connection and track concurrency (issue #166).
+    incr('bot_connections')
+    set_gauge('active_connections', threading.active_count())
 
     handler = HTTPHandler(args, update_event)
     output_data = handler.handle_request(message, bot_ip=bot_ip)
@@ -408,6 +413,11 @@ def main(args, update_event):
     """
     if getattr(signal, 'SIGCHLD', None) is not None:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+    # Observability: start periodic structured stats logging (issue #166).
+    from manyfaced.common.metrics import start_stats_logger
+
+    start_stats_logger()
 
     port_mode = getattr(args, 'port_mode', 'single')
     top_ports = getattr(args, 'top_ports', '')

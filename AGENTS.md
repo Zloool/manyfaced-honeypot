@@ -86,6 +86,28 @@ The deploy pipeline (GitHub Actions) runs automatically on push to `master` — 
 - For code style, the linter configs in `pyproject.toml` / `.ruff.toml` are authoritative
 - For per-PR checklist, see [.github/pull_request_template.md](.github/pull_request_template.md)
 
+## Observability / metrics (#166)
+
+The honeypot exposes lightweight, dependency-free live metrics from
+`manyfaced/common/metrics.py`. No external services required.
+
+- **Counters:** `bot_connections`, `credential_captures`, `report_send_success`,
+  `report_send_failure`, `geo_lookup_failure`, `db_insert_failure`,
+  `handler_exception`.
+- **Per-domain response counter:** `responses.<domain>` (e.g. `responses.wordpress`).
+- **Gauges:** `report_queue_depth` (backpressure signal), `active_connections`.
+
+Two surfaces:
+1. **Structured `stats` log line** emitted every 60s by a daemon thread
+   (consumable by the prod-analysis skill and the #165 canary checks), e.g.:
+   `INFO ... stats metrics bot_connections=12 credential_captures=3 ...`
+2. **`metrics.snapshot()`** — a plain `dict` any component can read to fire on a
+   signal (this is the feed the #125 credential-capture alerting consumes).
+
+To add a new signal: call `metrics.incr(name)` / `metrics.set_gauge(name, value)`
+at the relevant hook point (router dispatch, report send, storage insert,
+geo lookup, credential capture). No new dependency is introduced.
+
 ## Guardrails
 
 - **Never push to `master`** — always work on a feature branch and open a PR
