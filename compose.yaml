@@ -1,0 +1,56 @@
+# Manyfaced honeypot — local dev / test compose.
+# This brings up the honeypot without needing the systemd droplet deploy.
+# Captured data persists in the `manyfaced-data` named volume at
+# /opt/manyfaced/bots inside the container (mirrors the droplet path).
+#
+# Configure via the HONEY_* env scheme; copy templates/honeypot.env.example to
+# .env (git-ignored) and adjust. Privileged ports are mapped to high container
+# ports and redirected via iptables on the droplet; locally, map whatever host
+# ports you can bind.
+#
+# Usage:
+#   cp templates/honeypot.env.example .env   # then edit secrets
+#   docker compose up --build
+#   docker compose run --rm honeypot manyfaced --generate-config   # optional
+
+services:
+  honeypot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Keep the container image current with the local build.
+    image: manyfaced:local
+    # Named volume so captured data survives container replacement.
+    volumes:
+      - manyfaced-data:/opt/manyfaced/bots
+    # Wire HONEY_* config from an env file (reuse the existing scheme).
+    env_file:
+      - .env
+    # Bind the honeypot's low/privileged ports. In top mode the honeypot binds
+    # high container ports (redirected from privileged host ports via iptables
+    # on the droplet); map a representative subset here for local testing.
+    # Host port : container port.
+    ports:
+      - "8080:8080"   # HONEY_HONEYPORT (HTTP face)
+      - "8888:8888"   # HONEY_HIVEPORT (report receiver / server)
+      - "8443:8443"
+      - "3306:3306"
+      - "5432:5432"
+      - "6379:6379"
+      - "27017:27017"
+      - "3389:3389"
+      - "5900:5900"
+    # Restart on failure only (does not auto-restart on clean exit).
+    restart: unless-stopped
+    # Drop capabilities not needed by a honeypot; allow binding low ports later.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # A honeypot needs to bind privileged ports; enable the capability when the
+    # container maps low host ports directly.
+    # cap_add:
+    #   - NET_BIND_SERVICE
+
+volumes:
+  manyfaced-data:
