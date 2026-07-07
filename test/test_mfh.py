@@ -315,5 +315,124 @@ class TestRunPortModeFromConfig(unittest.TestCase):
                             self.assertEqual(mock_args.top_ports, '80,443')
 
 
+class TestRunChildSupervision(unittest.TestCase):
+    """Test the supervision loop: backoff + crash-loop guard (#180)."""
+
+    def _run_with_dead_child(
+        self, kill_parent_after_n_restarts, window_constants, event_toggles_true_at=0
+    ):
+        """Drive run() with a child that is never alive.
+
+        Args:
+            kill_parent_after_n_restarts: if >0, sys.exit is allowed to fire
+                after this many restarts (crash-loop guard). Set 0 to assert
+                sys.exit is never called.
+            window_constants: dict overriding the module-level backoff/cap
+                constants so the loop can be exercised quickly.
+            event_toggles_true_at: after this many loop iterations the
+                update_event flips to set(), ending the loop cleanly (used for
+                the negative case where the guard must NOT fire).
+        """
+        import manyfaced.mfh as mfh
+
+        with (
+            patch('manyfaced.mfh._acquire_lockfile'),
+            patch('manyfaced.mfh.setup_logging'),
+            patch('manyfaced.mfh.os.path.isfile', return_value=True),
+            patch('manyfaced.mfh.settings', _make_mock_settings()),
+            patch('manyfaced.common.arguments.parse') as mock_parse,
+            patch('manyfaced.mfh.Process') as mock_process_cls,
+            patch('manyfaced.mfh.Event') as mock_event_cls,
+            patch('manyfaced.mfh.time.sleep'),
+            patch.object(mfh, '_BACKOFF_BASE', window_constants['base']),
+            patch.object(mfh, '_BACKOFF_MAX', window_constants['max']),
+            patch.object(mfh, '_MAX_RESTARTS_PER_WINDOW', window_constants['max_restarts']),
+            patch.object(mfh, '_RESTART_WINDOW_SEC', window_constants['window']),
+        ):
+            mock_args = MagicMock()
+            mock_args.client = 8080
+            mock_args.server = 9090
+            mock_args.generate_config = False
+            mock_args.port_mode = 'single'
+            mock_args.top_ports = None
+            mock_parse.return_value = mock_args
+
+            # Child process is never alive -> must be (re)started.
+            dead_proc = MagicMock()
+            dead_proc.is_alive.return_value = False
+            mock_process_cls.return_value = dead_proc
+
+            event = MagicMock()
+            state = {'i': 0}
+
+            def _is_set():
+                state['i'] += 1
+                return event_toggles_true_at > 0 and state['i'] > event_toggles_true_at
+
+            event.is_set.side_effect = _is_set
+            mock_event_cls.return_value = event
+
+            from manyfaced.mfh import run
+
+            run()
+            return mock_process_cls.call_count
+
+    def test_crash_loop_guard_exits_parent_after_cap(self):
+        """A child that keeps dying must trip the cap and sys.exit(1)."""
+        import manyfaced.mfh as mfh
+
+        # Cap at 3 restarts in a 1000s window; backoff tiny so all restarts
+        # happen in the first loop iteration sequence.
+        constants = {'base': 0.0, 'max': 0.0, 'max_restarts': 3, 'window': 1000.0}
+        with patch.object(mfh, 'sys') as mock_sys:
+            mock_sys.exit.side_effect = SystemExit(1)
+            with self.assertRaises(SystemExit) as cm:
+                self._run_with_dead_child(
+                    kill_parent_after_n_restarts=3,
+                    window_constants=constants,
+                )
+            self.assertEqual(cm.exception.code, 1)
+            mock_sys.exit.assert_called_once_with(1)
+
+    def test_healthy_child_resets_restart_bookkeeping(self):
+        """A child that stays alive is never restarted (no crash-loop)."""
+        import manyfaced.mfh as mfh
+
+        with (
+            patch('manyfaced.mfh._acquire_lockfile'),
+            patch('manyfaced.mfh.setup_logging'),
+            patch('manyfaced.mfh.os.path.isfile', return_value=True),
+            patch('manyfaced.mfh.settings', _make_mock_settings()),
+            patch('manyfaced.common.arguments.parse') as mock_parse,
+            patch('manyfaced.mfh.Process') as mock_process_cls,
+            patch('manyfaced.mfh.Event') as mock_event_cls,
+            patch('manyfaced.mfh.time.sleep'),
+            patch.object(mfh, 'sys') as mock_sys,
+        ):
+            mock_args = MagicMock()
+            mock_args.client = 8080
+            mock_args.server = 9090
+            mock_args.generate_config = False
+            mock_args.port_mode = 'single'
+            mock_args.top_ports = None
+            mock_parse.return_value = mock_args
+
+            # Child is alive -> supervision must NOT restart it.
+            alive_proc = MagicMock()
+            alive_proc.is_alive.return_value = True
+            mock_process_cls.return_value = alive_proc
+
+            event = MagicMock()
+            event.is_set.return_value = True  # end loop immediately
+            mock_event_cls.return_value = event
+
+            from manyfaced.mfh import run
+
+            run()
+            # Both started once at launch, never restarted.
+            self.assertEqual(mock_process_cls.call_count, 2)
+            mock_sys.exit.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
