@@ -7,11 +7,14 @@ repos:
       - id: ruff-format
 
   # Docs/code drift check (matches CI `docs-drift` job).
+  # Runs with the Python that pre-commit was installed under (the same venv
+  # created by `pip install -e ".[dev]"`), so it does NOT require `uv`/`uvx`
+  # — see issue #219. CI uses `pip install -e ".[dev]"`, not uv.
   - repo: local
     hooks:
       - id: docs-drift
         name: docs-drift
-        entry: uv run python .github/workflows/scripts/check_docs_drift.py
+        entry: python .github/workflows/scripts/check_docs_drift.py
         language: system
         pass_filenames: false
         files: ^(manyfaced/|docs/|\.github/workflows/scripts/)
@@ -21,18 +24,20 @@ repos:
     hooks:
       - id: basedpyright
         name: basedpyright
-        entry: uv run basedpyright manyfaced/
+        entry: basedpyright manyfaced/
         language: system
         pass_filenames: false
         files: ^manyfaced/
 
   # actionlint for GitHub Actions workflow edits (matches CI `Lint GitHub Actions workflows`).
-  # Uses uvx to fetch the actionlint binary on demand (no git mirror needed).
+  # Prefer a system-installed actionlint binary; fall back to `uvx` only if uv
+  # is present, so contributors who follow AGENTS.md (pip-based setup) are not
+  # blocked by a missing `uv` (issue #219).
   - repo: local
     hooks:
       - id: actionlint
         name: actionlint
-        entry: uvx actionlint
+        entry: bash -c 'if command -v actionlint >/dev/null 2>&1; then actionlint "${@:1}"; elif command -v uvx >/dev/null 2>&1; then uvx actionlint "${@:1}"; else echo "actionlint not installed (pip install actionlint, or install uv for uvx)"; exit 1; fi' bash
         language: system
         files: ^\.github/workflows/
         pass_filenames: false
