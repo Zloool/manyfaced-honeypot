@@ -249,10 +249,9 @@ class SQLiteStorage(StorageBackend):
         if self._conn is None:
             logger.error('SQLite storage is not initialised; skipping delete')
             return 0
-
         cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
         try:
-            with self._lock:
+            with _WRITE_LOCK:
                 cursor = self._conn.execute(
                     'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < ?',
                     (cutoff,),
@@ -295,7 +294,7 @@ class SQLiteStorage(StorageBackend):
 
         cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
         try:
-            with self._lock:
+            with _WRITE_LOCK:
                 # Count records to archive
                 cursor = self._conn.execute(
                     'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < ?',
@@ -321,7 +320,8 @@ class SQLiteStorage(StorageBackend):
                 )
                 archive_conn.commit()
 
-                # Copy old records to archive
+                # Copy old records to archive, tracking which rows survived so a
+                # partial archive never deletes rows that didn't make it.
                 rows = self._conn.execute(
                     'SELECT * FROM honeypot_bears WHERE timestamp < ?',
                     (cutoff,),
@@ -333,23 +333,41 @@ class SQLiteStorage(StorageBackend):
                         'SELECT * FROM honeypot_bears LIMIT 0'
                     ).description
                 ]
+                id_index = col_names.index('id')
                 placeholders = ','.join(['?' for _ in col_names])
                 insert_sql = f'INSERT INTO honeypot_bears_archive VALUES ({placeholders})'
 
+                archived_ids: list[int] = []
                 with archive_conn:
                     for row in rows:
                         try:
                             archive_conn.execute(insert_sql, row)
+                            archived_ids.append(row[id_index])
                         except sqlite3.Error:
-                            logger.debug('Failed to archive row %s', row)
-
+                            # A row that fails to archive must NOT be deleted
+                            # from the main table — log it loudly so the data is
+                            # preserved until the archive can be retried.
+                            logger.warning(
+                                'Failed to archive row id=%s; leaving it in main DB', row[id_index]
+                            )
                 archive_conn.commit()
                 archive_conn.close()
 
-                # Delete archived records from main table
-                self._conn.execute('DELETE FROM honeypot_bears WHERE timestamp < ?', (cutoff,))
+                if not archived_ids:
+                    logger.error(
+                        'Archive copy failed for all %d rows; aborting delete to avoid data loss',
+                        count,
+                    )
+                    return None
+
+                # Delete only the rows that were actually archived.
+                placeholders_ids = ','.join(['?' for _ in archived_ids])
+                self._conn.execute(
+                    f'DELETE FROM honeypot_bears WHERE id IN ({placeholders_ids})',
+                    archived_ids,
+                )
                 self._conn.commit()
-                logger.info('Archived %d records to %s', count, dest_db)
+                logger.info('Archived %d/%d records to %s', len(archived_ids), count, dest_db)
 
                 return dest_db
 
