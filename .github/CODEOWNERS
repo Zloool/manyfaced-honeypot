@@ -1,0 +1,4 @@
+# Default owner for all repository paths. Used by SECURITY.md as the
+# fallback vulnerability-disclosure contact when GitHub Private
+# Vulnerability Reporting is unavailable.
+* @Zloool

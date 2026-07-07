@@ -75,6 +75,31 @@ class StorageBackend(ABC):
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
+def _resolve_data_dir() -> str:
+    """Return a stable, deploy-independent directory for the SQLite DB.
+
+    A relative ``HONEY_DB_PATH``/``database.path`` is rewritten to an absolute
+    path here so it survives deploys. The target MUST NOT be the ephemeral
+    release directory (``_PROJECT_ROOT``, which is ``pip install -e``'d under a
+    release-specific staging dir and later ``rm -rf``'d by the cleanup step in
+    deploy.yml) — otherwise a misconfigured relative path would silently have
+    its DB deleted by routine maintenance (issue #224).
+
+    Precedence:
+      1. ``HONEY_DATA_DIR`` env var (explicit operator override).
+      2. ``/opt/manyfaced/bots`` when it exists — the long-lived data dir used
+         by the production deploy (the live DB lives there, not under a release).
+      3. ``_PROJECT_ROOT`` only as a last-resort fallback for dev/non-deploy.
+    """
+    env_dir = os.environ.get('HONEY_DATA_DIR')
+    if env_dir:
+        return os.path.abspath(env_dir)
+    deploy_data = '/opt/manyfaced/bots'
+    if os.path.isdir(deploy_data):
+        return deploy_data
+    return _PROJECT_ROOT
+
+
 def _raw_db_path() -> str:
     """Return the configured DB path WITHOUT the relative->absolute rewrite.
 
@@ -115,9 +140,10 @@ def _resolve_db_path() -> str:
     """
     resolved = _raw_db_path()
     if not os.path.isabs(resolved):
-        # Rewrite relative -> absolute under the project root so the DB at
-        # least survives deploys instead of being orphaned by the CWD symlink.
-        abs_path = os.path.abspath(os.path.join(_PROJECT_ROOT, resolved))
+        # Rewrite relative -> absolute under a stable, deploy-independent data
+        # dir so the DB at least survives deploys instead of being orphaned (or
+        # deleted by release cleanup) under the CWD/release symlink (issue #224).
+        abs_path = os.path.abspath(os.path.join(_resolve_data_dir(), resolved))
         logger.warning(
             'DB path %r is relative; under systemd the CWD (%s) is orphaned on '
             'every deploy and writes would be lost. Rewriting to absolute %r '
@@ -387,12 +413,22 @@ class SQLiteStorage(StorageBackend):
                 with archive_conn:
                     for row in rows:
                         try:
-                            archive_conn.execute(insert_sql, row)
+                            # INSERT OR IGNORE: if a prior partial run already
+                            # committed this row into the archive, retrying must
+                            # not raise a PK conflict and drop the row from
+                            # archived_ids (which would strand it in BOTH tables
+                            # forever, issue #225). An already-archived row is
+                            # still safe to delete from the main table.
+                            archive_conn.execute(
+                                insert_sql.replace('INSERT INTO', 'INSERT OR IGNORE INTO'),
+                                row,
+                            )
                             archived_ids.append(row[id_index])
                         except sqlite3.Error:
-                            # A row that fails to archive must NOT be deleted
-                            # from the main table — log it loudly so the data is
-                            # preserved until the archive can be retried.
+                            # A genuinely novel row that fails to archive must
+                            # NOT be deleted from the main table — log it loudly
+                            # so the data is preserved until the archive can be
+                            # retried.
                             logger.warning(
                                 'Failed to archive row id=%s; leaving it in main DB', row[id_index]
                             )

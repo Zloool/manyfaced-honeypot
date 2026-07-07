@@ -192,15 +192,18 @@ def run() -> None:
         backoff = min(_BACKOFF_BASE * (2 ** st['attempts']), _BACKOFF_MAX)
         if st['last'] and now - st['last'] < backoff:
             return
-        # Crash-loop guard: too many restarts in the window => give up so
-        # systemd's Restart=on-failure (and its alerting) takes over.
-        st['times'] = [t for t in st['times'] if now - t < _RESTART_WINDOW_SEC]
-        if len(st['times']) >= _MAX_RESTARTS_PER_WINDOW:
+        # Crash-loop guard: give up once the child has been restarted too many
+        # times since its last healthy run, so systemd's Restart=on-failure (and
+        # its alerting) takes over. We count cumulative `attempts` (reset to 0
+        # whenever the child is observed healthy in the supervise loop above),
+        # NOT a sliding time window — once backoff saturates at _BACKOFF_MAX the
+        # window can never accumulate enough timestamps to trip the cap, so a
+        # continuously-crashing child would restart forever (#222).
+        if st['attempts'] >= _MAX_RESTARTS_PER_WINDOW:
             logger.critical(
-                'Child %s restarted %d times in %ds — giving up so systemd can recover',
+                'Child %s restarted %d times since last healthy run — giving up so systemd can recover',
                 key,
-                len(st['times']),
-                int(_RESTART_WINDOW_SEC),
+                st['attempts'],
             )
             sys.exit(1)
         logger.warning(
