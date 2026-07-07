@@ -1,0 +1,5 @@
+{
+  "normalized_response": "-ERR invalid request",
+  "protocol": "dns",
+  "scenario": "redis_handshake"
+}
