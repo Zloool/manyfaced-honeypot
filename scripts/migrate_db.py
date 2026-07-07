@@ -92,14 +92,20 @@ def _backup(db_path: str) -> str | None:
         src.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         src.close()
     except sqlite3.Error as exc:
-        print(f'[migrate] WARNING: pre-backup checkpoint failed ({exc}); copying as-is.', file=sys.stderr)
+        print(
+            f'[migrate] WARNING: pre-backup checkpoint failed ({exc}); copying as-is.',
+            file=sys.stderr,
+        )
     try:
         shutil.copy2(db_path, backup_path)
         for sidecar in (f'{db_path}-wal', f'{db_path}-shm'):
             if os.path.exists(sidecar):
-                shutil.copy2(sidecar, f'{backup_path}{sidecar[len(db_path):]}')
+                shutil.copy2(sidecar, f'{backup_path}{sidecar[len(db_path) :]}')
     except OSError as exc:
-        print(f'[migrate] WARNING: backup copy failed ({exc}); proceeding without backup.', file=sys.stderr)
+        print(
+            f'[migrate] WARNING: backup copy failed ({exc}); proceeding without backup.',
+            file=sys.stderr,
+        )
         return None
     print(f'[migrate] backup written: {backup_path}')
     return backup_path
