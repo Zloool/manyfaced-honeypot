@@ -162,13 +162,17 @@ class Config:
     LOCKFILE: str  # path to the lockfile for instance management
 
     @staticmethod
-    def load(config_path: Path | None = None, validate_secrets: bool = True) -> Config:
+    def load(config_path: Path | None = None, validate_secrets: bool = False) -> Config:
         """Build a Config resolving defaults → TOML → env var.
 
         Args:
             config_path: Optional path to TOML config file. If None, uses XDG discovery.
-            validate_secrets: If True (default), validates that HIVEPASS and DEFAULT_KEY
-                are set. Set to False for --generate-config which doesn't require secrets.
+            validate_secrets: If True, validates that HIVEPASS and DEFAULT_KEY
+                are set. Defaults to False so that importing this module (which
+                calls ``Config.load()`` at module level) never crashes when
+                secrets are absent — ``--generate-config`` must work without
+                them. The normal startup path calls ``validate_secrets()``
+                explicitly from ``run()`` (issue #177).
         """
         if config_path is None:
             config_path = _find_config_file()
@@ -327,12 +331,18 @@ class ConfigValidationError(Exception):
     pass
 
 
-def _validate_required_secrets(cfg: Config) -> None:
+def validate_secrets(cfg: Config | None = None) -> None:
     """Validate that HIVEPASS and DEFAULT_KEY are set.
 
     Raises ConfigValidationError if either secret is missing.
-    This allows --generate-config to work without secrets by skipping validation.
+
+    Called explicitly from the normal startup path (``run()``). It is NOT run
+    at module import time, so ``--generate-config`` can run without secrets —
+    the import that previously executed this unconditionally crashed the tool
+    before the CLI flag was ever inspected (issue #177).
     """
+    if cfg is None:
+        cfg = settings
     errors = []
     if not cfg.HIVEPASS:
         errors.append(
@@ -357,6 +367,6 @@ def _validate_required_secrets(cfg: Config) -> None:
         )
 
 
-# Validate on module load (normal startup path).
-# --generate-config bypasses this by calling validate_secrets() conditionally.
-_validate_required_secrets(settings)
+# NOTE: secret validation is intentionally NOT run at module import (issue #177).
+# ``run()`` calls ``validate_secrets()`` explicitly after handling
+# ``--generate-config`` (which must work without secrets).
