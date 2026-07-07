@@ -147,7 +147,7 @@ class HTTPHandler:
         class _ParsedSSH:
             command = 'SSH'
             path = '/'
-            headers = {}
+            headers: dict[str, str] = {}
             user_agent = client or 'unknown'
             request_version = version or 'SSH-2.0'
 
@@ -206,7 +206,7 @@ class HTTPHandler:
             command = protocol.upper()
             path = '/'
             version = protocol_info.get('version', protocol)
-            headers = {}
+            headers: dict[str, str] = {}
             user_agent = protocol_info.get('client', protocol)
 
         bs = BearStorage(
@@ -289,7 +289,7 @@ class HTTPHandler:
             command = ''
             path = ''
             version = ''
-            headers = {}
+            headers: dict[str, str] = {}
             user_agent = ''
             request_version = ''
 
