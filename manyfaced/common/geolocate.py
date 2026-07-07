@@ -76,8 +76,10 @@ def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
 
     # Not cached — schedule background lookup and return empty immediately
     start_geo_worker()
-    assert _geo_queue is not None  # type: ignore[assertion-error]
-    _geo_queue.put((ip, timeout))  # noqa: SLF001
+    queue = _geo_queue
+    if queue is None:  # Worker failed to start; don't block the hot path
+        return ('', '')
+    queue.put((ip, timeout))  # noqa: SLF001
     return ('', '')
 
 
@@ -154,15 +156,20 @@ def _geo_worker_loop() -> None:
     """Background worker loop that processes geo lookup requests from the queue."""
     while True:
         try:
-            if _geo_queue is None:
+            queue = _geo_queue
+            if queue is None:
                 break  # Queue was destroyed during shutdown
-            item = _geo_queue.get(timeout=1.0)  # Periodic wake to check for shutdown
+            item = queue.get(timeout=1.0)  # Periodic wake to check for shutdown
             if item is None:
                 break  # Shutdown signal
             ip, timeout = item
             _do_geo_lookup(ip, timeout=timeout)
         except Empty:
             continue
+        except AttributeError:
+            # _geo_queue was reset to None concurrently with the local capture;
+            # treat as shutdown signal rather than crashing the worker (issue #171).
+            break
 
 
 def stop_geo_worker() -> None:
