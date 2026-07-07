@@ -119,3 +119,16 @@ backup-cron:
 	else \
 		echo "  Backup script not found: $(BACKUP_SCRIPT)"; \
 	fi
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Database migration (run on target server after deploy / before restart)
+# ──────────────────────────────────────────────────────────────────────────────
+
+MIGRATE_SCRIPT := scripts/migrate_db.py
+DB_PATH        ?= /opt/manyfaced/bots/honeypot.sqlite
+
+.PHONY: migrate
+
+migrate:
+	@echo "Migrating SQLite schema at $(DB_PATH)..."
+	@/opt/manyfaced/venv/bin/python3 $(MIGRATE_SCRIPT) --db $(DB_PATH)

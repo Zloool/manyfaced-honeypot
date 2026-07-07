@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from threading import Lock
@@ -21,6 +22,13 @@ except ImportError:
     pass  # psycopg2 not installed; PostgreSQL backend will raise ImportError at runtime
 
 logger = logging.getLogger(__name__)
+
+# Process-wide lock serializing all SQLite writes. get_storage() returns a
+# fresh SQLiteStorage (and thus a fresh connection) on every call, so the
+# per-instance lock cannot coordinate concurrent writer threads. A single
+# module-level lock is what actually prevents 'database is locked' under
+# the WAL backend when many report threads insert at once.
+_WRITE_LOCK = Lock()
 
 # ---------------------------------------------------------------------------
 # Abstract base
@@ -150,27 +158,57 @@ class SQLiteStorage(StorageBackend):
     # -- public API ----------------------------------------------------------
 
     def insert(self, record: dict) -> None:  # noqa: C901
-        """Insert a single bear record."""
+        """Insert a single bear record.
+
+        Writes are serialized through the process-wide ``_WRITE_LOCK`` (not the
+        per-instance lock, which cannot coordinate the separate connections
+        created by get_storage()) and retried on ``database is locked`` so a
+        busy WAL backend degrades to a short stall instead of dropping records
+        or crashing the server child.
+        """
         if self._conn is None:
             logger.error('SQLite storage is not initialised; skipping insert')
             return
 
         try:
             fields = _extract_record_fields(record)
-            with self._lock:
-                self._conn.execute(_INSERT_SQL, fields)
-                self._conn.commit()
-                self._insert_count += 1
+        except (sqlite3.Error, ValueError, TypeError, KeyError) as e:
+            logger.error('Error preparing record for insert: %s', e)
+            return
 
-                # Periodic WAL checkpoint to prevent unbounded WAL growth
-                if self._insert_count % self.CHECKPOINT_INTERVAL == 0:
-                    try:
-                        self._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-                    except (sqlite3.Error, sqlite3.OperationalError):
-                        logger.debug('WAL checkpoint failed (non-critical)')
+        # Retry loop: SQLite WAL allows only one writer at a time. Under
+        # concurrent load a write may transiently hit 'database is locked'.
+        last_exc: Exception | None = None
+        for attempt in range(5):
+            try:
+                with _WRITE_LOCK:
+                    self._conn.execute(_INSERT_SQL, fields)
+                    self._conn.commit()
+                    self._insert_count += 1
 
-        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
-            logger.exception('Error inserting record into SQLite storage')
+                    # Periodic WAL checkpoint to prevent unbounded WAL growth
+                    if self._insert_count % self.CHECKPOINT_INTERVAL == 0:
+                        try:
+                            self._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                        except (sqlite3.Error, sqlite3.OperationalError):
+                            logger.debug('WAL checkpoint failed (non-critical)')
+                return
+            except sqlite3.OperationalError as e:
+                if 'database is locked' in str(e).lower():
+                    last_exc = e
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                logger.exception('Error inserting record into SQLite storage')
+                return
+            except (sqlite3.Error, sqlite3.DatabaseError):
+                logger.exception('Error inserting record into SQLite storage')
+                return
+
+        if last_exc is not None:
+            logger.error(
+                'Giving up insert after lock contention (database is locked): %s',
+                last_exc,
+            )
 
     def close(self) -> None:
         """Close the SQLite connection with a final WAL checkpoint."""
