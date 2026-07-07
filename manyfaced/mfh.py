@@ -11,7 +11,7 @@ from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
 
-from manyfaced.common.config import Config, settings  # noqa: F401  (re-exported for tests; import does not trigger validation)
+from manyfaced.common.config import Config, settings, validate_secrets  # noqa: F401  (settings/Config re-exported for tests; importing no longer triggers secret validation)
 
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,12 @@ def run() -> None:
         path = cfg.generate_config_file()
         print(f'[manyfaced] Generated config at {path}', file=sys.stderr)
         return
+
+    # Normal startup: NOW validate that required secrets are present. This is
+    # deferred to here (not module import) so --generate-config can run without
+    # secrets (issue #177). validate_secrets() raises ConfigValidationError if
+    # HIVEPASS / DEFAULT_KEY are missing.
+    validate_secrets()
 
     # settings/Config are imported at module level (see top of file). Using the
     # module-level names (rather than re-importing here) lets tests patch
