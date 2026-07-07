@@ -202,8 +202,34 @@ jobs:
           echo "Pushed: ghcr.io/zloool/manyfaced-honeypot:sha-${{ steps.sha.outputs.short_sha }}"
           echo "Rollback target for a future cutover: previous sha-<short> tag in GHCR"
 
-  deploy:
+  canary:
+    # Issue #165 — in-workflow canary gate. Runs a real (no mocks) synthetic
+    # client->server->DB report through the exact code that gets baked into the
+    # deploy image, and asserts a row lands + the server responds. Catches
+    # "starts but is wrong" regressions (bad responses, silent report-send
+    # failures, data-quality breaks) that the post-restart health check misses.
+    # `deploy` depends on this, so failure aborts before prod traffic sees it.
+    if: github.event_name != 'pull_request'
     needs: [lint, actionlint, shellcheck, security-scan, test, typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Canary smoke — synthetic report reaches DB
+        run: pytest -q test/test_integration/test_canary_smoke.py
+
+  deploy:
+    needs: [lint, actionlint, shellcheck, security-scan, test, typecheck, canary]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
