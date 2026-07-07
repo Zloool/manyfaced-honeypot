@@ -22,15 +22,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching.
-# cryptography is the only runtime dependency (pyproject.toml); the build
-# backend (setuptools/wheel) is installed explicitly so `pip install .` works.
-COPY pyproject.toml ./
+# Copy the full source first, then install. `pip install .` builds the
+# `manyfaced` package via the setuptools backend, which must find the
+# `manyfaced/` source tree at build time — so the source has to be present
+# before install, not after.
+COPY . .
+
+# Install dependencies. cryptography is the only runtime dependency
+# (pyproject.toml); the build backend (setuptools/wheel) is installed
+# explicitly so `pip install .` works.
 RUN pip install --upgrade pip setuptools wheel \
     && pip install .
-
-# Copy the rest of the source.
-COPY . .
 
 # Persisted capture data + logs live here (mount a named volume on this path).
 RUN mkdir -p /opt/manyfaced/bots && chown -R honeypot:honeypot /opt/manyfaced /app
