@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Open PRs against the default branch; CI (lint/test/typecheck/drift) gates
+    # them and an agent reviews + merges. Relock with uv and commit uv.lock.
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Keeps the pinned action SHAs/versions in .github/workflows in sync.
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github-actions"
