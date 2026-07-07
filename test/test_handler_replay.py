@@ -39,9 +39,10 @@ REGEN = os.environ.get('REGEN_SNAPSHOTS') == '1'
 
 # Headers whose values are non-deterministic (server clock, random session id).
 _VOLATILE_HEADERS = ('date', 'set-cookie', 'expires', 'last-modified', 'server')
-# The SSH banner embeds a randomly-chosen fake OpenSSH version; freeze the
-# format but not the random pick.
-_SSH_VERSION_RE = re.compile(r'(SSH-2\.0-OpenSSH_)\d+\.\d+')
+# The SSH banner embeds a randomly-chosen fake implementation+version
+# (OpenSSH_x.y, libssh2_x.y.z, ...); the whole banner line is the version
+# string, so mask it entirely to a stable placeholder.
+_SSH_BANNER_RE = re.compile(r'SSH-2\.0-[^\r\n]*')
 
 
 def _normalize_response(raw_bytes: bytes) -> str:
@@ -52,7 +53,7 @@ def _normalize_response(raw_bytes: bytes) -> str:
         low = line.lower()
         if any(low.startswith(h + ':') for h in _VOLATILE_HEADERS):
             continue
-        line = _SSH_VERSION_RE.sub(r'\g<1><version>', line)
+        line = _SSH_BANNER_RE.sub('SSH-2.0-<banner>', line)
         lines.append(line.rstrip())
     # Drop trailing blank lines.
     while lines and lines[-1] == '':
@@ -92,7 +93,6 @@ def test_handler_replay_snapshot(probe):
     snapshot = {
         'scenario': name,
         'protocol': protocol,
-        'response_length': len(response_bytes),
         'normalized_response': normalized,
     }
 

@@ -1,6 +1,5 @@
 {
   "normalized_response": "-ERR invalid request",
   "protocol": "dns",
-  "response_length": 22,
   "scenario": "redis_handshake"
 }

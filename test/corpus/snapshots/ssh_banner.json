@@ -1,6 +1,5 @@
 {
-  "normalized_response": "SSH-2.0-OpenSSH_<version>",
+  "normalized_response": "SSH-2.0-<banner>",
   "protocol": "ssh",
-  "response_length": 23,
   "scenario": "ssh_banner"
 }
