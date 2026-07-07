@@ -287,6 +287,141 @@ if readme_content_full:
         _check_file_exists(path)
 
 
+# ── Check 8: Reverse CLI-flag parity (every README flag exists in arguments.py) ─
+
+if os.path.exists(args_file):
+    readme_cli = _read('README.md')
+    readme_flags: set[str] = set()
+    # Only match flags inside table data cells (lines starting with '|'), never
+    # the divider rows (|---|) or prose. A cell looks like: `| -c [PORT] |`.
+    for line in readme_cli.splitlines():
+        if not line.lstrip().startswith('|'):
+            continue
+        for m in re.finditer(r'`(-{1,2}[\w-]+)`', line):
+            readme_flags.add(m.group(1))
+
+    for flag in sorted(readme_flags):
+        if flag not in args_src and flag not in {'--help'}:
+            errors.append(
+                f'README documents CLI flag {flag} but it is not present in arguments.py '
+                f'(stale/removed flag — check #147)'
+            )
+
+
+# ── Check 9: Optional-dependency import reachability ──────────────────────────
+# Every distribution in [project.optional-dependencies] should be imported
+# somewhere under manyfaced/ (catches phantom deps). Build-only deps are allowlisted.
+
+_OPTIONAL_DEP_BUILD_ONLY: set[str] = {
+    'pytest',
+    'pytest-cov',
+    'basedpyright',
+    'ruff',
+    'build',
+    'twine',
+}
+
+
+def _pyproject_optional_deps() -> set[str]:
+    """Return the set of optional-dependency distribution names from pyproject.toml."""
+    pyproject = _read('pyproject.toml')
+    if not pyproject:
+        return set()
+    block = re.search(r'\[project\.optional-dependencies\](.*?)(\n\[|\Z)', pyproject, re.DOTALL)
+    if block:
+        deps: set[str] = set()
+        # Extract quoted package names inside the dependency arrays, e.g.
+        # db = ["psycopg2-binary", "sqlalchemy"]  ->  psycopg2-binary, sqlalchemy
+        for m in re.finditer(r'["\']([\w.-]+)["\']', block.group(1)):
+            deps.add(m.group(1))
+        return deps
+    return set()
+
+
+optional_deps = _pyproject_optional_deps()
+for dep in sorted(optional_deps):
+    if dep in _OPTIONAL_DEP_BUILD_ONLY:
+        continue
+    import_name = dep.split('[')[0].split('>')[0].split('=')[0].split('<')[0].strip()
+    found_import = False
+    for pyfile in Path('manyfaced').rglob('*.py'):
+        try:
+            content = pyfile.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if re.search(
+            rf'^\s*import\s+{re.escape(import_name)}\b', content, re.MULTILINE
+        ) or re.search(rf'^\s*from\s+{re.escape(import_name)}\b', content, re.MULTILINE):
+            found_import = True
+            break
+    if not found_import:
+        errors.append(
+            f'Optional dependency "{dep}" is not imported anywhere under manyfaced/ '
+            f'(phantom dependency — check #147)'
+        )
+
+
+# ── Check 10: Curated dead public-API guard ───────────────────────────────────
+# Deny-by-default dead-API detection is too noisy for an LLM-maintained codebase
+# (utility methods called only by subclasses/handlers look "dead" to a textual
+# scan). Instead we keep an explicit CURATED list of known-dead public APIs; the
+# check fails if any of them is still defined. Extend this list as real dead code
+# is confirmed — that turns a one-off cleanup into a permanent invariant.
+
+_CURATED_DEAD_PUBLIC_APIS: set[str] = {
+    # e.g. 'bot_profile.record_interaction',  # (confirmed NOT dead — used by router)
+}
+
+for qual in sorted(_CURATED_DEAD_PUBLIC_APIS):
+    module_part, _, name_part = qual.rpartition('.')
+    found = False
+    for pyfile in Path('manyfaced').rglob('*.py'):
+        try:
+            src = pyfile.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if re.search(rf'\bdef\s+{re.escape(name_part)}\b', src):
+            found = True
+            break
+    if found:
+        errors.append(
+            f'Curated dead public API {qual} is still defined (should have been removed — check #147)'
+        )
+
+
+# ── Check 11: No-legacy-shims policy (grep guard) ─────────────────────────────
+# Flag *shim* markers (explicit backward-compat wrappers) in code so they get
+# conscious review instead of silently accumulating. The bare words "legacy" /
+# "backward compat" appear in legitimate design comments and are NOT flagged;
+# only explicit shim wrappers are. Docs are exempt (code only).
+
+_SHIM_MARKERS: list[str] = [
+    'deprecated shim',
+    'compat shim',
+    'backward-compat shim',
+    'backwards-compat shim',
+    'legacy shim',
+]
+
+
+def _legacy_shim_scan() -> None:
+    for pyfile in sorted(Path('manyfaced').rglob('*.py')):
+        try:
+            src = pyfile.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        low = src.lower()
+        for marker in _SHIM_MARKERS:
+            if marker in low:
+                errors.append(
+                    f'Legacy shim marker "{marker}" found in {pyfile} '
+                    f'(no-legacy-shims policy — check #147; remove or get conscious review)'
+                )
+
+
+_legacy_shim_scan()
+
+
 # ── Report ────────────────────────────────────────────────────────────────────
 
 if errors:
