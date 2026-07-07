@@ -322,7 +322,17 @@ def create_server(args, update_event: _MpEvent, port: int) -> bool:
                 connection_socket, bot_addr = server_socket.accept()
             except KeyboardInterrupt:
                 break
-            _handle_bot_connection(connection_socket, args, bot_addr, update_event)
+            # Issue #212 / #140: handle each connection in its own daemon thread
+            # so a slow/interactive bot (up to ~15s of credential capture) can't
+            # block accept() and starve other connections on this port. The
+            # per-port daemon threads above are for multi-port, not per-connection.
+            t = threading.Thread(
+                target=_handle_bot_connection,
+                args=(connection_socket, args, bot_addr, update_event),
+                name=f'bot-{bot_addr[0]}:{bot_addr[1]}' if bot_addr else 'bot-?',
+                daemon=True,
+            )
+            t.start()
     finally:
         server_socket.close()
     return True
