@@ -122,8 +122,32 @@ jobs:
           done < <(find . -name '*.sh' -print0)
           exit $status
 
+  security-scan:
+    name: Security scan (pip-audit + bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install scan tooling
+        run: python -m pip install --upgrade pip pip-audit bandit
+
+      - name: Dependency vulnerability scan (pip-audit)
+        # Fails if any installed/lockfile dependency has a known CVE.
+        run: pip-audit --desc on
+
+      - name: Static security scan (bandit) on input-parsing modules
+        # Focus on the attacker-input parsing surface; high-severity findings fail CI.
+        run: bandit -ll -ii -r manyfaced/ -f txt --skip B101,B310,B601,B608,B311
+
   deploy:
-    needs: [lint, actionlint, shellcheck, test, typecheck]
+    needs: [lint, actionlint, shellcheck, security-scan, test, typecheck]
     # Only deploy on push-to-master and manual dispatch; skip on PRs.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
