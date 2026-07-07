@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 _lock_fd = None
 
+# Supervision tuning for the child-restart loop (see run()). Hoisted to module
+# scope so they can be overridden in tests.
+_BACKOFF_BASE = 1.0
+_BACKOFF_MAX = 30.0
+_MAX_RESTARTS_PER_WINDOW = 10
+_RESTART_WINDOW_SEC = 60.0
+
 
 def _acquire_lockfile():
     """Acquire an exclusive lockfile to prevent multiple instances.
@@ -162,25 +169,63 @@ def run() -> None:
     # child dies (e.g. the server / DB-writer crashes) and is left unrestarted,
     # the client keeps capturing bots but can never deliver reports, so
     # recording goes silently silent while the service still reports "active".
+    # Supervision with exponential backoff + a crash-loop guard. A child that
+    # dies on startup would otherwise be restarted every ~1s forever, spawning a
+    # fresh process each second and bypassing systemd's Restart=on-failure (the
+    # parent stays alive, so systemd never sees a unit failure). Instead we back
+    # off between restarts and, if a child keeps dying, fail the whole service
+    # so systemd escalates recovery (and its own alerting can fire).
+    supervise: dict[str, dict] = {
+        key: {'attempts': 0, 'last': 0.0, 'times': []} for key in ('client_proc', 'server_proc')
+    }
+
+    def _maybe_restart(key: str, spawn) -> None:
+        st = supervise[key]
+        now = time.time()
+        # Still cooling down after the previous restart — wait this round.
+        backoff = min(_BACKOFF_BASE * (2 ** st['attempts']), _BACKOFF_MAX)
+        if st['last'] and now - st['last'] < backoff:
+            return
+        # Crash-loop guard: too many restarts in the window => give up so
+        # systemd's Restart=on-failure (and its alerting) takes over.
+        st['times'] = [t for t in st['times'] if now - t < _RESTART_WINDOW_SEC]
+        if len(st['times']) >= _MAX_RESTARTS_PER_WINDOW:
+            logger.critical(
+                'Child %s restarted %d times in %ds — giving up so systemd can recover',
+                key,
+                len(st['times']),
+                int(_RESTART_WINDOW_SEC),
+            )
+            sys.exit(1)
+        logger.warning(
+            '%s child exited unexpectedly -- restarting (attempt %d)', key, st['attempts'] + 1
+        )
+        new_proc = spawn()
+        new_proc.start()
+        procs[key] = new_proc
+        st['attempts'] += 1
+        st['last'] = now
+        st['times'].append(now)
+
     try:
         while not update_event.is_set():
             # Supervise children: restart any that have exited. A dead server
             # child means reports can't be persisted; a dead client child means
             # no bots are captured. Either way we must recover without a full
             # service restart (which Restart=on-failure would otherwise miss,
-            # since the parent process itself stays alive).
-            if args.client is not None and (
-                procs['client_proc'] is None or not procs['client_proc'].is_alive()
-            ):
-                logger.warning('client child exited unexpectedly -- restarting')
-                procs['client_proc'] = _spawn_client()
-                procs['client_proc'].start()
-            if args.server is not None and (
-                procs['server_proc'] is None or not procs['server_proc'].is_alive()
-            ):
-                logger.warning('server child exited unexpectedly -- restarting')
-                procs['server_proc'] = _spawn_server()
-                procs['server_proc'].start()
+            # since the parent process itself stays alive). A child that is
+            # healthy resets its restart bookkeeping so the crash-loop guard
+            # only counts sustained failures.
+            if args.client is not None:
+                if procs['client_proc'] is not None and procs['client_proc'].is_alive():
+                    supervise['client_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
+                elif procs['client_proc'] is None or not procs['client_proc'].is_alive():
+                    _maybe_restart('client_proc', _spawn_client)
+            if args.server is not None:
+                if procs['server_proc'] is not None and procs['server_proc'].is_alive():
+                    supervise['server_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
+                elif procs['server_proc'] is None or not procs['server_proc'].is_alive():
+                    _maybe_restart('server_proc', _spawn_server)
             time.sleep(1)
     except KeyboardInterrupt:
         pass
