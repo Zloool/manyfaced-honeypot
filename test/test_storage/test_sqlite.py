@@ -6,7 +6,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 # Imports handled by conftest.py sys.path setup
-from manyfaced.db.storage import SQLiteStorage, StorageBackend  # noqa: E402
+from manyfaced.db.storage import SQLiteStorage, StorageBackend, _CREATE_TABLE_SQL  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +628,57 @@ class TestRetentionArchiveDelete:
         main.close()
         assert remaining == {3}
         # Both old rows present in archive.
+        arc = sqlite3.connect(dest)
+        archived = {r[0] for r in arc.execute('SELECT id FROM honeypot_bears_archive')}
+        arc.close()
+        assert archived == {1, 2}
+
+    def test_archive_idempotent_on_partial_retry(self, tmp_path):
+        """A retry after a partial archive (row already in archive) must still
+        delete the row from the main table, not strand it in both tables (#225).
+
+        Scenario: row 1 was committed to the archive DB in a prior run whose
+        main-table DELETE then failed. On retry, the archive INSERT for row 1
+        hits a PK conflict; with INSERT OR IGNORE it is treated as archived and
+        the row is deleted from main, leaving no duplicate.
+        """
+        db = tmp_path / 'h.db'
+        storage = SQLiteStorage(db_path=str(db))
+        old_ts = '2000-01-01 00:00:00.000000'
+        new_ts = '2099-01-01 00:00:00.000000'
+        self._seed(
+            storage,
+            [
+                (1, '10.0.0.1', 'h1', old_ts),
+                (2, '10.0.0.2', 'h2', old_ts),
+                (3, '10.0.0.3', 'h3', new_ts),
+            ],
+        )
+
+        dest = str(tmp_path / 'archive.sqlite')
+        # Pre-seed the archive with row 1 already present (simulating the prior
+        # partial run that committed the archive but failed the main delete).
+        arc = sqlite3.connect(dest)
+        arc.execute('PRAGMA journal_mode=WAL')
+        arc.execute(_CREATE_TABLE_SQL.replace('honeypot_bears', 'honeypot_bears_archive'))
+        arc.execute(
+            'INSERT INTO honeypot_bears_archive (id, bot_ip, hostname, timestamp) '
+            'VALUES (?, ?, ?, ?)',
+            (1, '10.0.0.1', 'h1', old_ts),
+        )
+        arc.commit()
+        arc.close()
+
+        result = storage.archive_old_records(days=1, dest_db=dest)
+        storage.close()
+
+        assert result == dest
+        # All old rows (1 and 2) removed from main; new row 3 preserved.
+        main = sqlite3.connect(str(db))
+        remaining = {r[0] for r in main.execute('SELECT id FROM honeypot_bears')}
+        main.close()
+        assert remaining == {3}
+        # Archive contains exactly {1, 2} — no duplicate of row 1.
         arc = sqlite3.connect(dest)
         archived = {r[0] for r in arc.execute('SELECT id FROM honeypot_bears_archive')}
         arc.close()
