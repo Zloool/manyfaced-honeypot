@@ -1,2 +1,4 @@
-*.php linguist-vendored=True
-*.html linguist-vendored=True
+# Normalize corpus fixtures and snapshots to LF so the replay harness and
+# git checkouts stay byte-stable across Windows/macOS/Linux.
+test/corpus/** text eol=lf
+*.raw text eol=lf
