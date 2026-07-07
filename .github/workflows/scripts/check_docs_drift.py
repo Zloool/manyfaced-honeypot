@@ -319,6 +319,7 @@ _OPTIONAL_DEP_BUILD_ONLY: set[str] = {
     'ruff',
     'build',
     'twine',
+    'pyyaml',  # used only by test_container_build.py, not by manyfaced/ source
 }
 
 
@@ -330,19 +331,34 @@ def _pyproject_optional_deps() -> set[str]:
     block = re.search(r'\[project\.optional-dependencies\](.*?)(\n\[|\Z)', pyproject, re.DOTALL)
     if block:
         deps: set[str] = set()
-        # Extract quoted package names inside the dependency arrays, e.g.
-        # db = ["psycopg2-binary", "sqlalchemy"]  ->  psycopg2-binary, sqlalchemy
-        for m in re.finditer(r'["\']([\w.-]+)["\']', block.group(1)):
-            deps.add(m.group(1))
+        # Extract quoted package specs inside the dependency arrays, e.g.
+        # postgres = ["psycopg2-binary>=2.9"]  ->  psycopg2-binary
+        # The spec may carry version operators (>=, ==, ~=, ...) which are not
+        # part of the distribution name, so strip everything from the first
+        # non-name character. [\\w.-]+ alone can't span "psycopg2-binary>=2.9".
+        for spec in re.findall(r'["\']([^"\']+)["\']', block.group(1)):
+            name = re.split(r'[<>=!~ ]', spec.strip(), maxsplit=1)[0].strip()
+            if name:
+                deps.add(name)
         return deps
     return set()
 
 
 optional_deps = _pyproject_optional_deps()
+# Distribution names don't always match import names. Map the known
+# distribution -> import name so the phantom check scans for the right symbol
+# (e.g. `psycopg2-binary` is imported as `psycopg2`).
+_DIST_TO_IMPORT: dict[str, str] = {
+    'psycopg2-binary': 'psycopg2',
+    'pyyaml': 'yaml',
+}
 for dep in sorted(optional_deps):
     if dep in _OPTIONAL_DEP_BUILD_ONLY:
         continue
-    import_name = dep.split('[')[0].split('>')[0].split('=')[0].split('<')[0].strip()
+    import_name = _DIST_TO_IMPORT.get(
+        dep,
+        dep.split('[')[0].split('>')[0].split('=')[0].split('<')[0].strip(),
+    )
     found_import = False
     for pyfile in Path('manyfaced').rglob('*.py'):
         try:
