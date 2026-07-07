@@ -246,6 +246,11 @@ def run() -> None:
         from manyfaced.handlers.report_queue import shutdown_report_executor
 
         shutdown_report_executor()
+        # Gracefully drain + shut down the alert-delivery pool so in-flight
+        # credential-capture alerts aren't killed mid-send on restart (#216).
+        from manyfaced.common.alerting import shutdown_alert_executor
+
+        shutdown_alert_executor()
         # Release lockfile
         _release_lockfile()
 
