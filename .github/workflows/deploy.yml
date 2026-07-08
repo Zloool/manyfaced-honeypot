@@ -39,7 +39,6 @@ jobs:
     # The droplet-side cutover (install Docker, stop systemd, `docker run`) is a
     # separate, explicit step once the host is container-ready. Kept non-blocking
     # so a registry hiccup never blocks the systemd deploy or merges.
-    needs: []
     runs-on: ubuntu-latest
     permissions:
       contents: read
