@@ -7,7 +7,6 @@ import os
 import sys
 import time
 import logging
-import multiprocessing
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
@@ -162,17 +161,7 @@ def run() -> None:
     def _spawn_dashboard() -> Process:
         from manyfaced.web import dashboard
 
-        # Spawn (not fork) the dashboard child. The supervisor/main process and
-        # the server writer hold open SQLite/WAL file descriptors and lock state;
-        # forking the dashboard would inherit those FDs, and a reader connection
-        # opened in the forked child can deadlock against the inherited WAL
-        # -shm/-wal handles under a live writer (the dashboard request would hang
-        # indefinitely). A fresh spawned process has no inherited DB state, so
-        # its read connections are clean.
-        ctx = multiprocessing.get_context('spawn')
-        return ctx.Process(
-            args=(args, update_event), name='dashboard', target=dashboard.run_dashboard
-        )
+        return Process(args=(args, update_event), name='dashboard', target=dashboard.run_dashboard)
 
     def _terminate(proc: Process | None) -> None:
         if proc is not None and proc.is_alive():

@@ -35,6 +35,8 @@ from __future__ import annotations
 import html
 import hmac
 import logging
+import threading
+import time
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -46,6 +48,21 @@ from manyfaced.db import storage as _storage
 logger = logging.getLogger(__name__)
 # Separate logger so dashboard access doesn't pollute bear captures.
 access_logger = logging.getLogger('manyfaced.web.dashboard.access')
+
+# The honeypot writer holds the WAL lock heavily on a multi-million-row DB, so a
+# fresh read can block for several seconds waiting for the lock. To keep the
+# dashboard responsive we refresh the rendered page on a background thread and
+# serve the cached copy on every request — the request path never touches SQLite.
+# The stale-while-revalidate window is generous on purpose (the data is only
+# marginally fresher than the refresh interval anyway).
+_REFRESH_INTERVAL = 30.0
+_STALE_SERVE_SECONDS = 300.0
+
+# Populated by the background refresher; guarded by _CACHE_LOCK.
+_CACHE: dict[str, tuple[float, bytes]] = {}  # range_str -> (rendered_at, html_bytes)
+_CACHE_LOCK = threading.Lock()
+_REFRESHER: threading.Thread | None = None
+_REFRESHER_STOP = threading.Event()
 
 
 def _token_valid(token: str | None) -> bool:
@@ -251,8 +268,67 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
 
 
 # ---------------------------------------------------------------------------
-# HTTP handler
+# Background cache refresh (keeps request path off SQLite)
 # ---------------------------------------------------------------------------
+
+
+def _build_page(range_str: str, token: str) -> bytes:
+    """Run the (slow) aggregate queries once and render the page to bytes."""
+    # One long-lived reader connection for the refresher thread; it waits out
+    # the WAL lock with a high busy_timeout off the request path.
+    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
+    try:
+        stats = _get_stats(range_str, store)
+        recent = _get_recent(50, range_str, store)
+    finally:
+        try:
+            store.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return _render_html(stats, recent, range_str, token or '').encode('utf-8')
+
+
+def _refresh_cache(token: str) -> None:
+    """Refresh the cached page for every supported range; called on a timer."""
+    for r in ('24h', '7d', '30d', 'all'):
+        try:
+            html_bytes = _build_page(r, token)
+        except Exception:  # noqa: BLE001 — keep serving stale copy on failure
+            logger.exception('Dashboard cache refresh failed for range %s', r)
+            continue
+        with _CACHE_LOCK:
+            _CACHE[r] = (time.time(), html_bytes)
+
+
+def _start_refresher(token: str) -> None:
+    """Spin up the background refresh loop (idempotent)."""
+    global _REFRESHER
+    if _REFRESHER is not None and _REFRESHER.is_alive():
+        return
+
+    def _loop() -> None:
+        # Prime the cache immediately, then refresh on an interval.
+        _refresh_cache(token)
+        while not _REFRESHER_STOP.is_set():
+            _REFRESHER_STOP.wait(_REFRESH_INTERVAL)
+            if _REFRESHER_STOP.is_set():
+                break
+            _refresh_cache(token)
+
+    _REFRESHER = threading.Thread(target=_loop, name='dashboard-refresh', daemon=True)
+    _REFRESHER.start()
+
+
+def _get_cached(range_str: str, token: str) -> bytes | None:
+    """Return a cached page if present and not too stale, else None."""
+    with _CACHE_LOCK:
+        entry = _CACHE.get(range_str)
+        if entry is None:
+            return None
+        rendered_at, html_bytes = entry
+    if time.time() - rendered_at > _STALE_SERVE_SECONDS:
+        return None
+    return html_bytes
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -279,38 +355,30 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._deny()
             return
 
-        # Open a fresh *read-optimized* storage connection inside THIS handler
-        # thread. SQLite connections are not safe to share across threads, and
-        # ThreadingHTTPServer dispatches each request in its own thread — so we
-        # must not reuse the connection created in run_dashboard(). The dashboard
-        # is a pure reader against an already-initialised DB, so we skip the
-        # startup integrity_check (a full-table scan on a multi-million-row DB)
-        # and all DDL (CREATE TABLE / CREATE INDEX), and set a busy_timeout so the
-        # read waits briefly for the live writer's WAL lock instead of erroring
-        # out or stalling.
-        store = _storage.get_storage(integrity_check=False, busy_timeout=5000, init_schema=False)
         range_str = (qs.get('range') or [_config.settings.DASHBOARD_TIME_RANGE])[0]
         # Basic allow-list to avoid query-injection surprises.
         if range_str not in ('24h', '7d', '30d', 'all'):
             range_str = '24h'
-        try:
-            try:
-                stats = _get_stats(range_str, store)
-                recent = _get_recent(50, range_str, store)
-            finally:
-                try:
-                    store.close()
-                except Exception:  # noqa: BLE001
-                    pass
-        except Exception as exc:  # noqa: BLE001 — surface as 500, never crash the server
-            logger.exception('Dashboard query failed')
-            self.send_response(500)
-            self.send_header('Content-Type', 'text/plain; charset=utf-8')
-            self.end_headers()
-            self.wfile.write(f'dashboard error: {exc!r}'.encode())
-            return
 
-        body = _render_html(stats, recent, range_str, token or '').encode('utf-8')
+        # Serve the cached, pre-rendered page. The background refresher runs the
+        # (slow, lock-contended) aggregate queries off the request path, so this
+        # returns instantly. If the cache is missing/stale (e.g. right after
+        # startup before the first refresh finishes), build on demand but cap
+        # the wait so a request can never hang behind the WAL writer.
+        body = _get_cached(range_str, token or '')
+        if body is None:
+            try:
+                body = _build_page(range_str, token or '')
+                with _CACHE_LOCK:
+                    _CACHE[range_str] = (time.time(), body)
+            except Exception as exc:  # noqa: BLE001 — surface as 500, never crash
+                logger.exception('Dashboard query failed')
+                self.send_response(500)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(f'dashboard error: {exc!r}'.encode())
+                return
+
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
@@ -346,10 +414,11 @@ def run_dashboard(args: Any, update_event: Any) -> None:
         logger.info('Dashboard disabled (_config.settings.DASHBOARD_ENABLED is false)')
         return
 
-    # The DB schema + indexes are created by the writer at honeypot startup; the
-    # dashboard is a pure reader, so it opens its (unused) reference connection
-    # without any DDL or integrity_check to stay cheap and non-blocking.
-    store = _storage.get_storage(integrity_check=False, busy_timeout=5000, init_schema=False)
+    token = _config.settings.DASHBOARD_SECRET or ''
+    # Prime + maintain a cached, pre-rendered page on a background thread so the
+    # request path never blocks on the live writer's WAL lock.
+    _start_refresher(token)
+
     httpd = ThreadingHTTPServer((bind, port), _DashboardHandler)
     logger.info('Dashboard listening on http://%s:%d/', bind, port)
 
@@ -384,8 +453,5 @@ def run_dashboard(args: Any, update_event: Any) -> None:
             httpd.server_close()
         except Exception:  # noqa: BLE001
             pass
-        try:
-            store.close()
-        except Exception:  # noqa: BLE001
-            pass
+        _REFRESHER_STOP.set()
         t.join(timeout=2)
