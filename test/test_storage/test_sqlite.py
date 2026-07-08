@@ -824,12 +824,7 @@ class TestListenPortColumn:
         # Opening with init_schema=True must migrate (add the column) BEFORE any
         # insert, otherwise inserts referencing listen_port would fail.
         storage = SQLiteStorage(db_path=db_path)  # noqa: F811
-        cols = {
-            r[1]
-            for r in storage._conn.execute(
-                "PRAGMA table_info(honeypot_bears)"
-            ).fetchall()
-        }
+        cols = {r[1] for r in storage._conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()}
         assert 'listen_port' in cols
 
         # And an insert referencing the new column must succeed post-migration.
