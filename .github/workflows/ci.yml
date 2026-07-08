@@ -261,7 +261,9 @@ jobs:
 
       - name: Run PostgreSQL tests against real Postgres
         # Disables coverage so the single-file run doesn't fail the 76% gate.
-        run: uv run pytest -q --no-cov test/test_storage/test_postgresql.py
+        # test_postgresql_real.py is skipped automatically when no server is
+        # reachable, so this only exercises the real wire protocol here.
+        run: uv run pytest -q --no-cov test/test_storage/test_postgresql_real.py
 
       - name: Canary smoke against PostgreSQL
         run: uv run pytest -q --no-cov test/test_integration/test_canary_smoke.py
