@@ -1,4 +1,9 @@
-"""IoT Router routes (scaffold). TODO: refine to match real probe paths."""
+"""IoT / generic router web admin routes (issue #284).
+
+Mirrors the production probe paths described in the issue. URL-encoded dot/slash
+sequences (e.g. ``/IoT/%2eenv``) are normalised by the handler before dispatch,
+so the PathPrefix('/IoT/') route captures them cleanly.
+"""
 
 from __future__ import annotations
 
@@ -14,10 +19,12 @@ def _iot() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- IoT Router (issue #284) ----
-    Route(PathExact('/boaform/admin/formlogin'), _iot(), IOT_HTTP, 'iot_0'),
-    Route(PathPrefix('/boaform/admin/formlogin/'), _iot(), IOT_HTTP, 'iot_prefix_0'),
-    Route(PathExact('/apply.cgi'), _iot(), IOT_HTTP, 'iot_1'),
-    Route(PathExact('/cgi-bin'), _iot(), IOT_HTTP, 'iot_2'),
-    Route(PathExact('/getcfg.php'), _iot(), IOT_HTTP, 'iot_3'),
+    # ---- IoT / generic router web admin (issue #284) --------------------
+    Route(PathExact('/'), _iot(), IOT_HTTP, 'iot_root'),
+    Route(PathExact('/admin'), _iot(), IOT_HTTP, 'iot_admin'),
+    Route(PathExact('/login'), _iot(), IOT_HTTP, 'iot_login'),
+    Route(PathExact('/index.html'), _iot(), IOT_HTTP, 'iot_index_html'),
+    Route(PathPrefix('/cgi-bin/'), _iot(), IOT_HTTP, 'iot_cgi_bin'),
+    Route(PathPrefix('/upnp/'), _iot(), IOT_HTTP, 'iot_upnp'),
+    Route(PathPrefix('/IoT/'), _iot(), IOT_HTTP, 'iot_env'),
 ]
