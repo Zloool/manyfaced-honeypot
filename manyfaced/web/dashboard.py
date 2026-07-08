@@ -279,13 +279,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._deny()
             return
 
-        # Open a fresh storage connection inside THIS handler thread. SQLite
-        # connections are not safe to share across threads, and
+        # Open a fresh *read-optimized* storage connection inside THIS handler
+        # thread. SQLite connections are not safe to share across threads, and
         # ThreadingHTTPServer dispatches each request in its own thread — so we
-        # must not reuse the connection created in run_dashboard(). get_storage()
-        # returns a new connection per call, and closing it here keeps the
-        # connection count bounded (read-only internal dashboard).
-        store = _storage.get_storage()
+        # must not reuse the connection created in run_dashboard(). The dashboard
+        # is read-only, so we skip the startup integrity_check (a full-table scan
+        # on a multi-million-row DB) and set a busy_timeout so the read waits
+        # briefly for the live writer's WAL lock instead of erroring out.
+        store = _storage.get_storage(integrity_check=False, busy_timeout=5000)
         range_str = (qs.get('range') or [_config.settings.DASHBOARD_TIME_RANGE])[0]
         # Basic allow-list to avoid query-injection surprises.
         if range_str not in ('24h', '7d', '30d', 'all'):
@@ -343,7 +344,7 @@ def run_dashboard(args: Any, update_event: Any) -> None:
         logger.info('Dashboard disabled (_config.settings.DASHBOARD_ENABLED is false)')
         return
 
-    store = _storage.get_storage()
+    store = _storage.get_storage(integrity_check=False, busy_timeout=5000)
     httpd = ThreadingHTTPServer((bind, port), _DashboardHandler)
     logger.info('Dashboard listening on http://%s:%d/', bind, port)
 

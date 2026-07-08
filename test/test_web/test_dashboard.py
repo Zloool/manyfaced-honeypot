@@ -250,7 +250,9 @@ def dashboard_server(tmp_path):
 
     cfg = _build_dashboard_config(secret, port)
     with patch.object(config_mod, 'settings', cfg):
-        with patch.object(storage_mod, 'get_storage', lambda: SQLiteStorage(db_path=str(db))):
+        with patch.object(
+            storage_mod, 'get_storage', lambda **kw: SQLiteStorage(db_path=str(db), **kw)
+        ):
             import multiprocessing as mp
 
             ev = mp.Event()
@@ -326,7 +328,9 @@ def test_dashboard_escapes_raw_capture(tmp_path):
 
     cfg = _build_dashboard_config(secret, port)
     with patch.object(config_mod, 'settings', cfg):
-        with patch.object(storage_mod, 'get_storage', lambda: SQLiteStorage(db_path=str(db))):
+        with patch.object(
+            storage_mod, 'get_storage', lambda **kw: SQLiteStorage(db_path=str(db), **kw)
+        ):
             import multiprocessing as mp
 
             ev = mp.Event()
