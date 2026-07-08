@@ -1,4 +1,9 @@
-"""GitLab routes (scaffold). TODO: refine to match real probe paths."""
+"""GitLab routes (issue #283).
+
+Mirrors the production GitLab probe paths. Specific (exact) paths are listed
+first so they win over the broad prefixes; %2e/%2f are decoded by the caller
+before dispatch, so the /gitlab/ prefix catches /gitlab/%2eenv probes.
+"""
 
 from __future__ import annotations
 
@@ -14,12 +19,17 @@ def _gitlab() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- GitLab (issue #276) ----
-    Route(PathExact('/sdk/weblanguage'), _gitlab(), GITLAB_HTTP, 'gitlab_0'),
-    Route(PathPrefix('/sdk/weblanguage/'), _gitlab(), GITLAB_HTTP, 'gitlab_prefix_0'),
-    Route(PathExact('/users/sign_in'), _gitlab(), GITLAB_HTTP, 'gitlab_1'),
-    Route(PathPrefix('/users/sign_in/'), _gitlab(), GITLAB_HTTP, 'gitlab_prefix_1'),
-    Route(PathExact('/api/v4'), _gitlab(), GITLAB_HTTP, 'gitlab_2'),
-    Route(PathPrefix('/api/v4/'), _gitlab(), GITLAB_HTTP, 'gitlab_prefix_2'),
-    Route(PathExact('/explore'), _gitlab(), GITLAB_HTTP, 'gitlab_3'),
+    # ---- GitLab (issue #283) ----
+    # Specific paths first (exact match wins over prefixes).
+    Route(PathExact('/users/sign_in'), _gitlab(), GITLAB_HTTP, 'gitlab_sign_in'),
+    Route(PathExact('/'), _gitlab(), GITLAB_HTTP, 'gitlab_root'),
+    Route(PathExact('/api/v4/version'), _gitlab(), GITLAB_HTTP, 'gitlab_api_version'),
+    Route(PathExact('/-/metrics'), _gitlab(), GITLAB_HTTP, 'gitlab_metrics'),
+    Route(PathExact('/admin'), _gitlab(), GITLAB_HTTP, 'gitlab_admin'),
+    # Prefixes next (broad coverage).
+    Route(PathPrefix('/api/v4/'), _gitlab(), GITLAB_HTTP, 'gitlab_api'),
+    Route(PathPrefix('/-/'), _gitlab(), GITLAB_HTTP, 'gitlab_dash'),
+    Route(PathPrefix('/gitlab/'), _gitlab(), GITLAB_HTTP, 'gitlab_gitlab'),
+    Route(PathPrefix('/explore'), _gitlab(), GITLAB_HTTP, 'gitlab_explore'),
+    Route(PathPrefix('/assets/'), _gitlab(), GITLAB_HTTP, 'gitlab_assets'),
 ]
