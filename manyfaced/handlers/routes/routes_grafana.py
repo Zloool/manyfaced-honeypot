@@ -1,4 +1,12 @@
-"""Grafana routes (scaffold). TODO: refine to match real probe paths."""
+"""Grafana (observability platform) routes.
+
+Routes mirror the production probe paths from issue #289:
+  /grafana  /login  /api/org  /api/dashboards/home  /api/frontend/settings
+  /api/search  /grafana/login  /api/%2e%2e
+URL-encoded path segments (%2e -> '.', %2f -> '/') are decoded by the handler
+before matching, so the catch-all PathPrefix('/api/') and PathPrefix('/grafana/')
+routes cover the encoded traversal probes.
+"""
 
 from __future__ import annotations
 
@@ -14,11 +22,11 @@ def _grafana() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- Grafana (issue #291) ----
-    Route(PathExact('/grafana'), _grafana(), GRAFANA_HTTP, 'grafana_0'),
-    Route(PathExact('/prometheus'), _grafana(), GRAFANA_HTTP, 'grafana_1'),
-    Route(PathExact('/api/datasources'), _grafana(), GRAFANA_HTTP, 'grafana_2'),
-    Route(PathPrefix('/api/datasources/'), _grafana(), GRAFANA_HTTP, 'grafana_prefix_2'),
-    Route(PathExact('/api/health'), _grafana(), GRAFANA_HTTP, 'grafana_3'),
-    Route(PathPrefix('/api/health/'), _grafana(), GRAFANA_HTTP, 'grafana_prefix_3'),
+    # ---- Grafana (issue #289) ----------------------------------------------
+    Route(PathExact('/grafana'), _grafana(), GRAFANA_HTTP, 'grafana_root'),
+    Route(PathExact('/login'), _grafana(), GRAFANA_HTTP, 'grafana_login'),
+    Route(PathExact('/grafana/login'), _grafana(), GRAFANA_HTTP, 'grafana_login_nested'),
+    Route(PathExact('/api/org'), _grafana(), GRAFANA_HTTP, 'grafana_api_org'),
+    Route(PathPrefix('/api/'), _grafana(), GRAFANA_HTTP, 'grafana_api_prefix'),
+    Route(PathPrefix('/grafana/'), _grafana(), GRAFANA_HTTP, 'grafana_prefix'),
 ]
