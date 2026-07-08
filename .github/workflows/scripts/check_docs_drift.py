@@ -81,6 +81,8 @@ TOML_TO_CONFIG_FIELD: dict[str, str] = {
     'database.pg_db': 'DB_PG_DB',
     'database.pg_user': 'DB_PG_USER',
     'database.pg_password': 'DB_PG_PASSWORD',
+    'database.pg_sslmode': 'DB_PG_SSLMODE',
+    'database.pg_dsn': 'DB_PG_DSN',
     'security.authorized_bees': 'AUTHORIZED_BEES',
     'security.default_key': 'DEFAULT_KEY',
     'logging.file': 'LOG_FILE',
