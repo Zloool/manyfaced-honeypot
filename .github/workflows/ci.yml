@@ -1,0 +1,217 @@
+name: CI
+
+# Pre-merge validation gate (issue #256).
+#
+# Runs ONLY on pull_request against master. After squash-merge the same commit
+# hits `deploy.yml` (push [master]), which trusts this gate instead of re-running
+# validation — that's where the ~50% CI-spend saving comes from.
+#
+# Job NAMES are kept identical to the old deploy.yml job names so the required
+# status checks on the master branch protection keep matching (no churn window).
+# Required checks: Lint, Test (Python 3.x)×3, Typecheck (Python 3.x)×3,
+# Lint GitHub Actions workflows, Lint shell scripts.
+on:
+  pull_request:
+    branches: ["master"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to validate'
+        required: true
+        default: 'master'
+
+# Cancel superseded PR runs so a force-push doesn't waste minutes on a stale ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    # Ruff is version-agnostic; single Python version suffices.
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Check linting
+        run: uv run ruff check .
+
+  test:
+    # Run on PRs and manual dispatch for validation.
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
+
+      - name: Run tests
+        run: uv run pytest -v --tb=short
+
+  typecheck:
+    # Run on PRs and manual dispatch for validation.
+    name: Typecheck (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
+
+      - name: Type check with basedpyright
+        run: uv run basedpyright manyfaced/
+
+  actionlint:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
+  shellcheck:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Syntax-check shell scripts with bash -n
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r -d '' f; do
+            echo "Checking $f"
+            bash -n "$f" || status=1
+          done < <(find . -name '*.sh' -print0)
+          exit $status
+
+  security-scan:
+    name: Security scan (pip-audit + bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install scan tooling
+        run: python -m pip install --upgrade pip pip-audit bandit
+
+      - name: Dependency vulnerability scan (pip-audit)
+        # Fails if any installed/lockfile dependency has a known CVE.
+        run: pip-audit --desc on
+
+      - name: Static security scan (bandit) on input-parsing modules
+        # Focus on the attacker-input parsing surface; high-severity findings fail CI.
+        # NOTE: B608 (SQL injection) is intentionally NOT skipped repo-wide. The
+        # one legitimate f-string-built query (storage.py archive delete) is scoped
+        # with `# nosec B608` at the call site. Unscoped B608 failures now fail CI
+        # — this is exactly the class of bug worth catching in a honeypot handling
+        # untrusted input (issue #221).
+        run: bandit -ll -ii -r manyfaced/ -f txt --skip B101,B310,B601,B311
+
+  canary:
+    # Issue #165 — in-workflow canary gate. Runs a real (no mocks) synthetic
+    # client->server->DB report through the exact code that gets baked into the
+    # deploy image, and asserts a row lands + the server responds. Catches
+    # "starts but is wrong" regressions (bad responses, silent report-send
+    # failures, data-quality breaks) that the post-restart health check misses.
+    # Kept PRE-MERGE (ci.yml) so a bad PR fails the gate before it can merge.
+    name: Canary smoke (synthetic report reaches DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev
+
+      - name: Canary smoke — synthetic report reaches DB
+        # Smoke gate only; coverage is enforced by the `test` job, so disable
+        # cov here (a single-file run would otherwise fail the 76% gate).
+        run: uv run pytest -q --no-cov test/test_integration/test_canary_smoke.py
+
+  build-image-smoke:
+    # Issue #146 / #256 — build the Docker image and run smoke checks so the
+    # container build can't silently rot. Folded here from build-image.yml
+    # (PR-only) so it runs once on the PR instead of twice (PR + push).
+    name: Build image + smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: manyfaced:ci
+          load: true
+
+      - name: "Smoke: generate-config runs inside the image"
+        # Confirms the installed package + console script work in the container.
+        # The ENTRYPOINT is the `manyfaced` console script, so the arg is just
+        # the flag (no repeated `manyfaced`).
+        run: docker run --rm manyfaced:ci --generate-config
+
+      - name: "Smoke: compose config is valid"
+        # compose.yaml references .env via env_file; seed it from the example
+        # (git-ignored in real use) so `docker compose config` can validate.
+        run: |
+          cp templates/honeypot.env.example .env
+          docker compose config --quiet
