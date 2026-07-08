@@ -217,6 +217,8 @@ All settings can be overridden via environment variables. The `HONEY_` prefix ma
 | `DB_PG_DB` | `honeypot` | PostgreSQL database name |
 | `DB_PG_USER` | `postgres` | PostgreSQL username |
 | `DB_PG_PASSWORD` | `postgres` | PostgreSQL password |
+| `DB_PG_SSLMODE` | `prefer` | PostgreSQL TLS mode (`disable`/`require`/`prefer`/…) |
+| `DB_PG_DSN` | _(empty)_ | PostgreSQL connection URI; when set, used instead of the discrete `HONEY_PG_*` params |
 | `DASHBOARD_ENABLED` | `false` | Enable the read-only stats dashboard |
 | `DASHBOARD_PORT` | `8443` | Dashboard listen port (non-standard) |
 | `DASHBOARD_BIND` | `127.0.0.1` | Dashboard bind address (loopback by default) |
@@ -293,7 +295,59 @@ CREATE TABLE honeypot_bears (
 
 ### PostgreSQL
 
-Set `HONEY_DB_BACKEND=postgresql` and configure the `HONEY_PG_*` environment variables.
+PostgreSQL is a **first-class, optional** storage backend. SQLite stays the
+default; Postgres is used only when an operator sets `HONEY_DB_BACKEND=postgresql`.
+The two backends share the same `honeypot_bears` schema and the same
+`insert`/`recent_records`/`aggregate_stats` API, so the dashboard, cron
+retention, and backup tooling work unchanged.
+
+**Backend selection (both work):** `HONEY_DB_BACKEND=postgresql` (env) **or**
+`backend = "postgresql"` in the `[database]` section of `config.toml`. The TOML
+`pg_*` values (`pg_host`, `pg_port`, `pg_db`, `pg_user`, `pg_password`,
+`pg_sslmode`, `pg_dsn`) are honored too — explicit env vars and constructor args
+still override them.
+
+**Connection / TLS (issue #243 #9):** set `HONEY_PG_SSLMODE` (default `prefer`)
+for managed/remote Postgres, or set `HONEY_PG_DSN` to a full connection URI
+(e.g. `postgres://user:pass@host:5432/db`) — when a DSN is set it is passed
+straight to `psycopg2.connect(dsn=...)` and the discrete `HONEY_PG_*` host/port
+params are ignored.
+
+**Connection lifecycle:** one `PostgreSQLStorage` instance is created per
+process and reused for every captured report (a fresh connection per insert
+would overwhelm Postgres under bot load). A dropped connection is transparently
+reconnected before the next write, and a transient outage dumps the record to
+the JSONL fallback file (same safety valve SQLite uses) instead of silently
+losing it.
+
+**Verify a deploy writes (not just listens):** `scripts/verify_deploy.sh` is
+backend-aware — for Postgres it inserts a probe row through the real
+`get_storage()` path and reads it back via an independent `psycopg2` connection,
+so the "starts but records nothing" regression is caught on Postgres too.
+
+**Backups:** `scripts/backup-db.sh` and `backup_database()` are backend-aware.
+For Postgres they shell out to `pg_dump -Fc` (password via the `PGPASSWORD` env
+var, never interpolated into the command) and rotate the `.dump` files — SQLite
+keeps its existing `.sqlite` WAL checkpoint + copy flow.
+
+**Migrating SQLite → Postgres (one-time ETL):** stop the service, then run
+`python scripts/migrate_sqlite_to_postgres.py` — it streams `honeypot_bears`
+rows in batches (keyset pagination on `id`) into Postgres via the existing
+`ON CONFLICT(bot_ip, timestamp) DO NOTHING` dedup, so it is safely re-runnable.
+Then flip `HONEY_DB_BACKEND=postgresql`, restart, and confirm `verify_deploy.sh`
+passes. Keep the old `.sqlite` as rollback until retention parity is confirmed.
+
+**Schema migration (known limitation):** the idempotent `CREATE TABLE IF NOT
+EXISTS` adds *new* columns to a fresh install, and `PostgreSQLStorage._init_db`
+adds the `listen_port` column online when missing. There is **no** path to
+reconcile a *renamed/retyped* column on a drifted live PG schema (the way
+`migrate_db.py` does for SQLite) — recreate the table from the code's expected
+schema if you hit that.
+
+**Packaging:** the `psycopg2-binary` dependency is installed via the `[postgres]`
+extra — the Docker image builds with `pip install .[postgres]`, and CI installs
+`--extra postgres` so the real-Postgres test job can run. SQLite-only deploys do
+not pull the C-extension wheel.
 
 ## Handlers (Impersonated Services)
 

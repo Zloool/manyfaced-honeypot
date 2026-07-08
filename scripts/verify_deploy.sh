@@ -25,8 +25,15 @@ fi
 # silent-stop (issue #188). The code rewrites relative->absolute defensively,
 # but a deploy onto a misconfigured droplet must FAIL here rather than ship
 # silent data loss.
+#
+# This absolute-path concept is SQLite-only; for PostgreSQL there is no file
+# path, so skip the guard when HONEY_DB_BACKEND=postgresql (issue #243 #7).
 echo "== Verifying DB path is absolute =="
-"$VENV" - <<'PY'
+BACKEND="${HONEY_DB_BACKEND:-sqlite}"
+if [ "$BACKEND" = "postgresql" ]; then
+  echo "OK: backend is postgresql (no file path to validate)"
+else
+  "$VENV" - <<'PY'
 from manyfaced.db.storage import validate_db_path_absolute
 
 if not validate_db_path_absolute():
@@ -38,6 +45,7 @@ if not validate_db_path_absolute():
     raise SystemExit(1)
 print("OK: DB path is absolute")
 PY
+fi
 
 CURRENT_TARGET="$(readlink -f /opt/manyfaced/current 2>/dev/null || echo /opt/manyfaced/releases/current)"
 VENV="${CURRENT_TARGET}/venv/bin/python3"
@@ -50,7 +58,6 @@ echo "== Reconciling schema =="
 # 2) Prove a write lands through the real storage path.
 echo "== Verifying a record can be written =="
 "$VENV" - <<'PY'
-import sqlite3
 import datetime
 from manyfaced.db.storage import get_storage
 
@@ -63,21 +70,59 @@ rec = {
     'is_detected': 0,
     'HIVELOGIN': '',
 }
+backend_name = type(storage).__name__
 try:
     storage.insert(rec)
-    # Verify it persisted by reading back through the same connection/file.
-    conn = sqlite3.connect(storage._db_path)
-    n = conn.execute(
-        "SELECT COUNT(*) FROM honeypot_bears WHERE request_path='/deploy-health-check'"
-    ).fetchone()[0]
-    if n < 1:
-        print("ERROR: write did not persist (0 rows found)")
+    if backend_name == 'SQLiteStorage':
+        # Verify it persisted by reading back through the same connection/file.
+        import sqlite3
+        conn = sqlite3.connect(storage._db_path)
+        n = conn.execute(
+            "SELECT COUNT(*) FROM honeypot_bears WHERE request_path='/deploy-health-check'"
+        ).fetchone()[0]
+        if n < 1:
+            print("ERROR: write did not persist (0 rows found)")
+            raise SystemExit(1)
+        # Remove the probe row so it doesn't pollute real data.
+        conn.execute("DELETE FROM honeypot_bears WHERE request_path='/deploy-health-check'")
+        conn.commit()
+        conn.close()
+        print(f"OK: write landed and persisted ({n} probe row verified, then removed)")
+    elif backend_name == 'PostgreSQLStorage':
+        # Read back + delete via an independent raw psycopg2 connection using the
+        # same HONEY_PG_* env the service uses (mirrors the SQLite branch's
+        # independent read-back through a fresh connect) — issue #243 #7.
+        import os
+        import psycopg2  # requires psycopg2-binary (installed via [postgres] extra)
+        dsn = os.environ.get('HONEY_PG_DSN')
+        kwargs = {'sslmode': os.environ.get('HONEY_PG_SSLMODE', 'prefer')}
+        if dsn:
+            conn = psycopg2.connect(dsn=dsn, **kwargs)
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get('HONEY_PG_HOST', '127.0.0.1'),
+                port=int(os.environ.get('HONEY_PG_PORT', '5432')),
+                database=os.environ.get('HONEY_PG_DB', 'honeypot'),
+                user=os.environ.get('HONEY_PG_USER', 'postgres'),
+                password=os.environ.get('HONEY_PG_PASSWORD', 'postgres'),
+                **kwargs,
+            )
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM honeypot_bears WHERE request_path='/deploy-health-check'"
+            )
+            n = cur.fetchone()[0]
+            if n < 1:
+                print("ERROR: write did not persist (0 rows found)")
+                conn.close()
+                raise SystemExit(1)
+            cur.execute("DELETE FROM honeypot_bears WHERE request_path='/deploy-health-check'")
+            conn.commit()
+        conn.close()
+        print(f"OK: write landed and persisted ({n} probe row verified, then removed)")
+    else:
+        print(f"ERROR: unknown storage backend {backend_name}")
         raise SystemExit(1)
-    # Remove the probe row so it doesn't pollute real data.
-    conn.execute("DELETE FROM honeypot_bears WHERE request_path='/deploy-health-check'")
-    conn.commit()
-    conn.close()
-    print(f"OK: write landed and persisted ({n} probe row verified, then removed)")
 except Exception as e:  # noqa: BLE001
     print(f"ERROR: write verification failed: {e!r}")
     raise SystemExit(1)
