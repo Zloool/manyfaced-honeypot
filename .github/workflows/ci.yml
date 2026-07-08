@@ -45,7 +45,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra postgres
 
       - name: Check formatting
         run: uv run ruff format --check .
@@ -72,7 +72,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra postgres
 
       - name: Run tests
         run: uv run pytest -v --tb=short
@@ -96,7 +96,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra postgres
 
       - name: Type check with basedpyright
         run: uv run basedpyright manyfaced/
@@ -176,7 +176,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra postgres
 
       - name: Canary smoke — synthetic report reaches DB
         # Smoke gate only; coverage is enforced by the `test` job, so disable
@@ -215,3 +215,55 @@ jobs:
         run: |
           cp templates/honeypot.env.example .env
           docker compose config --quiet
+
+  postgres:
+    # Issue #243 #10 — validate the PostgreSQL backend against a REAL Postgres.
+    # The mocked test_postgresql.py (run in the `test` job) only checks SQL
+    # shape; this job exercises the actual wire protocol / transactions / schema
+    # behavior once, against a ephemeral postgres:16 service container.
+    name: PostgreSQL backend (real service)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: manyfaced
+          POSTGRES_PASSWORD: manyfaced
+          POSTGRES_DB: honeypot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manyfaced"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      HONEY_DB_BACKEND: postgresql
+      HONEY_PG_HOST: localhost
+      HONEY_PG_PORT: 5432
+      HONEY_PG_DB: honeypot
+      HONEY_PG_USER: manyfaced
+      HONEY_PG_PASSWORD: manyfaced
+      HONEY_PG_SSLMODE: prefer
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked --extra dev --extra postgres
+
+      - name: Run PostgreSQL tests against real Postgres
+        # Disables coverage so the single-file run doesn't fail the 76% gate.
+        # test_postgresql_real.py is skipped automatically when no server is
+        # reachable, so this only exercises the real wire protocol here.
+        run: uv run pytest -q --no-cov test/test_storage/test_postgresql_real.py
+
+      - name: Canary smoke against PostgreSQL
+        run: uv run pytest -q --no-cov test/test_integration/test_canary_smoke.py

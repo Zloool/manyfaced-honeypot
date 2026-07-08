@@ -32,7 +32,7 @@ COPY . .
 # (pyproject.toml); the build backend (setuptools/wheel) is installed
 # explicitly so `pip install .` works.
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install .
+    && pip install .[postgres]
 
 # Persisted capture data + logs live here (mount a named volume on this path).
 RUN mkdir -p /opt/manyfaced/bots && chown -R honeypot:honeypot /opt/manyfaced /app
