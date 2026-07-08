@@ -52,18 +52,23 @@ class TestPostgreSQLStorageInit:
         assert storage._password == 'p'
 
     def test_init_default_env_values(self, mock_psycopg2):
-        """__init__ should use default values when env vars are not set."""
+        """__init__ should use default values when env vars are not set.
+
+        Defaults now come from config.toml when env/args are absent (issue #243);
+        the test_storage conftest restores config.settings to pristine defaults
+        so the assertion is not polluted by other test packages.
+        """
         mock_conn = MagicMock()
         mock_psycopg2.connect.return_value = mock_conn
 
         with patch.dict(os.environ, {}, clear=True):
             storage = PostgreSQLStorage()
 
-        assert storage._host == '127.0.0.1'
+        assert storage._host == 'localhost'
         assert storage._port == 5432
         assert storage._database == 'honeypot'
         assert storage._user == 'postgres'
-        assert storage._password == 'postgres'
+        assert storage._password == '***'
 
     def test_init_creates_lock(self, mock_psycopg2):
         """__init__ should create a threading Lock."""
@@ -78,38 +83,38 @@ class TestPostgreSQLStorageInit:
 class TestPostgreSQLStorageInitDb:
     """Tests for PostgreSQLStorage._init_db()."""
 
-    def test_init_db_raises_import_error_without_psycopg2(self):
+    def test_init_db_raises_import_error_without_psycopg2(self, monkeypatch):
         """_init_db should raise ImportError if psycopg2 is not available."""
-        with patch.dict('sys.modules', {'psycopg2': None}):
-            with patch.dict(os.environ, {}, clear=True):
-                import pytest
+        import manyfaced.db.storage as storage_mod
 
-                with pytest.raises(ImportError, match='psycopg2'):
-                    PostgreSQLStorage()
+        monkeypatch.setattr(storage_mod, 'psycopg2', None)
+        with patch.dict(os.environ, {}, clear=True):
+            import pytest
 
-    def test_init_db_raises_import_error_when_module_missing(self):
+            with pytest.raises(ImportError, match='psycopg2'):
+                PostgreSQLStorage()
+
+    def test_init_db_raises_import_error_when_module_missing(self, monkeypatch):
         """_init_db should raise ImportError when psycopg2 module is absent."""
-        # Ensure psycopg2 is not in sys.modules
-        with patch.dict('sys.modules', {k: v for k, v in sys.modules.items() if k != 'psycopg2'}):
-            with patch.dict(os.environ, {}, clear=True):
-                import pytest
+        import manyfaced.db.storage as storage_mod
 
-                with pytest.raises(ImportError, match='psycopg2 is required'):
-                    PostgreSQLStorage()
+        monkeypatch.setattr(storage_mod, 'psycopg2', None)
+        with patch.dict(os.environ, {}, clear=True):
+            import pytest
 
-    def test_init_db_success_with_mocked_psycopg2(self):
+            with pytest.raises(ImportError, match='psycopg2 is required'):
+                PostgreSQLStorage()
+
+    def test_init_db_success_with_mocked_psycopg2(self, mock_psycopg2):
         """_init_db should succeed when psycopg2.connect works."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
 
-        with patch(
-            'sys.modules',
-            {'psycopg2': MagicMock(connect=MagicMock(return_value=mock_conn))},
-        ):
-            with patch.dict(os.environ, {}, clear=True):
-                storage = PostgreSQLStorage()
+        with patch.dict(os.environ, {}, clear=True):
+            storage = PostgreSQLStorage()
 
         mock_conn.cursor.assert_called()
         mock_conn.commit.assert_called()

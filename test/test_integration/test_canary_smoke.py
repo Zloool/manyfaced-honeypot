@@ -103,19 +103,50 @@ def test_canary_synthetic_report_reaches_db():
     # And it must have produced a response (the "starts but is wrong" guard).
     assert responded and responded[0], 'canary: server returned no response'
 
-    # The report must have landed in the DB.
-    import sqlite3
+    # The report must have landed in the DB. Read it back through the same
+    # backend the server used (works for both SQLite and PostgreSQL, issue #243).
+    from manyfaced.db.storage import get_storage
 
-    from manyfaced.db.storage import _resolve_db_path
+    storage = get_storage()
+    row = None
+    if type(storage).__name__ == 'SQLiteStorage':
+        import sqlite3
 
-    conn = sqlite3.connect(_resolve_db_path())
-    try:
-        row = conn.execute(
-            'SELECT bot_ip, request_path FROM honeypot_bears WHERE bot_ip = ?',
-            ('203.0.113.99',),
-        ).fetchone()
-    finally:
-        conn.close()
+        conn = sqlite3.connect(storage._db_path)
+        try:
+            row = conn.execute(
+                'SELECT bot_ip, request_path FROM honeypot_bears WHERE bot_ip = ?',
+                ('203.0.113.99',),
+            ).fetchone()
+        finally:
+            conn.close()
+    else:  # PostgreSQLStorage
+        import os
+
+        import psycopg2
+
+        kwargs = {'sslmode': os.environ.get('HONEY_PG_SSLMODE', 'prefer')}
+        dsn = os.environ.get('HONEY_PG_DSN')
+        if dsn:
+            conn = psycopg2.connect(dsn=dsn, **kwargs)
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get('HONEY_PG_HOST', '127.0.0.1'),
+                port=int(os.environ.get('HONEY_PG_PORT', '5432')),
+                database=os.environ.get('HONEY_PG_DB', 'honeypot'),
+                user=os.environ.get('HONEY_PG_USER', 'postgres'),
+                password=os.environ.get('HONEY_PG_PASSWORD', 'postgres'),
+                **kwargs,
+            )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT bot_ip, request_path FROM honeypot_bears WHERE bot_ip = %s',
+                    ('203.0.113.99',),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
 
     assert row is not None, 'canary: synthetic report was not saved to the database'
     assert row[0] == '203.0.113.99'
