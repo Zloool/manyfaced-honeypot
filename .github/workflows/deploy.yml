@@ -294,110 +294,100 @@ jobs:
               echo 'Already using release-symlink scheme — no migration needed'; \
             fi"
 
-      - name: Rsync commit to staging directory
+      # ── Container-based deploy (issue #149) ──────────────────────────────
+      # The honeypot now runs as a pinned GHCR image instead of a
+      # rsync'd venv + systemd unit. The image is built by the
+      # build-and-push-image job (tagged sha-<short_sha> and :latest).
+      # Rollback = re-pin the container to a previously deployed image tag.
+      - name: Authenticate to GHCR and pull release image
         env:
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
           DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
           DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
         run: |
           set -euo pipefail
 
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
-
-          # Clean staging dir if re-deploying same commit (idempotent)
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "rm -rf ${STAGING_DIR} && mkdir -p ${STAGING_DIR}"
-
-          # Rsync ALL repo files into staging dir. --delete is safe because
-          # the staging directory is per-commit and starts empty.
-          rsync -avz --delete \
-            -e "ssh -p ${DROPLET_SSH_PORT}" \
-            --exclude='.git/' \
-            --exclude='.venv/' \
-            --exclude='__pycache__/' \
-            --exclude='*.egg-info/' \
-            --exclude='.ruff_cache/' \
-            --exclude='.pytest_cache/' \
-            --exclude='deployment-analysis/' \
-            --exclude='prod-backup/' \
-            --exclude='bots/' \
-            --exclude='coverage.xml' \
-            --exclude='*.db' \
-            --exclude='*.log' \
-            --exclude='honeypot.env' \
-            . \
-            "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}:${STAGING_DIR}/"
-
-      - name: Install Python dependencies
-        env:
-          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
-          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
-        run: |
-          set -euo pipefail
-
-          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
-
-          # Install BEFORE symlink swap so the swap can't expose a release
-          # whose deps aren't installed. Full pip output shown in workflow log;
-          # tee also saves to droplet-side file for debugging.
-          #
-          # Pinned via the committed uv.lock (issue #220): bootstrap uv if
-          # absent, export the locked runtime requirements, install them into
-          # the existing pip-created venv with uv pip install -r, then install
-          # the project editable on top (its deps are already pinned, so pip
-          # does not re-resolve). Transitive versions match the lock exactly.
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            set -euo pipefail && \
-            command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh && \
-            export PATH=\"\$HOME/.local/bin:\$PATH\" && \
-            cd ${STAGING_DIR} && \
-            uv export --locked --no-dev --format requirements-txt -o /tmp/mfh-req.lock.txt && \
-            uv pip install --python /opt/manyfaced/venv -r /tmp/mfh-req.lock.txt 2>&1 | tee /opt/manyfaced/deploy-${SHORT_SHA}.log && \
-            /opt/manyfaced/venv/bin/pip install -e ${STAGING_DIR} >> /opt/manyfaced/deploy-${SHORT_SHA}.log 2>&1"
-
-      - name: Atomically swap release symlink
-        env:
-          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
-          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
-        run: |
-          set -euo pipefail
-
-          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
-
-          # ln -sfn alone is NOT atomic (it unlinks then symlinks).
-          # The current.new intermediate + mv -Tf guarantees a single
-          # rename(2) syscall — the service never observes a partial state.
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            set -euo pipefail && \
-            ln -sfn '${STAGING_DIR}' '/opt/manyfaced/current.new' && \
-            mv -Tf '/opt/manyfaced/current.new' '/opt/manyfaced/current'"
-
-      - name: Update systemd unit and restart service
-        env:
-          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
-          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
-        run: |
-          set -euo pipefail
-
-          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          STAGING_DIR="/opt/manyfaced/releases/${SHORT_SHA}"
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
 
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
-            cp ${STAGING_DIR}/systemd/manyfaced.service /etc/systemd/system/manyfaced.service && \
-            systemctl daemon-reload && \
-            systemctl restart manyfaced && \
-            sleep 3 && \
-            if [ \"\$(systemctl is-active manyfaced)\" = \"active\" ]; then \
-              echo 'Service started successfully'; \
+            command -v docker >/dev/null 2>&1 || { echo 'FAIL: docker not installed on droplet'; exit 1; } && \
+            # Re-authenticate only if a pull token is provided; otherwise rely on
+            # the droplet's existing docker login (cached in /root/.docker/config.json).
+            if [ -n \"${GHCR_TOKEN}\" ]; then \
+              echo \"${GHCR_TOKEN}\" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin; \
+            fi && \
+            docker pull '${IMAGE}' && \
+            echo \"Pulled ${IMAGE}\""
+
+      - name: Prepare host mounts (config dir + writable log paths)
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          # The container runs as the host 'honeypot' uid (1001) so it can
+          # write the shared /opt/manyfaced/bots SQLite volume. Config is
+          # mounted read-only into XDG_CONFIG_HOME (the image's own
+          # /home/honeypot is owned by a different uid and not traversable).
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            set -euo pipefail && \
+            mkdir -p /opt/manyfaced/host-config/manyfaced /opt/manyfaced/bots && \
+            chown -R honeypot:honeypot /opt/manyfaced/host-config /opt/manyfaced/bots && \
+            # Ensure the deploy env file points logs/dumps at the writable
+            # bots volume (container HOME is set to /opt/manyfaced/bots so the
+            # default ~-based log path is also writable).
+            grep -q '^HONEY_LOG_FILE=' /opt/manyfaced/honeypot.env || printf 'HONEY_LOG_FILE=/opt/manyfaced/bots/honeypot.log\n' >> /opt/manyfaced/honeypot.env; \
+            grep -q '^HONEY_DUMP_FILE=' /opt/manyfaced/honeypot.env || printf 'HONEY_DUMP_FILE=/opt/manyfaced/bots/dump.jsonl\n' >> /opt/manyfaced/honeypot.env; \
+            echo 'Host mounts ready'"
+
+      - name: Stop legacy systemd service (first cutover only) and launch container
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
+
+          # Container flags (validated on prod, 2026-07-08):
+          #   --network host           honeypot binds many low/high ports; the
+          #                             droplet's nft REDIRECT (80->8080 etc.)
+          #                             keeps working, so no port-map juggling.
+          #   --user 1001:1001         matches host 'honeypot' uid so the
+          #                             bind-mounted bots volume (SQLite) is
+          #                             writable.
+          #   --env HOME=/opt/manyfaced/bots
+          #                             default log path (~/.local/...) lands on
+          #                             the writable volume.
+          #   --env XDG_CONFIG_HOME=/opt/manyfaced/host-config
+          #                             config discovery reads the mounted
+          #                             honeypot config.toml (read-only).
+          #   --env-file honeypot.env   same config the old systemd unit used
+          #                             (incl. HONEY_PORT=top, now safe).
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            set -euo pipefail && \
+            # Disable the legacy systemd unit if it is still active (idempotent).
+            if systemctl is-active --quiet manyfaced 2>/dev/null && [ -f /etc/systemd/system/manyfaced.service ]; then \
+              systemctl stop manyfaced; systemctl disable manyfaced 2>/dev/null || true; \
+              echo 'Legacy systemd unit stopped+disabled'; \
             else \
-              echo 'FAIL: Service not active after restart' && exit 1; \
-            fi"
+              echo 'No legacy systemd unit active'; \
+            fi && \
+            docker rm -f manyfaced 2>/dev/null || true && \
+            docker run -d --name manyfaced --restart unless-stopped --network host --user 1001:1001 \
+              --env HOME=/opt/manyfaced/bots --env XDG_CONFIG_HOME=/opt/manyfaced/host-config \
+              --env-file /opt/manyfaced/honeypot.env \
+              -v /home/honeypot/.config/manyfaced:/opt/manyfaced/host-config/manyfaced:ro \
+              -v /opt/manyfaced/bots:/opt/manyfaced/bots \
+              '${IMAGE}' && \
+            echo 'Container launched: ${IMAGE}'"
 
       - name: Health check (ports)
         env:
@@ -483,7 +473,7 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "bash /opt/manyfaced/scripts/verify_deploy.sh"
 
-      - name: Clean up old releases (keep last 5)
+      - name: Record deployed image tag + prune old images
         env:
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
           DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
@@ -491,14 +481,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Keep last 5 releases under /opt/manyfaced/releases/. Never delete
-          # current's target even if it falls outside the last 5 (defensive).
+          SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
+
+          # Persist the deployed tag so the rollback step can re-pin to the
+          # previously known-good image. Keep the last 5 tags.
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
-            CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
-            ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | tail -n +6 | xargs -r rm -rf && \
-            echo 'Old releases cleaned up (keeping last 5)' && \
-            echo \"Current release: \$CURRENT_TARGET\""
+            echo '${IMAGE}' >> /opt/manyfaced/deployed-images.log && \
+            tail -n 5 /opt/manyfaced/deployed-images.log > /opt/manyfaced/deployed-images.log.tmp && \
+            mv -f /opt/manyfaced/deployed-images.log.tmp /opt/manyfaced/deployed-images.log && \
+            # Prune dangling images, keep the last 5 named tags.
+            docker image prune -f >/dev/null 2>&1 || true && \
+            echo 'Recorded deployed image: ${IMAGE}'"
 
       - name: Rollback on failure
         if: failure()
@@ -509,21 +504,23 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Re-pin the container to the previously deployed image tag.
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
-            CURRENT_TARGET=\$(readlink -f /opt/manyfaced/current) && \
-            PREV_RELEASE=\$(ls -1dt /opt/manyfaced/releases/*/ | grep -v \"^\${CURRENT_TARGET}/\$\" | head -1) && \
-            if [ -z \"\$PREV_RELEASE\" ]; then \
-              echo 'No prior release to roll back to — manual intervention required' && exit 1; \
+            if [ ! -f /opt/manyfaced/deployed-images.log ]; then \
+              echo 'No deployed-images.log — cannot auto-rollback'; exit 1; \
             fi && \
-            ln -sfn \"\$PREV_RELEASE\" '/opt/manyfaced/current.new' && \
-            mv -Tf '/opt/manyfaced/current.new' '/opt/manyfaced/current' && \
-            cp \"\$PREV_RELEASE/systemd/manyfaced.service\" /etc/systemd/system/manyfaced.service && \
-            systemctl daemon-reload && \
-            systemctl restart manyfaced && \
-            sleep 3 && \
-            if [ \"\$(systemctl is-active manyfaced)\" = \"active\" ]; then \
-              echo \"Rollback successful — service running on \$PREV_RELEASE\"; \
-            else \
-              echo 'FAIL: Rollback did not restore service' && exit 1; \
-            fi"
+            CURRENT_IMG=\$(docker inspect --format='{{.Config.Image}}' manyfaced 2>/dev/null || true) && \
+            PREV_IMG=\$(grep -v \"^\${CURRENT_IMG}\$\" /opt/manyfaced/deployed-images.log | tail -1) && \
+            if [ -z \"\$PREV_IMG\" ]; then \
+              echo 'No prior image tag to roll back to — manual intervention required'; exit 1; \
+            fi && \
+            docker pull \"\$PREV_IMG\" && \
+            docker rm -f manyfaced 2>/dev/null || true && \
+            docker run -d --name manyfaced --restart unless-stopped --network host --user 1001:1001 \
+              --env HOME=/opt/manyfaced/bots --env XDG_CONFIG_HOME=/opt/manyfaced/host-config \
+              --env-file /opt/manyfaced/honeypot.env \
+              -v /home/honeypot/.config/manyfaced:/opt/manyfaced/host-config/manyfaced:ro \
+              -v /opt/manyfaced/bots:/opt/manyfaced/bots \
+              \"\$PREV_IMG\" && \
+            echo \"Rollback successful — container running on \$PREV_IMG\""
