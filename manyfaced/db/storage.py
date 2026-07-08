@@ -23,6 +23,74 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ── detected_id → human-readable service name (issue #234 dashboard) ─────────
+# Service handlers carry a `domain` (e.g. 'wordpress'); the special sentinel IDs
+# in status.py describe non-HTTP / unknown protocols. Map both to friendly
+# labels so the dashboard can group by "what was targeted".
+from manyfaced.common import status as _status  # noqa: E402
+
+_DETECTED_ID_NAMES: dict[int, str] = {
+    _status.WORDPRESS_HTTP: 'wordpress',
+    _status.PHPMYADMIN_HTTP: 'phpmyadmin',
+    _status.JENKINS_HTTP: 'jenkins',
+    _status.TOMCAT_HTTP: 'tomcat',
+    _status.DRUPAL_HTTP: 'drupal',
+    _status.CPANEL_HTTP: 'cpanel',
+    _status.BITRIX_HTTP: 'bitrix',
+    _status.WEBDAV_HTTP: 'webdav',
+    _status.CONFIG_DISCLOSURE_HTTP: 'config_disclosure',
+    _status.UNKNOWN_HTTP: 'unknown_http',
+    _status.SSH_CLIENT: 'ssh',
+    _status.UNKNOWN_NON_HTTP: 'unknown_non_http',
+    _status.EMPTY_CONNECTION: 'empty_connection',
+    _status.UNKNOWN_DNS: 'dns',
+    _status.UNKNOWN_MONGODB: 'mongodb',
+    _status.UNKNOWN_REDIS: 'redis',
+    _status.UNKNOWN_TLS: 'tls',
+    _status.UNKNOWN_SMB: 'smb',
+    _status.UNKNOWN_TELNET: 'telnet',
+    _status.UNKNOWN_RDP: 'rdp',
+    _status.UNKNOWN_VNC: 'vnc',
+}
+# Service IDs (matched handlers) are "detected"; the sentinel range is not.
+_DETECTED_SERVICE_MAX = _status.CONFIG_DISCLOSURE_HTTP
+
+
+def detected_id_name(detected_id: int | None) -> str:
+    """Map a detected_id to a friendly service/protocol label."""
+    if detected_id is None:
+        return 'unknown'
+    return _DETECTED_ID_NAMES.get(int(detected_id), 'unknown')
+
+
+def is_detected(detected_id: int | None) -> bool:
+    """A row is 'detected' if it matched a known service handler."""
+    if detected_id is None:
+        return False
+    return 1 <= int(detected_id) <= _DETECTED_SERVICE_MAX
+
+
+def _scalar(conn, sql: str, params: tuple) -> int:
+    """Run a COUNT/aggregate query and return the integer result (0 on None)."""
+    row = conn.execute(sql, params).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _empty_stats() -> dict:
+    """Return a well-shaped empty aggregate result."""
+    return {
+        'total': 0,
+        'detected': 0,
+        'undetected': 0,
+        'by_service': [],
+        'by_country': [],
+        'by_continent': [],
+        'by_ip': [],
+        'by_path': [],
+        'volume': [],
+    }
+
+
 # Process-wide lock serializing all SQLite writes. get_storage() returns a
 # fresh SQLiteStorage (and thus a fresh connection) on every call, so the
 # per-instance lock cannot coordinate concurrent writer threads. A single
@@ -66,6 +134,37 @@ class StorageBackend(ABC):
     def close(self) -> None:
         """Close any connections / resources held by the backend."""
         ...
+
+    # -- read API (issue #234 dashboard) ------------------------------------
+    # Not declared @abstractmethod: the existing abstract contract for storage
+    # backends is insert/close only (see test_storage). Concrete subclasses
+    # (SQLiteStorage, PostgreSQLStorage) override these; calling the base raises.
+
+    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+        """Return the most recent bear records (newest first).
+
+        Args:
+            limit: Max rows to return.
+            since: Optional inclusive lower bound on ``timestamp`` (already
+                formatted as the column's textual ``%Y-%m-%d %H:%M:%S.%f``).
+        """
+        raise NotImplementedError('recent_records not implemented by this backend')
+
+    def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
+        """Return dashboard aggregates over the honeypot_bears table.
+
+        Args:
+            since: Optional inclusive lower bound on ``timestamp``.
+            bucket: Time-bucketing granularity for the volume series —
+                ``'hour'`` or ``'day'``.
+
+        Returns:
+            Dict with keys: total, detected, undetected, by_service,
+            by_country, by_continent, by_ip, by_path, volume. Each ``by_*`` is
+            a list of ``{'key': ..., 'count': ...}``; ``volume`` is a list of
+            ``{'bucket': ..., 'count': ...}``.
+        """
+        raise NotImplementedError('aggregate_stats not implemented by this backend')
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +559,91 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error archiving old records from SQLite storage')
             return None
 
+    # -- read API (issue #234 dashboard) ------------------------------------
+
+    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+        if self._conn is None:
+            return []
+        conn = self._conn
+        sql = 'SELECT * FROM honeypot_bears'
+        params: tuple = ()
+        if since is not None:
+            sql += ' WHERE timestamp >= ?'
+            params = (since,)
+        sql += ' ORDER BY timestamp DESC LIMIT ?'
+        try:
+            rows = conn.execute(sql, (*params, int(limit))).fetchall()
+            cols = [d[0] for d in conn.execute('SELECT * FROM honeypot_bears LIMIT 0').description]
+            return [dict(zip(cols, row)) for row in rows]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading recent records from SQLite storage')
+            return []
+
+    def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
+        if self._conn is None:
+            return _empty_stats()
+        conn = self._conn
+        if since is not None:
+            where = ' WHERE timestamp >= ?'
+            params: tuple = (since,)
+            and_prefix = ' AND'
+        else:
+            where = ''
+            params = ()
+            and_prefix = ' WHERE'
+        bucket_expr = (
+            "strftime('%Y-%m-%d', timestamp)"
+            if bucket == 'day'
+            else "strftime('%Y-%m-%d %H:00', timestamp)"
+        )
+        try:
+            total = _scalar(conn, f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
+            detected = _scalar(
+                conn,
+                f'SELECT COUNT(*) FROM honeypot_bears{where}{and_prefix} detected_id BETWEEN 1 AND ?',
+                (*params, _DETECTED_SERVICE_MAX),
+            )
+            undetected = total - detected
+
+            def _group(col: str, top: int = 15) -> list[dict]:
+                q = (
+                    f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                    f"{col} IS NOT NULL AND {col} != '' "
+                    f'GROUP BY {col} ORDER BY c DESC LIMIT ?'
+                )
+                rows = conn.execute(q, (*params, top)).fetchall()
+                return [{'key': r[0], 'count': r[1]} for r in rows]
+
+            # Service grouping maps detected_id -> friendly name.
+            svc_rows = conn.execute(
+                f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY detected_id ORDER BY c DESC',
+                params,
+            ).fetchall()
+            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in svc_rows]
+
+            vol_rows = conn.execute(
+                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY b ORDER BY b',
+                params,
+            ).fetchall()
+            volume = [{'bucket': r[0], 'count': r[1]} for r in vol_rows]
+
+            return {
+                'total': total,
+                'detected': detected,
+                'undetected': undetected,
+                'by_service': by_service,
+                'by_country': _group('bot_country'),
+                'by_continent': _group('bot_continent'),
+                'by_ip': _group('bot_ip'),
+                'by_path': _group('request_path'),
+                'volume': volume,
+            }
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error aggregating stats from SQLite storage')
+            return _empty_stats()
+
     def __del__(self) -> None:
         self.close()
 
@@ -550,6 +734,97 @@ class PostgreSQLStorage(StorageBackend):
                 logger.exception('Error closing PostgreSQL connection')
             finally:
                 self._conn = None
+
+    # -- read API (issue #234 dashboard) ------------------------------------
+
+    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+        if self._conn is None:
+            return []
+        sql = 'SELECT * FROM honeypot_bears'
+        params: list = []
+        if since is not None:
+            sql += ' WHERE timestamp >= %s'
+            params.append(since)
+        sql += ' ORDER BY timestamp DESC LIMIT %s'
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (*params, int(limit)))
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('Error reading recent records from PostgreSQL storage')
+            return []
+
+    def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
+        if self._conn is None:
+            return _empty_stats()
+        if since is not None:
+            where = ' WHERE timestamp >= %s'
+            params: list = [since]
+            and_prefix = ' AND'
+        else:
+            where = ''
+            params = []
+            and_prefix = ' WHERE'
+        bucket_expr = (
+            "to_char(timestamp::timestamp, 'YYYY-MM-DD')"
+            if bucket == 'day'
+            else "to_char(timestamp::timestamp, 'YYYY-MM-DD HH24:00')"
+        )
+        try:
+            with self._conn.cursor() as cur:
+
+                def _pg_scalar(q: str, p: list) -> int:
+                    cur.execute(q, p)
+                    row = cur.fetchone()
+                    return int(row[0]) if row and row[0] is not None else 0
+
+                total = _pg_scalar(f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
+                detected = _pg_scalar(
+                    f'SELECT COUNT(*) FROM honeypot_bears{where}{and_prefix} detected_id BETWEEN 1 AND %s',
+                    [*params, _DETECTED_SERVICE_MAX],
+                )
+                undetected = total - detected
+
+                def _group(col: str, top: int = 15) -> list[dict]:
+                    q = (
+                        f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                        f"{col} IS NOT NULL AND {col} != '' "
+                        f'GROUP BY {col} ORDER BY c DESC LIMIT %s'
+                    )
+                    cur.execute(q, [*params, top])
+                    return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
+
+                cur.execute(
+                    f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                    'GROUP BY detected_id ORDER BY c DESC',
+                    params,
+                )
+                by_service = [
+                    {'key': detected_id_name(r[0]), 'count': r[1]} for r in cur.fetchall()
+                ]
+
+                cur.execute(
+                    f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                    'GROUP BY b ORDER BY b',
+                    params,
+                )
+                volume = [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
+
+                return {
+                    'total': total,
+                    'detected': detected,
+                    'undetected': undetected,
+                    'by_service': by_service,
+                    'by_country': _group('bot_country'),
+                    'by_continent': _group('bot_continent'),
+                    'by_ip': _group('bot_ip'),
+                    'by_path': _group('request_path'),
+                    'volume': volume,
+                }
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('Error aggregating stats from PostgreSQL storage')
+            return _empty_stats()
 
     def __del__(self) -> None:
         self.close()
