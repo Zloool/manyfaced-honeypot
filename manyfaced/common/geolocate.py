@@ -207,6 +207,8 @@ def stop_geo_worker() -> None:
             try:
                 queue.put(None, block=False)  # Shutdown signal
             except (Full, OSError):
+                # Queue full or closed during shutdown — drop the signal rather
+                # than masking unrelated errors.
                 pass
         _geo_queue = None
         _geo_worker_thread = None

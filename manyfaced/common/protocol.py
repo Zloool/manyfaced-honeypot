@@ -16,7 +16,7 @@ _PROTOCOL_SIGNATURES = [
     ('ssh', re.compile(rb'^SSH-\d\.\d-', re.IGNORECASE), b'SSH-2.0-OpenSSH'),
     ('ftp', re.compile(rb'^220\s', re.IGNORECASE), b'220 (vsFTPd)'),
     # SMB/NBT before TELNET — \x00\x00\x00 prefix with SMB indicators (NT LM, SMB 2.x)
-    ('smb', re.compile(rb'^\x00\x00\x00.{16}NT\sLM|^\x00\x00\x00.{16}SMB\s\d'), None),
+    ('smb', re.compile(rb'^\x00\x00\x00.{16}(?:NT\sLM|SMB\s\d)'), None),
     # TELNET: starts with IAC (Interpret As Command) byte 0xFF
     ('telnet', re.compile(rb'^\xff'), b'\xff\xfb\x01'),
     # POP3/IMAP before Redis — both + and * can appear in other protocols, but POP3/IMAP are more specific
@@ -150,6 +150,8 @@ def get_protocol_info(raw_data: bytes) -> dict:
                 info['protocol'] = 'smb'
                 return info
         except Exception:
+            # Payload decode/parse failed on non-ASCII bytes — fall through to
+            # the next detection heuristic rather than aborting protocol sniff.
             pass
 
     # Telnet detection — starts with IAC (Interpret As Command) byte 0xFF

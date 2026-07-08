@@ -285,6 +285,8 @@ def _handle_bot_connection(
                 output_data if isinstance(output_data, bytes) else output_data.encode('iso-8859-1')
             )
     except socket.error:
+        # Client disconnected mid-response (or socket torn down) — nothing to
+        # send back; the connection is already gone.
         pass
     finally:
         # Clear router handler instances so BotProfile state doesn't leak across connections

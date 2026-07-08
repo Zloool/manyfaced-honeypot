@@ -32,7 +32,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
                 )
         elif isinstance(request_text, bytes):
             # Already bytes — use as-is (handles the case where raw socket data is passed)
-            request_text = request_text
+            pass
         self.rfile = BytesIO(request_text)
         self.raw_requestline = self.rfile.readline()
         self.error_code = self.error_message = None
