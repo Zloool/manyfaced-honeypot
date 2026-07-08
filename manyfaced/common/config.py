@@ -276,23 +276,59 @@ class Config:
                 k.split('.', 1)[1]: v for k, v in (toml or {}).items() if k.startswith('alerting.')
             },
             # Dashboard config (issue #234) — [dashboard] section.
+            # NOTE: env_name is set explicitly (HONEY_DASHBOARD_*) because the
+            # bare key name 'port' would otherwise collide with HONEY_PORT
+            # (e.g. the honeypot's HONEY_PORT_MODE=top would resolve as an int
+            # and crash startup with int('top')). Field-named env keys avoid
+            # the collision. TOML still uses the [dashboard] section.
             DASHBOARD_ENABLED=bool(
-                resolve_setting('enabled', _DEFAULT_DASHBOARD_ENABLED, 'dashboard', toml, prefix)
+                resolve_setting(
+                    'enabled',
+                    _DEFAULT_DASHBOARD_ENABLED,
+                    'dashboard',
+                    toml,
+                    prefix,
+                    env_name='dashboard_enabled',
+                )
             ),
             DASHBOARD_PORT=int(
-                resolve_setting('port', _DEFAULT_DASHBOARD_PORT, 'dashboard', toml, prefix)
+                resolve_setting(
+                    'port',
+                    _DEFAULT_DASHBOARD_PORT,
+                    'dashboard',
+                    toml,
+                    prefix,
+                    env_name='dashboard_port',
+                )
             ),
             DASHBOARD_BIND=str(
-                resolve_setting('bind', _DEFAULT_DASHBOARD_BIND, 'dashboard', toml, prefix)
+                resolve_setting(
+                    'bind',
+                    _DEFAULT_DASHBOARD_BIND,
+                    'dashboard',
+                    toml,
+                    prefix,
+                    env_name='dashboard_bind',
+                )
             ),
             DASHBOARD_SECRET=str(
                 resolve_setting(
-                    'secret', _DEFAULT_DASHBOARD_SECRET or '', 'dashboard', toml, prefix
+                    'secret',
+                    _DEFAULT_DASHBOARD_SECRET or '',
+                    'dashboard',
+                    toml,
+                    prefix,
+                    env_name='dashboard_secret',
                 )
             ),
             DASHBOARD_TIME_RANGE=str(
                 resolve_setting(
-                    'time_range', _DEFAULT_DASHBOARD_TIME_RANGE, 'dashboard', toml, prefix
+                    'time_range',
+                    _DEFAULT_DASHBOARD_TIME_RANGE,
+                    'dashboard',
+                    toml,
+                    prefix,
+                    env_name='dashboard_time_range',
                 )
             ),
         )
