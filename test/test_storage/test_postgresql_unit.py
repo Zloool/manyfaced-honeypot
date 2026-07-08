@@ -229,3 +229,70 @@ class TestInsertFailureFallback:
             monkeypatch.setattr(utils_mod, 'dump_file', saved_dump)
         assert dump.exists()
         assert 'postgres_insert_failure' in dump.read_text()
+
+
+class TestAbortedTransactionRecovery:
+    def test_infailedsqltransaction_recovers_and_stores(self, fake_psycopg2, monkeypatch, tmp_path):
+        # Issue #243 regression: a failed query leaves the shared PG connection
+        # in InFailedSqlTransaction. Every subsequent query then fails forever
+        # (poisoning recording + the dashboard reader) unless we rollback and
+        # reconnect. Simulate a generic psycopg2.Error (NOT OperationalError/
+        # InterfaceError) on the first execute, then a GOOD connection on retry.
+        bad_conn = MagicMock()
+        bad_conn.cursor.return_value.__enter__.return_value.execute.side_effect = (
+            fake_psycopg2.Error('InFailedSqlTransaction: current transaction is aborted')
+        )
+        good_conn = MagicMock()
+        fake_psycopg2.connect.side_effect = [bad_conn, good_conn]
+        monkeypatch.delenv('HONEY_DB_BACKEND', raising=False)
+        storage = PostgreSQLStorage()
+        # Make init succeed so the first insert uses bad_conn directly.
+        storage._conn = bad_conn
+
+        rec = {'ip': '1.2.3.4', 'timestamp': '2024-01-01 00:00:00', 'detected_id': 1}
+        storage.insert(rec)  # must not raise, must recover + store
+
+        # The bad connection was rolled back + closed, then a fresh good
+        # connection performed the real insert (no JSONL dump fallback).
+        assert bad_conn.rollback.called
+        assert storage._conn is good_conn
+        assert good_conn.cursor.called
+        assert not dump_exists(tmp_path)
+
+    def test_aborted_transaction_fallback_when_reconnect_fails(
+        self, fake_psycopg2, monkeypatch, tmp_path
+    ):
+        # If rollback+reconnect still cannot establish a connection, the record
+        # must be dumped to JSONL (never silently lost) rather than raising.
+        bad_conn = MagicMock()
+        bad_conn.cursor.return_value.__enter__.return_value.execute.side_effect = (
+            fake_psycopg2.Error('InFailedSqlTransaction')
+        )
+        fake_psycopg2.connect.side_effect = [bad_conn, fake_psycopg2.Error('cannot reconnect')]
+        monkeypatch.delenv('HONEY_DB_BACKEND', raising=False)
+        storage = PostgreSQLStorage()
+        storage._conn = bad_conn
+
+        import manyfaced.common.utils as utils_mod
+
+        saved_dump = utils_mod.dump_file
+        dump = tmp_path / 'dump.jsonl'
+
+        def _fake_dump(data):
+            import json
+
+            with open(dump, 'a', encoding='utf-8') as fh:
+                fh.write(json.dumps(data) + '\n')
+
+        monkeypatch.setattr(utils_mod, 'dump_file', _fake_dump)
+        try:
+            rec = {'ip': '9.9.9.9', 'timestamp': '2024-01-01 00:00:00'}
+            storage.insert(rec)  # must not raise
+        finally:
+            monkeypatch.setattr(utils_mod, 'dump_file', saved_dump)
+        assert dump.exists()
+        assert 'postgres_insert_failure' in dump.read_text()
+
+
+def dump_exists(path):
+    return (path / 'dump.jsonl').exists()
