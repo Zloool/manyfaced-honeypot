@@ -309,7 +309,7 @@ jobs:
           set -euo pipefail
 
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${SHORT_SHA}"
 
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
             set -euo pipefail && \
@@ -354,7 +354,7 @@ jobs:
           set -euo pipefail
 
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${SHORT_SHA}"
 
           # Container flags (validated on prod, 2026-07-08):
           #   --network host           honeypot binds many low/high ports; the
@@ -482,7 +482,7 @@ jobs:
           set -euo pipefail
 
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
-          IMAGE="ghcr.io/${{ github.repository }}:sha-${SHORT_SHA}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${SHORT_SHA}"
 
           # Persist the deployed tag so the rollback step can re-pin to the
           # previously known-good image. Keep the last 5 tags.
