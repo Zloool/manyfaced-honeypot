@@ -319,7 +319,13 @@ jobs:
             if [ -n \"${GHCR_TOKEN}\" ]; then \
               echo \"${GHCR_TOKEN}\" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin; \
             fi && \
-            docker pull '${IMAGE}' && \
+            # GHCR is eventually consistent — a just-pushed tag may take a few
+            # seconds to be visible. Retry the pull with backoff so a registry
+            # propagation delay doesn't fail the whole deploy.
+            for attempt in 1 2 3 4 5; do \
+              if docker pull '${IMAGE}'; then break; fi; \
+              echo \"pull attempt ${attempt} failed, retrying in 5s...\"; sleep 5; \
+            done && \
             echo \"Pulled ${IMAGE}\""
 
       - name: Prepare host mounts (config dir + writable log paths)
@@ -515,7 +521,7 @@ jobs:
             if [ -z \"\$PREV_IMG\" ]; then \
               echo 'No prior image tag to roll back to — manual intervention required'; exit 1; \
             fi && \
-            docker pull \"\$PREV_IMG\" && \
+            for attempt in 1 2 3 4 5; do if docker pull \"\$PREV_IMG\"; then break; fi; echo \"rollback pull attempt \${attempt} failed, retrying in 5s...\"; sleep 5; done && \
             docker rm -f manyfaced 2>/dev/null || true && \
             docker run -d --name manyfaced --restart unless-stopped --network host --user 1001:1001 \
               --env HOME=/opt/manyfaced/bots --env XDG_CONFIG_HOME=/opt/manyfaced/host-config \
