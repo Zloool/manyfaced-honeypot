@@ -226,6 +226,7 @@ def _handle_bot_connection(
     args,
     bot_addr: tuple,
     update_event: _MpEvent,
+    listen_port: int = 0,
 ) -> None:
     """Handle a single bot connection: receive request, generate response, send reply.
 
@@ -253,7 +254,7 @@ def _handle_bot_connection(
     incr('bot_connections')
     set_gauge('active_connections', threading.active_count())
 
-    handler = HTTPHandler(args, update_event)
+    handler = HTTPHandler(args, update_event, listen_port=listen_port)
     output_data = handler.handle_request(message, bot_ip=bot_ip)
 
     try:
@@ -330,7 +331,7 @@ def create_server(args, update_event: _MpEvent, port: int) -> bool:
             # per-port daemon threads above are for multi-port, not per-connection.
             t = threading.Thread(
                 target=_handle_bot_connection,
-                args=(connection_socket, args, bot_addr, update_event),
+                args=(connection_socket, args, bot_addr, update_event, port),
                 name=f'bot-{bot_addr[0]}:{bot_addr[1]}' if bot_addr else 'bot-?',
                 daemon=True,
             )

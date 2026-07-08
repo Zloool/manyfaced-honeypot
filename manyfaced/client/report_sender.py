@@ -65,6 +65,8 @@ def send_report(data, client, password, server_host, server_port, sensor_id=None
         'country': getattr(data, 'country', '') or '',
         'continent': getattr(data, 'continent', '') or '',
         'login': getattr(data, 'login', '') or '',  # Captured credentials (user:pass or user only)
+        # Local honeypot port the bot connected to (issue #299). 0 = unknown.
+        'listen_port': getattr(data, 'listen_port', 0) or 0,
     }
 
     # Bot profile data — accumulated state (escalation, dialogue, history) for this IP
