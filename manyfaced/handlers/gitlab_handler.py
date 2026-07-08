@@ -1,0 +1,104 @@
+"""GitLabHandler - scaffold stub for issue #276.
+
+TODO: replace the placeholder page with a realistic GitLab impersonation
+matching the production probe paths in the issue. Keep the class shape, the
+DETECTED_ID constant, and the generate_response() signature intact.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import logging
+
+from manyfaced.handlers.base_handler import HTTPHandlerBase
+
+from manyfaced.common.status import GITLAB_HTTP
+
+logger = logging.getLogger(__name__)
+
+
+class GitLabHandler(HTTPHandlerBase):
+    """GitLab honeypot handler (scaffold)."""
+
+    domain = 'gitlab'
+    DETECTED_ID = GITLAB_HTTP
+    VERSION = '16.8.5'
+
+    def generate_response(
+        self,
+        path: str,
+        raw_request: str,
+        bot_ip: str,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[bytes, int]:
+        """Generate a GitLab response for the given request."""
+        profile = self.get_or_create_profile(bot_ip)
+
+        request_data = {
+            'path': path,
+            'method': self._extract_method(raw_request),
+            'headers': dict(headers) if headers else {},
+            'raw': raw_request,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }
+        profile.record_request(request_data)
+
+        method = self._extract_method(raw_request)
+        path_lower = path.lower()
+
+        if method == 'POST' and any(kw in path_lower for kw in ['login', 'auth']):
+            credentials, response, detected = self.handle_login(
+                path, raw_request, bot_ip, headers or {}
+            )
+            if credentials:
+                return self._login_failed_response(), detected
+
+        body = self._main_page()
+        return self._build_http_response(body, 200, 'OK'), self.DETECTED_ID
+
+    def _main_page(self) -> str:
+        """GitLab placeholder page (scaffold)."""
+        return (
+            '<!DOCTYPE html><html><head><title>GitLab</title></head>'
+            f'<body><h1>GitLab</h1>'
+            f'<p>Service: GitLab 16.8.5</p>'
+            '</body></html>'
+        )
+
+    def _login_failed_response(self) -> bytes:
+        """Login failed response - encourages further probing."""
+        body = (
+            '<html><body><h3>Authorization Error</h3>'
+            '<p>Invalid credentials.</p></body></html>'
+        )
+        return self._build_http_response(body, 200, 'OK')
+
+    def _extract_method(self, raw_request: str) -> str:
+        """Extract HTTP method from raw request."""
+        parts = raw_request.split()
+        if parts and len(parts) >= 1:
+            return parts[0].upper()
+        return 'GET'
+
+    def _build_http_response(
+        self,
+        body: str,
+        status_code: int = 200,
+        status_text: str = 'OK',
+        content_type: str = 'text/html; charset=UTF-8',
+    ) -> bytes:
+        """Build a complete HTTP response."""
+        now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        response = (
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
+            f'Server: GitLab/{self.VERSION}\r\n'
+            f'Date: {now}\r\n'
+            f'Content-Type: {content_type}\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
+        )
+        return response.encode('iso-8859-1')
+
+    def __repr__(self) -> str:
+        return f'GitLabHandler(domain={self.domain!r})'
