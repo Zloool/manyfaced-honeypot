@@ -876,3 +876,102 @@ class TestListenPortColumn:
         # listen_port = 0 (unknown) is excluded from the grouping.
         assert by_port.get(0) is None
         storage.close()
+
+    def test_aggregate_stats_unique_ips(self, tmp_path):
+        """aggregate_stats() reports COUNT(DISTINCT bot_ip) (issue #326 dashboard redesign)."""
+        storage = SQLiteStorage(db_path=str(tmp_path / 'uniq.db'))
+        for ip, ts in [
+            ('10.0.0.1', '2024-01-01 00:00:01'),
+            ('10.0.0.1', '2024-01-01 00:00:02'),
+            ('10.0.0.2', '2024-01-01 00:00:03'),
+        ]:
+            storage.insert(
+                {
+                    'ip': ip,
+                    'hostname': 'h',
+                    'timestamp': ts,
+                    'parsed_request': {},
+                    'raw_request': 'GET / HTTP/1.1',
+                    'is_detected': 1,
+                }
+            )
+        storage._conn.commit()
+        stats = storage.aggregate_stats()
+        assert stats['total'] == 3
+        assert stats['unique_ips'] == 2
+        storage.close()
+
+    def test_aggregate_stats_since_resolves_pre_computed_cutoff(self, tmp_path):
+        """A caller-resolved absolute ISO cutoff (not a '24h'-style token) must still filter.
+
+        Regression test: dashboard._parse_range() already resolves the window
+        into an absolute cutoff before calling aggregate_stats(); passing that
+        cutoff straight through must not be silently dropped.
+        """
+        storage = SQLiteStorage(db_path=str(tmp_path / 'cutoff.db'))
+        storage.insert(
+            {
+                'ip': '10.0.0.1',
+                'hostname': 'h',
+                'timestamp': '2020-01-01 00:00:00.000',
+                'parsed_request': {},
+                'raw_request': 'old',
+                'is_detected': 1,
+            }
+        )
+        storage.insert(
+            {
+                'ip': '10.0.0.2',
+                'hostname': 'h',
+                'timestamp': '2030-01-01 00:00:00.000',
+                'parsed_request': {},
+                'raw_request': 'new',
+                'is_detected': 1,
+            }
+        )
+        storage._conn.commit()
+        stats = storage.aggregate_stats(since='2025-01-01 00:00:00.000')
+        assert stats['total'] == 1
+        assert stats['by_ip'][0]['key'] == '10.0.0.2'
+        storage.close()
+
+    def test_volume_series_buckets_and_port_filter(self, tmp_path):
+        """volume_series() groups by bucket and optionally scopes to one listen_port."""
+        storage = SQLiteStorage(db_path=str(tmp_path / 'vol.db'))
+        rows = [
+            ('10.0.0.1', '2024-01-01 10:00:00.000', 80),
+            ('10.0.0.2', '2024-01-01 10:20:00.000', 80),
+            ('10.0.0.3', '2024-01-01 11:00:00.000', 443),
+        ]
+        for ip, ts, port in rows:
+            storage.insert(
+                {
+                    'ip': ip,
+                    'hostname': 'h',
+                    'timestamp': ts,
+                    'parsed_request': {},
+                    'raw_request': 'x',
+                    'is_detected': 1,
+                    'listen_port': port,
+                }
+            )
+        storage._conn.commit()
+
+        hourly = {r['bucket']: r['count'] for r in storage.volume_series(bucket='hour')}
+        assert hourly['2024-01-01 10:00'] == 2
+        assert hourly['2024-01-01 11:00'] == 1
+
+        port_80_only = {
+            r['bucket']: r['count'] for r in storage.volume_series(bucket='hour', port=80)
+        }
+        assert port_80_only == {'2024-01-01 10:00': 2}
+
+        five_min = {r['bucket']: r['count'] for r in storage.volume_series(bucket='minute5')}
+        assert five_min['2024-01-01 10:00:00'] == 1
+        assert five_min['2024-01-01 10:20:00'] == 1
+        storage.close()
+
+    def test_volume_series_no_connection_returns_empty(self, tmp_path):
+        storage = SQLiteStorage(db_path=str(tmp_path / 'noconn.db'))
+        storage._conn = None
+        assert storage.volume_series() == []

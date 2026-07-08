@@ -92,10 +92,48 @@ def _since_to_iso(since: str | None) -> str | None:
     if since in (None, 'all'):
         return None
     delta = _SINCE_DELTAS.get(since)
-    if delta is None:
-        return None
-    cutoff = datetime.now() - delta
-    return cutoff.strftime('%Y-%m-%d %H:%M:%S')
+    if delta is not None:
+        cutoff = datetime.now() - delta
+        return cutoff.strftime('%Y-%m-%d %H:%M:%S')
+    # Not a recognised shorthand token ('24h'/'7d'/'30d') — the caller (e.g.
+    # dashboard._parse_range) has already resolved its own absolute cutoff,
+    # so pass it through unchanged rather than silently dropping the bound.
+    return since
+
+
+def _sqlite_bucket_expr(bucket: str) -> str:
+    """SQL expression bucketing the TEXT ``timestamp`` column for SQLite.
+
+    ``minute5`` rounds down to the nearest 5-minute mark via a Unix-epoch
+    round-trip (SQLite has no native 5-minute strftime format); ``hour``/
+    ``day`` format directly since those already align to calendar units.
+    """
+    if bucket == 'minute5':
+        return (
+            "strftime('%Y-%m-%d %H:%M:00', "
+            "datetime((CAST(strftime('%s', timestamp) AS INTEGER) / 300) * 300, 'unixepoch'))"
+        )
+    if bucket == 'day':
+        return "strftime('%Y-%m-%d', timestamp)"
+    return "strftime('%Y-%m-%d %H:00', timestamp)"
+
+
+def _pg_bucket_expr(bucket: str) -> str:
+    """SQL expression bucketing the TEXT ``timestamp`` column for PostgreSQL.
+
+    Mirrors :func:`_sqlite_bucket_expr`; the ``minute5`` case round-trips
+    through ``AT TIME ZONE 'UTC'`` so it stays self-consistent with the naive
+    (timezone-less) timestamps written by the collector, matching how
+    ``hour``/``day`` format the naive value directly with no TZ conversion.
+    """
+    if bucket == 'minute5':
+        return (
+            'to_char(to_timestamp(floor(extract(epoch from timestamp::timestamp) / 300) * 300) '
+            "AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:00')"
+        )
+    if bucket == 'day':
+        return "to_char(timestamp::timestamp, 'YYYY-MM-DD')"
+    return "to_char(timestamp::timestamp, 'YYYY-MM-DD HH24:00')"
 
 
 def _empty_stats() -> dict:
@@ -104,6 +142,7 @@ def _empty_stats() -> dict:
         'total': 0,
         'detected': 0,
         'undetected': 0,
+        'unique_ips': 0,
         'by_service': [],
         'by_country': [],
         'by_continent': [],
@@ -112,6 +151,12 @@ def _empty_stats() -> dict:
         'by_port': [],
         'volume': [],
     }
+
+
+# Dashboard volume-chart bucket granularities (issue #234 redesign): 5-minute
+# buckets for the 1H range, hour/day for wider ranges (matches the ranges
+# offered by the UI: 1H/24H/7D/30D).
+_VOLUME_BUCKETS = ('minute5', 'hour', 'day')
 
 
 # Process-wide lock serializing all SQLite writes. get_storage() returns a
@@ -182,12 +227,23 @@ class StorageBackend(ABC):
                 ``'hour'`` or ``'day'``.
 
         Returns:
-            Dict with keys: total, detected, undetected, by_service,
-            by_country, by_continent, by_ip, by_path, volume. Each ``by_*`` is
-            a list of ``{'key': ..., 'count': ...}``; ``volume`` is a list of
-            ``{'bucket': ..., 'count': ...}``.
+            Dict with keys: total, detected, undetected, unique_ips,
+            by_service, by_country, by_continent, by_ip, by_path, by_port,
+            volume. Each ``by_*`` is a list of ``{'key': ..., 'count': ...}``;
+            ``volume`` is a list of ``{'bucket': ..., 'count': ...}``.
         """
         raise NotImplementedError('aggregate_stats not implemented by this backend')
+
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        """Return a request-volume time series, optionally scoped to one port.
+
+        Used by the volume chart, which is filtered independently of the
+        (unfiltered) top-lists in :meth:`aggregate_stats`. ``bucket`` is one
+        of ``'minute5'`` (1H range), ``'hour'`` (24H) or ``'day'`` (7D/30D).
+        """
+        raise NotImplementedError('volume_series not implemented by this backend')
 
 
 # ---------------------------------------------------------------------------
@@ -754,11 +810,7 @@ class SQLiteStorage(StorageBackend):
             where = ''
             params = ()
             and_prefix = ' WHERE'
-        bucket_expr = (
-            "strftime('%Y-%m-%d', timestamp)"
-            if bucket == 'day'
-            else "strftime('%Y-%m-%d %H:00', timestamp)"
-        )
+        bucket_expr = _sqlite_bucket_expr(bucket)
         try:
             total = _scalar(conn, f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
             detected = _scalar(
@@ -767,6 +819,9 @@ class SQLiteStorage(StorageBackend):
                 (*params, _DETECTED_SERVICE_MAX),
             )
             undetected = total - detected
+            unique_ips = _scalar(
+                conn, f'SELECT COUNT(DISTINCT bot_ip) FROM honeypot_bears{where}', params
+            )
 
             def _group(col: str, top: int = 15) -> list[dict]:
                 q = (
@@ -809,6 +864,7 @@ class SQLiteStorage(StorageBackend):
                 'total': total,
                 'detected': detected,
                 'undetected': undetected,
+                'unique_ips': unique_ips,
                 'by_service': by_service,
                 'by_country': _group('bot_country'),
                 'by_continent': _group('bot_continent'),
@@ -820,6 +876,33 @@ class SQLiteStorage(StorageBackend):
         except (sqlite3.Error, sqlite3.OperationalError):
             logger.exception('Error aggregating stats from SQLite storage')
             return _empty_stats()
+
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        if self._conn is None:
+            return []
+        cutoff = _since_to_iso(since)
+        clauses: list[str] = []
+        params: list = []
+        if cutoff is not None:
+            clauses.append('timestamp >= ?')
+            params.append(cutoff)
+        if port is not None:
+            clauses.append('listen_port = ?')
+            params.append(port)
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        bucket_expr = _sqlite_bucket_expr(bucket)
+        try:
+            rows = self._conn.execute(
+                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY b ORDER BY b',
+                params,
+            ).fetchall()
+            return [{'bucket': r[0], 'count': r[1]} for r in rows]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading volume series from SQLite storage')
+            return []
 
     def __del__(self) -> None:
         self.close()
@@ -1066,11 +1149,7 @@ class PostgreSQLStorage(StorageBackend):
             where = ''
             params = []
             and_prefix = ' WHERE'
-        bucket_expr = (
-            "to_char(timestamp::timestamp, 'YYYY-MM-DD')"
-            if bucket == 'day'
-            else "to_char(timestamp::timestamp, 'YYYY-MM-DD HH24:00')"
-        )
+        bucket_expr = _pg_bucket_expr(bucket)
         try:
             with self._conn.cursor() as cur:
 
@@ -1085,6 +1164,9 @@ class PostgreSQLStorage(StorageBackend):
                     [*params, _DETECTED_SERVICE_MAX],
                 )
                 undetected = total - detected
+                unique_ips = _pg_scalar(
+                    f'SELECT COUNT(DISTINCT bot_ip) FROM honeypot_bears{where}', params
+                )
 
                 def _group(col: str, top: int = 15) -> list[dict]:
                     q = (
@@ -1127,6 +1209,7 @@ class PostgreSQLStorage(StorageBackend):
                     'total': total,
                     'detected': detected,
                     'undetected': undetected,
+                    'unique_ips': unique_ips,
                     'by_service': by_service,
                     'by_country': _group('bot_country'),
                     'by_continent': _group('bot_continent'),
@@ -1138,6 +1221,33 @@ class PostgreSQLStorage(StorageBackend):
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Error aggregating stats from PostgreSQL storage')
             return _empty_stats()
+
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        if self._conn is None:
+            return []
+        clauses: list[str] = []
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        if port is not None:
+            clauses.append('listen_port = %s')
+            params.append(port)
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        bucket_expr = _pg_bucket_expr(bucket)
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                    'GROUP BY b ORDER BY b',
+                    params,
+                )
+                return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('Error reading volume series from PostgreSQL storage')
+            return []
 
     # -- data lifecycle (issue #243 #4) --------------------------------------
 

@@ -298,6 +298,46 @@ def test_dashboard_token_gating(dashboard_server):
     assert 'ssh' in body
 
 
+def test_dashboard_fragment_requires_token(dashboard_server):
+    """The fragment endpoint is the same token-gated route, not a separate open one."""
+    _secret, base = dashboard_server
+    body, code = _get(base + '?format=fragment&range=24h')
+    assert code == 404
+    assert body == 'not found'
+
+
+def test_dashboard_fragment_returns_boundary_delimited_sections(dashboard_server):
+    """format=fragment returns a random-boundary payload with vol/intel/log/meta chunks."""
+    secret, base = dashboard_server
+    body, code = _get(base + f'?token={secret}&format=fragment&range=24h')
+    assert code == 200
+    lines = body.split('\n', 1)
+    boundary = lines[0]
+    assert boundary.startswith('MFB')
+    assert f'{boundary}:vol-box\n' in body
+    assert f'{boundary}:intel-grid\n' in body
+    assert f'{boundary}:log-rows\n' in body
+    assert f'{boundary}:meta\n' in body
+    assert 'wordpress' in body
+
+
+def test_dashboard_fragment_invalid_range_falls_back(dashboard_server):
+    """An unrecognised ?range= value must not 500 — falls back to 24h."""
+    secret, base = dashboard_server
+    body, code = _get(base + f'?token={secret}&format=fragment&range=not-a-range')
+    assert code == 200
+    assert 'MFB' in body.splitlines()[0]
+
+
+def test_dashboard_fragment_port_filter_scopes_volume(dashboard_server):
+    """?port=<n> recomputes the volume bars without erroring for an unknown/empty port."""
+    secret, base = dashboard_server
+    body, code = _get(base + f'?token={secret}&format=fragment&range=24h&port=80')
+    assert code == 200
+    boundary = body.splitlines()[0]
+    assert f'{boundary}:vol-box\n' in body
+
+
 def test_dashboard_escapes_raw_capture(tmp_path):
     """Raw captures must be HTML-escaped so a captured <script> can't execute."""
     import sqlite3
@@ -347,6 +387,7 @@ def test_dashboard_escapes_raw_capture(tmp_path):
                 except Exception:
                     time.sleep(0.1)
             body, code = _get(base + f'?token={secret}')
+            frag_body, frag_code = _get(base + f'?token={secret}&format=fragment&range=24h')
             ev.set()
             t.join(timeout=2)
             time.sleep(0.4)  # release socket buffer (Windows)
@@ -355,6 +396,10 @@ def test_dashboard_escapes_raw_capture(tmp_path):
     # The injected script must be escaped, never rendered live.
     assert '<script>alert(1)</script>' not in body
     assert '&lt;script&gt;alert(1)&lt;/script&gt;' in body
+    # Same guarantee on the fetch-based live-refresh channel (log-rows section).
+    assert frag_code == 200
+    assert '<script>alert(1)</script>' not in frag_body
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in frag_body
 
 
 def test_dashboard_disabled_when_not_enabled():
