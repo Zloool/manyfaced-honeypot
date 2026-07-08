@@ -20,8 +20,8 @@ class TestIotHandler(unittest.TestCase):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
-            '/',
-            'GET / HTTP/1.1\r\nHost: x\r\n\r\n',
+            '/admin',
+            'GET /admin HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
         self.assertTrue(b'Router' in response or b'IoT' in response)

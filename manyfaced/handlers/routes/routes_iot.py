@@ -20,7 +20,6 @@ def _iot() -> type:
 
 ROUTES: list[Route] = [
     # ---- IoT / generic router web admin (issue #284) --------------------
-    Route(PathExact('/'), _iot(), IOT_HTTP, 'iot_root'),
     Route(PathExact('/admin'), _iot(), IOT_HTTP, 'iot_admin'),
     Route(PathExact('/login'), _iot(), IOT_HTTP, 'iot_login'),
     Route(PathExact('/index.html'), _iot(), IOT_HTTP, 'iot_index_html'),

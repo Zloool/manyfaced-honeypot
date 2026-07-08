@@ -24,7 +24,6 @@ def _nextjs() -> type:
 
 ROUTES: list[Route] = [
     # ---- Next.js (Vercel) (issue #277) ------------------------------------
-    Route(PathExact('/'), _nextjs(), NEXTJS_HTTP, 'nextjs_root'),
     Route(PathExact('/api/health'), _nextjs(), NEXTJS_HTTP, 'nextjs_api_health'),
     Route(PathExact('/vercel'), _nextjs(), NEXTJS_HTTP, 'nextjs_vercel'),
     Route(PathPrefix('/_next/'), _nextjs(), NEXTJS_HTTP, 'nextjs_next_prefix'),

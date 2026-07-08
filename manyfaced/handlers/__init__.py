@@ -60,6 +60,10 @@ from manyfaced.handlers.spring_handler import SpringHandler
 from manyfaced.handlers.aws_creds_handler import AWSHandler
 from manyfaced.handlers.hnap_handler import HNAPHandler
 from manyfaced.handlers.squid_handler import SquidHandler
+from manyfaced.handlers.elastic_handler import ElasticHandler  # noqa: F401
+from manyfaced.handlers.env_disc_handler import EnvDiscHandler  # noqa: F401
+from manyfaced.handlers.phpunit_handler import PhpUnitHandler  # noqa: F401
+from manyfaced.handlers.nginx_handler import NginxHandler  # noqa: F401
 from manyfaced.handlers.magento_handler import MagentoHandler
 from manyfaced.handlers.redis_admin_handler import RedisAdminHandler
 from manyfaced.handlers.solr_handler import SolrHandler
@@ -121,4 +125,5 @@ __all__ = [
     'LaravelHandler',
     'ThinkPHPHandler',
     'GenericHandler',
+    'ElasticHandler',
 ]

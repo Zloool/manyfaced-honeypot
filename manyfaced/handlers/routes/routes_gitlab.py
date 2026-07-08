@@ -22,7 +22,6 @@ ROUTES: list[Route] = [
     # ---- GitLab (issue #283) ----
     # Specific paths first (exact match wins over prefixes).
     Route(PathExact('/users/sign_in'), _gitlab(), GITLAB_HTTP, 'gitlab_sign_in'),
-    Route(PathExact('/'), _gitlab(), GITLAB_HTTP, 'gitlab_root'),
     Route(PathExact('/api/v4/version'), _gitlab(), GITLAB_HTTP, 'gitlab_api_version'),
     Route(PathExact('/-/metrics'), _gitlab(), GITLAB_HTTP, 'gitlab_metrics'),
     Route(PathExact('/admin'), _gitlab(), GITLAB_HTTP, 'gitlab_admin'),

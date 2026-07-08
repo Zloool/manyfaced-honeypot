@@ -22,7 +22,6 @@ def _rabbitmq() -> type:
 ROUTES: list[Route] = [
     # ---- RabbitMQ Management UI / HTTP API (issue #285) -------------------
     # Specific paths first.
-    Route(PathExact('/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_root'),
     Route(PathExact('/api/overview'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_overview'),
     Route(PathExact('/api/whoami'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_whoami'),
     Route(PathExact('/api/queues'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_queues'),

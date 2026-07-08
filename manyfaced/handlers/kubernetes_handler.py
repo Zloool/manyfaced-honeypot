@@ -117,7 +117,7 @@ class KubernetesHandler(HTTPHandlerBase):
     def _root_discovery(self) -> str:
         """Root API discovery document (GET /)."""
         return (
-            '{"kind":"APIVersions","versions":["v1"],'
+            '{"kind":"APIVersions","versions":["v1"],"server":"Kubernetes",'
             '"serverAddressByClientCIDRs":['
             '{"clientCIDR":"0.0.0.0/0",'
             '"serverAddress":"10.96.0.1:443"}]}'
@@ -126,7 +126,7 @@ class KubernetesHandler(HTTPHandlerBase):
     def _api_versions(self) -> str:
         """Core API group version list (GET /api)."""
         return (
-            '{"kind":"APIVersions","versions":["v1"],'
+            '{"kind":"APIVersions","versions":["v1"],"server":"Kubernetes",'
             '"serverAddressByClientCIDRs":['
             '{"clientCIDR":"0.0.0.0/0",'
             '"serverAddress":"10.96.0.1:443"}]}'

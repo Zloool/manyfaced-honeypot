@@ -25,7 +25,6 @@ def _kubernetes() -> type:
 
 ROUTES: list[Route] = [
     # ---- Kubernetes (issue #274) -----------------------------------------
-    Route(PathExact('/'), _kubernetes(), KUBERNETES_HTTP, 'k8s_root'),
     Route(PathExact('/api'), _kubernetes(), KUBERNETES_HTTP, 'k8s_api'),
     Route(PathExact('/api/v1'), _kubernetes(), KUBERNETES_HTTP, 'k8s_api_v1'),
     Route(

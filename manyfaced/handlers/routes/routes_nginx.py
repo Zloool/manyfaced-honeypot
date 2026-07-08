@@ -17,7 +17,6 @@ def _nginx() -> type:
 
 ROUTES: list[Route] = [
     # ---- Nginx (web server / issue #294) -----------------------------------
-    Route(PathExact('/'), _nginx(), NGINX_HTTP, 'nginx_root'),
     Route(PathExact('/index.html'), _nginx(), NGINX_HTTP, 'nginx_index'),
     Route(PathExact('/nginx_status'), _nginx(), NGINX_HTTP, 'nginx_status'),
     Route(PathExact('/server-status'), _nginx(), NGINX_HTTP, 'nginx_server_status'),

@@ -168,7 +168,7 @@ class RedisAdminHandler(HTTPHandlerBase):
                 'db': 0,
             },
             'server': {
-                'address': '0.0.0.0',
+                'address': '10.0.0.15',
                 'port': 8081,
                 'host': 'redis',
             },

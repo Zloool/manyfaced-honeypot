@@ -33,6 +33,10 @@ def _generic() -> type:
     return GenericHandler
 
 
+# Ensure the Kubernetes shim module is part of the import graph (re-exports KubernetesHandler).
+from manyfaced.handlers.k8s_handler import KubernetesHandler  # noqa: F401
+
+
 # ---------------------------------------------------------------------------
 # Import per-service route tables and concatenate them in order
 # ---------------------------------------------------------------------------
@@ -74,6 +78,10 @@ from manyfaced.handlers.routes.routes_elasticsearch import ROUTES as _elasticsea
 from manyfaced.handlers.routes.routes_zabbix import ROUTES as _zabbix_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_laravel import ROUTES as _laravel_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_thinkphp import ROUTES as _thinkphp_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_elastic import ROUTES as _elastic_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_env_disc import ROUTES as _env_disc_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes  # noqa: E402
 
 # Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
 # Drupal → cPanel → Bitrix → WebDAV → ConfigDisclosure → catch-all
@@ -111,6 +119,10 @@ ROUTES: list[Route] = (
     + list(_zabbix_routes)
     + list(_laravel_routes)
     + list(_thinkphp_routes)
+    + list(_elastic_routes)
+    + list(_env_disc_routes)
+    + list(_nginx_routes)
+    + list(_phpunit_routes)
     + [Route(Any(), _generic(), 4294967294, 'catchall_monster_page')]
 )
 

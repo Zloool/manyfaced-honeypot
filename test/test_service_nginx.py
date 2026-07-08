@@ -23,8 +23,8 @@ class TestNginxHandler(unittest.TestCase):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
-            '/',
-            'GET / HTTP/1.1\r\nHost: x\r\n\r\n',
+            '/index.html',
+            'GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
         self.assertIn(b'nginx', response.lower())

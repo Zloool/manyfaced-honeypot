@@ -29,7 +29,6 @@ def _magento() -> type:
 
 ROUTES: list[Route] = [
     # ---- Magento (issue #293) ----
-    Route(PathExact('/'), _magento(), MAGENTO_HTTP, 'magento_home'),
     Route(PathExact('/admin'), _magento(), MAGENTO_HTTP, 'magento_admin'),
     Route(PathExact('/customer/account/login'), _magento(), MAGENTO_HTTP, 'magento_customer_login'),
     Route(PathExact('/index.php/admin'), _magento(), MAGENTO_HTTP, 'magento_index_admin'),

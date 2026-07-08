@@ -257,13 +257,13 @@ class RabbitMQHandler(HTTPHandlerBase):
                     'node': 'rabbit@localhost',
                     'protocol': 'amqp',
                     'port': 5672,
-                    'ip_address': '0.0.0.0',
+                    'ip_address': '10.0.0.15',
                 },
                 {
                     'node': 'rabbit@localhost',
                     'protocol': 'http',
                     'port': 15672,
-                    'ip_address': '0.0.0.0',
+                    'ip_address': '10.0.0.15',
                 },
             ],
             'contexts': [
