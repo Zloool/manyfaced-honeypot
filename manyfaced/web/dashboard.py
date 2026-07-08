@@ -1,4 +1,4 @@
-"""Read-only token-gated stats dashboard for the honeypot (issue #234).
+"""Read-only token-gated stats dashboard for the honeypot (issue #234, #326 redesign).
 
 Design / threat model
 ----------------------
@@ -19,22 +19,29 @@ probing:
   with no "unauthorized" hint, so the endpoint doesn't advertise itself as an
   admin panel.
 * **Read-only.** No config editing, no mutation, no user management.
+* **Single route.** Every request (full page, and the client's fetch-based
+  section refresh) hits the same ``/`` path, distinguished only by query
+  params (``range``, ``port``, ``format=fragment``) — there is still exactly
+  one URL that isn't a generic 404, matching the original single-route model.
 * **Separate access log.** Dashboard hits go to ``manyfaced.web.dashboard.access``
   so viewing the dashboard never pollutes the honeypot's own ``honeypot_bears``
   capture dataset.
-* **No third-party framework.** Stdlib ``http.server`` only.
+* **No third-party framework.** Stdlib ``http.server`` only — CSS/JS are
+  plain strings inlined into the one response (see ``dashboard_assets.py``),
+  no build step, no separate static-asset route.
 
-The recent-activity view shows *uncensored* raw captures (full ``request_raw``,
-``bot_ip``, ``bot_user_agent``, ``timestamp``, ``request_path``,
-``bot_country``) — it is an internal capture view; redacting it would defeat
-the point. All dynamic values are HTML-escaped on render.
+The capture log's "raw capture" panel shows *uncensored* raw captures (full
+``request_raw``, ``bot_ip``, ``bot_user_agent``, ``timestamp``,
+``request_path``, ``bot_country``) — it is an internal capture view;
+redacting it would defeat the point. All dynamic values are HTML-escaped on
+render (see ``dashboard_render._esc``).
 """
 
 from __future__ import annotations
 
-import html
 import hmac
 import logging
+import socket
 import threading
 import time
 from datetime import datetime, timedelta
@@ -44,6 +51,8 @@ from urllib.parse import parse_qs, urlparse
 
 from manyfaced.common import config as _config
 from manyfaced.db import storage as _storage
+from manyfaced.web import dashboard_data as _data
+from manyfaced.web import dashboard_render as _render
 
 logger = logging.getLogger(__name__)
 # Separate logger so dashboard access doesn't pollute bear captures.
@@ -51,18 +60,25 @@ access_logger = logging.getLogger('manyfaced.web.dashboard.access')
 
 # The honeypot writer holds the WAL lock heavily on a multi-million-row DB, so a
 # fresh read can block for several seconds waiting for the lock. To keep the
-# dashboard responsive we refresh the rendered page on a background thread and
-# serve the cached copy on every request — the request path never touches SQLite.
-# The stale-while-revalidate window is generous on purpose (the data is only
-# marginally fresher than the refresh interval anyway).
+# dashboard responsive we refresh the cached payload/page on a background
+# thread and serve the cached copy on every request — the request path never
+# touches SQLite except for a cheap, index-bound port-filtered volume query.
 _REFRESH_INTERVAL = 30.0
 _STALE_SERVE_SECONDS = 300.0
 
+_VOLUME_RANGES = ('1h', '24h', '7d', '30d')
+_VOLUME_BUCKETS = {'1h': 'minute5', '24h': 'hour', '7d': 'day', '30d': 'day'}
+_VOLUME_BAR_COUNTS = {'1h': 12, '24h': 24, '7d': 7, '30d': 30}
+_VOLUME_STEP_SECONDS = {'1h': 300, '24h': 3600, '7d': 86400, '30d': 86400}
+
 # Populated by the background refresher; guarded by _CACHE_LOCK.
-_CACHE: dict[str, tuple[float, bytes]] = {}  # range_str -> (rendered_at, html_bytes)
+_PAYLOAD_CACHE: dict[str, tuple[float, dict]] = {}  # range -> (built_at, payload)
+_HTML_CACHE: dict[str, tuple[float, bytes]] = {}  # range -> (built_at, full page bytes)
 _CACHE_LOCK = threading.Lock()
 _REFRESHER: threading.Thread | None = None
 _REFRESHER_STOP = threading.Event()
+
+_TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 
 
 def _token_valid(token: str | None) -> bool:
@@ -73,13 +89,8 @@ def _token_valid(token: str | None) -> bool:
     return hmac.compare_digest(token, secret)
 
 
-def _parse_range(range_str: str) -> tuple[str | None, str]:
-    """Resolve a range string to (since_timestamp, bucket).
-
-    ``since_timestamp`` is ``None`` for 'all' (no lower bound); otherwise a
-    textual ``%Y-%m-%d %H:%M:%S.%f`` cutoff. ``bucket`` is 'day' for wide ranges
-    and 'hour' otherwise (controls the volume series granularity).
-    """
+def _parse_window(range_str: str) -> tuple[str | None, str]:
+    """Resolve a human window ('24h'/'7d'/'30d'/'all'/'Nh'/'Nd') to (since, bucket)."""
     range_str = (range_str or '24h').strip().lower()
     now = datetime.now()
     if range_str in ('all', '0', '*'):
@@ -94,7 +105,6 @@ def _parse_range(range_str: str) -> tuple[str | None, str]:
             since = now - timedelta(days=days)
             bucket = 'day' if days >= 7 else 'hour'
         else:
-            # Unknown range -> default 24h
             since = now - timedelta(hours=24)
             bucket = 'hour'
     except ValueError:
@@ -103,170 +113,135 @@ def _parse_range(range_str: str) -> tuple[str | None, str]:
     return since.strftime('%Y-%m-%d %H:%M:%S.%f'), bucket
 
 
-def _get_stats(range_str: str, store: _storage.StorageBackend) -> dict:
-    """Return aggregates for the given range (fresh per request)."""
-    since, bucket = _parse_range(range_str)
-    result = store.aggregate_stats(since=since, bucket=bucket)
-    result['range'] = range_str
-    return result
+def _volume_window(range_str: str) -> str:
+    """ISO cutoff for a validated volume range token (already in _VOLUME_RANGES)."""
+    since, _bucket = _parse_window(range_str)
+    return since or ''
 
 
-def _get_recent(limit: int, range_str: str, store: _storage.StorageBackend) -> list[dict]:
-    """Return recent records for the given range (fresh per request)."""
-    since, _ = _parse_range(range_str)
-    rows = store.recent_records(limit=limit, since=since)
-    # Coerce detected_id to int-friendly for mapping; keep raw fields intact.
-    result = []
-    for r in rows:
-        rec = dict(r)
-        rec['_service'] = _storage.detected_id_name(rec.get('detected_id'))
-        result.append(rec)
-    return result
+def _shape_volume_bars(volume_raw: list[dict], range_str: str) -> list[dict]:
+    """Turn sparse GROUP BY rows into a fixed, continuous set of display bars."""
+    bucket = _VOLUME_BUCKETS[range_str]
+    counts = {row['bucket']: row['count'] for row in volume_raw}
+    n = _VOLUME_BAR_COUNTS[range_str]
+    step = _VOLUME_STEP_SECONDS[range_str]
+    now = datetime.now()
+    bars = []
+    for i in range(n - 1, -1, -1):
+        end_dt = now - timedelta(seconds=step * i)
+        start_dt = end_dt - timedelta(seconds=step)
+        if bucket == 'minute5':
+            slot = start_dt.replace(second=0, microsecond=0)
+            slot -= timedelta(minutes=slot.minute % 5)
+            key = slot.strftime('%Y-%m-%d %H:%M:00')
+            label = slot.strftime('%H:%M')
+        elif bucket == 'hour':
+            slot = start_dt.replace(minute=0, second=0, microsecond=0)
+            key = slot.strftime('%Y-%m-%d %H:00')
+            label = slot.strftime('%H:00')
+        else:
+            slot = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            key = slot.strftime('%Y-%m-%d')
+            label = slot.strftime('%m/%d')
+        bars.append(
+            {
+                'start': int(start_dt.timestamp()),
+                'end': int(end_dt.timestamp()),
+                'label': label,
+                'count': counts.get(key, 0),
+            }
+        )
+    return bars
 
 
 # ---------------------------------------------------------------------------
-# HTML rendering (all dynamic values escaped)
+# Data orchestration
 # ---------------------------------------------------------------------------
 
 
-def _esc(value: Any) -> str:
-    if value is None:
-        return ''
-    return html.escape(str(value))
+def _build_payload(range_str: str, token: str) -> dict:
+    """Run the (slow) queries once and shape a full render payload.
 
+    ``range_str`` scopes the volume chart + capture log candidate set. The
+    hero counters and threat-intel top-lists intentionally use a separate,
+    fixed window (``DASHBOARD_TIME_RANGE``) — they're a standing overview,
+    not tied to the volume section's local picker (matches the original
+    prototype's always-accumulating aggregate).
+    """
+    range_str = range_str if range_str in _VOLUME_RANGES else '24h'
+    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
+    try:
+        overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
+        overview = store.aggregate_stats(since=overview_since, bucket='day')
 
-def _table(rows: list[dict], value_label: str = 'count') -> str:
-    if not rows:
-        return '<p class="muted">no data</p>'
-    body = ''.join(
-        f'<tr><td>{_esc(r["key"])}</td><td class="num">{_esc(r["count"])}</td></tr>' for r in rows
-    )
-    return (
-        f'<table><thead><tr><th>key</th><th class="num">{value_label}</th></tr></thead>'
-        f'<tbody>{body}</tbody></table>'
-    )
+        # Genuinely unbounded — the "Total Captures" card claims "all-time",
+        # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
+        # Affordable here because it's computed by the 30s background
+        # refresher, off the request path (same precedent as the old
+        # dashboard's cached 'all' range).
+        all_time_total = store.aggregate_stats(since=None, bucket='day')['total']
 
+        day_since, _b = _parse_window('24h')
+        day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
 
-def _volume_chart(volume: list[dict]) -> str:
-    if not volume:
-        return '<p class="muted">no data</p>'
-    max_c = max((r['count'] for r in volume), default=1) or 1
-    rows = []
-    for r in volume:
-        pct = (r['count'] / max_c * 100) if max_c else 0
-        rows.append(
-            f'<tr><td class="bk">{_esc(r["bucket"])}</td>'
-            f'<td class="num">{_esc(r["count"])}</td>'
-            f'<td><div class="bar" style="width:{pct:.1f}%"></div></td></tr>'
+        recent_since = (datetime.now() - timedelta(seconds=60)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        recent_total = store.aggregate_stats(since=recent_since, bucket='hour')['total']
+
+        vol_since = _volume_window(range_str)
+        volume_raw = store.volume_series(
+            since=vol_since, bucket=_VOLUME_BUCKETS[range_str], port=None
         )
-    return (
-        '<table class="vol"><thead><tr><th>bucket</th><th class="num">count</th>'
-        '<th></th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>'
-    )
+        volume_bars = _shape_volume_bars(volume_raw, range_str)
+
+        raw_recent = store.recent_records(limit=250, since=vol_since)
+        log_rows = _data.group_log_rows(raw_recent)
+
+        configured_ports = _config.settings.resolve_ports()
+        weight_by_port = {
+            int(r['key']): r['count'] for r in overview['by_port'] if r.get('key') is not None
+        }
+        display_port_list = _data.resolve_display_ports(configured_ports, overview['by_port'])
+        display_ports = [(p, max(1, weight_by_port.get(p, 0))) for p in display_port_list]
+    finally:
+        store.close()
+
+    return {
+        'token': token,
+        'range': range_str,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'hostname': socket.gethostname(),
+        'mult': _TRAFFIC_MULTIPLIER,
+        'display_ports': display_ports,
+        'listening_count': len(configured_ports),
+        'stats': {
+            'total': all_time_total,
+            'day': day_total,
+            'unique_ips': overview['unique_ips'],
+            'recent_rate': recent_total / 60.0,
+        },
+        'by_port': overview['by_port'],
+        'by_country': overview['by_country'],
+        'by_service': overview['by_service'],
+        'by_ip': overview['by_ip'],
+        'volume_bars': volume_bars,
+        'log_rows': log_rows,
+        'log_summary': f'{len(raw_recent)} captures in this window · {len(log_rows)} rows shown',
+    }
 
 
-_STYLE = """
-:root{color-scheme:dark}
-body{font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;background:#0b0e14;color:#c9d1d9;margin:0;padding:1.5rem}
-h1{font-size:1.4rem;margin:0 0 .25rem}
-h2{font-size:1rem;border-bottom:1px solid #21262d;padding-bottom:.3rem;margin:1.5rem 0 .6rem;color:#58a6ff}
-.meta{color:#8b949e;font-size:.8rem}
-.muted{color:#6e7681;font-style:italic}
-a,button{color:#58a6ff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
-.card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:.8rem}
-table{border-collapse:collapse;width:100%;font-size:.82rem}
-th,td{text-align:left;padding:.25rem .5rem;border-bottom:1px solid #21262d}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-td.bk{white-space:nowrap}
-.bar{background:#1f6feb;height:.8rem;border-radius:3px}
-.raw{white-space:pre-wrap;word-break:break-word;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:.5rem;max-height:14rem;overflow:auto;font-size:.75rem}
-.summary{display:flex;gap:1.5rem;flex-wrap:wrap;margin:.5rem 0 1rem}
-.summary b{color:#fff;font-size:1.1rem}
-.nav{margin:.5rem 0}
-.nav a{margin-right:1rem;text-decoration:none}
-form{display:inline}
-select,button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:.25rem .5rem;font:inherit}
-"""
-
-
-def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) -> str:
-    """Render the full dashboard page as an HTML string."""
-    total = stats.get('total', 0)
-    detected = stats.get('detected', 0)
-    undetected = stats.get('undetected', 0)
-    ratio = (detected / total * 100) if total else 0.0
-    gen = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    ranges = ['24h', '7d', '30d', 'all']
-    nav = ''.join(
-        f'<a href="/?token={token}&range={r}">{r}</a>' if r != range_str else f'<b>{r}</b>'
-        for r in ranges
-    )
-
-    recent_rows = []
-    for r in recent:
-        recent_rows.append(
-            '<tr>'
-            f'<td class="bk">{_esc(r.get("timestamp"))}</td>'
-            f'<td>{_esc(r.get("_service"))}</td>'
-            f'<td>{_esc(r.get("listen_port"))}</td>'
-            f'<td>{_esc(r.get("bot_ip"))}</td>'
-            f'<td>{_esc(r.get("bot_country"))}</td>'
-            f'<td>{_esc(r.get("request_path"))}</td>'
-            f'<td>{_esc(r.get("bot_user_agent"))}</td>'
-            '</tr>'
+def _payload_with_port(payload: dict, port_filter: int) -> dict:
+    """Cheap on-request override: recompute just the volume bars for one port."""
+    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
+    try:
+        vol_since = _volume_window(payload['range'])
+        volume_raw = store.volume_series(
+            since=vol_since, bucket=_VOLUME_BUCKETS[payload['range']], port=port_filter
         )
-    recent_table = (
-        '<table><thead><tr><th>timestamp</th><th>service</th><th>port</th><th>bot_ip</th>'
-        '<th>country</th><th>path</th><th>user-agent</th></tr></thead><tbody>'
-        + ''.join(recent_rows)
-        + '</tbody></table>'
-        if recent_rows
-        else '<p class="muted">no recent activity</p>'
-    )
-
-    # Uncensored raw capture for the latest entry (internal view).
-    raw_html = ''
-    if recent:
-        raw_html = (
-            '<h2>latest raw capture</h2>'
-            '<div class="raw">' + _esc(recent[0].get('request_raw')) + '</div>'
-        )
-
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>manyfaced — capture dashboard</title><style>{_STYLE}</style></head>
-<body>
-<h1>manyfaced capture dashboard</h1>
-<div class="meta">range: <b>{_esc(range_str)}</b> · generated {_esc(gen)} · read-only</div>
-<div class="nav">{nav}</div>
-
-<div class="summary">
-  <span>total <b>{total}</b></span>
-  <span>detected <b>{detected}</b></span>
-  <span>undetected <b>{undetected}</b></span>
-  <span>detected % <b>{ratio:.1f}</b></span>
-</div>
-
-<div class="grid">
-  <div class="card"><h2>top targeted ports</h2>{_table(stats.get('by_port', []))}</div>
-  <div class="card"><h2>top targeted services</h2>{_table(stats.get('by_service', []))}</div>
-  <div class="card"><h2>top source countries</h2>{_table(stats.get('by_country', []))}</div>
-  <div class="card"><h2>top source continents</h2>{_table(stats.get('by_continent', []))}</div>
-  <div class="card"><h2>top source IPs</h2>{_table(stats.get('by_ip', []))}</div>
-  <div class="card"><h2>most-probed paths</h2>{_table(stats.get('by_path', []))}</div>
-</div>
-
-<h2>request volume over time</h2>
-{_volume_chart(stats.get('volume', []))}
-
-<h2>recent activity</h2>
-{recent_table}
-{raw_html}
-
-</body></html>"""
+    finally:
+        store.close()
+    scoped = dict(payload)
+    scoped['volume_bars'] = _shape_volume_bars(volume_raw, payload['range'])
+    return scoped
 
 
 # ---------------------------------------------------------------------------
@@ -274,34 +249,19 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
 # ---------------------------------------------------------------------------
 
 
-def _build_page(range_str: str, token: str) -> bytes:
-    """Run the (slow) aggregate queries once and render the page to bytes."""
-    # One long-lived reader connection for the refresher thread; it waits out
-    # the WAL lock with a high busy_timeout off the request path.
-    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
-    try:
-        stats = _get_stats(range_str, store)
-        recent = _get_recent(50, range_str, store)
-    finally:
-        try:
-            store.close()
-        except Exception:  # noqa: BLE001
-            # Best-effort close of the read-only stats store; ignore if it was
-            # already closed or the connection dropped.
-            pass
-    return _render_html(stats, recent, range_str, token or '').encode('utf-8')
-
-
 def _refresh_cache(token: str) -> None:
-    """Refresh the cached page for every supported range; called on a timer."""
-    for r in ('24h', '7d', '30d', 'all'):
+    """Refresh the cached payload + full page for every supported range."""
+    for r in _VOLUME_RANGES:
         try:
-            html_bytes = _build_page(r, token)
-        except Exception:  # noqa: BLE001 — keep serving stale copy on failure
+            payload = _build_payload(r, token)
+            html_bytes = _render.render_page(payload).encode('utf-8')
+        except Exception:  # noqa: BLE001 — keep serving stale copies on failure
             logger.exception('Dashboard cache refresh failed for range %s', r)
             continue
+        now = time.time()
         with _CACHE_LOCK:
-            _CACHE[r] = (time.time(), html_bytes)
+            _PAYLOAD_CACHE[r] = (now, payload)
+            _HTML_CACHE[r] = (now, html_bytes)
 
 
 def _start_refresher(token: str) -> None:
@@ -311,7 +271,6 @@ def _start_refresher(token: str) -> None:
         return
 
     def _loop() -> None:
-        # Prime the cache immediately, then refresh on an interval.
         _refresh_cache(token)
         while not _REFRESHER_STOP.is_set():
             _REFRESHER_STOP.wait(_REFRESH_INTERVAL)
@@ -323,16 +282,15 @@ def _start_refresher(token: str) -> None:
     _REFRESHER.start()
 
 
-def _get_cached(range_str: str, token: str) -> bytes | None:
-    """Return a cached page if present and not too stale, else None."""
+def _get_cached(cache: dict[str, tuple[float, Any]], key: str) -> Any | None:
     with _CACHE_LOCK:
-        entry = _CACHE.get(range_str)
+        entry = cache.get(key)
         if entry is None:
             return None
-        rendered_at, html_bytes = entry
-    if time.time() - rendered_at > _STALE_SERVE_SECONDS:
+        built_at, value = entry
+    if time.time() - built_at > _STALE_SERVE_SECONDS:
         return None
-    return html_bytes
+    return value
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -347,6 +305,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'not found')
 
+    def _send(self, body: bytes, content_type: str) -> None:
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
@@ -359,36 +325,37 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._deny()
             return
 
-        range_str = (qs.get('range') or [_config.settings.DASHBOARD_TIME_RANGE])[0]
-        # Basic allow-list to avoid query-injection surprises.
-        if range_str not in ('24h', '7d', '30d', 'all'):
+        range_str = (qs.get('range') or ['24h'])[0]
+        if range_str not in _VOLUME_RANGES:
             range_str = '24h'
+        fmt = (qs.get('format') or [''])[0]
+        port_raw = (qs.get('port') or [''])[0]
+        port_filter = int(port_raw) if port_raw.isdigit() else None
 
-        # Serve the cached, pre-rendered page. The background refresher runs the
-        # (slow, lock-contended) aggregate queries off the request path, so this
-        # returns instantly. If the cache is missing/stale (e.g. right after
-        # startup before the first refresh finishes), build on demand but cap
-        # the wait so a request can never hang behind the WAL writer.
-        body = _get_cached(range_str, token or '')
-        if body is None:
-            try:
-                body = _build_page(range_str, token or '')
-                with _CACHE_LOCK:
-                    _CACHE[range_str] = (time.time(), body)
-            except Exception as exc:  # noqa: BLE001 — surface as 500, never crash
-                logger.exception('Dashboard query failed')
-                self.send_response(500)
-                self.send_header('Content-Type', 'text/plain; charset=utf-8')
-                self.end_headers()
-                self.wfile.write(f'dashboard error: {exc!r}'.encode())
+        try:
+            if fmt == 'fragment':
+                payload = _get_cached(_PAYLOAD_CACHE, range_str) or _build_payload(
+                    range_str, token or ''
+                )
+                if port_filter is not None:
+                    payload = _payload_with_port(payload, port_filter)
+                body = _render.render_fragment(payload)
+                self._send(body, 'text/plain; charset=utf-8')
                 return
 
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.send_header('Content-Length', str(len(body)))
-        self.send_header('Cache-Control', 'no-store')
-        self.end_headers()
-        self.wfile.write(body)
+            body = _get_cached(_HTML_CACHE, range_str)
+            if body is None:
+                payload = _build_payload(range_str, token or '')
+                body = _render.render_page(payload).encode('utf-8')
+                with _CACHE_LOCK:
+                    _HTML_CACHE[range_str] = (time.time(), body)
+            self._send(body, 'text/html; charset=utf-8')
+        except Exception as exc:  # noqa: BLE001 — surface as 500, never crash
+            logger.exception('Dashboard query failed')
+            self.send_response(500)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(f'dashboard error: {exc!r}'.encode())
 
 
 def run_dashboard(args: Any, update_event: Any) -> None:
@@ -419,7 +386,7 @@ def run_dashboard(args: Any, update_event: Any) -> None:
         return
 
     token = _config.settings.DASHBOARD_SECRET or ''
-    # Prime + maintain a cached, pre-rendered page on a background thread so the
+    # Prime + maintain a cached payload/page on a background thread so the
     # request path never blocks on the live writer's WAL lock.
     _start_refresher(token)
 
