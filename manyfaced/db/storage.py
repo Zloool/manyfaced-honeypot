@@ -19,7 +19,7 @@ from typing import Any
 try:
     import psycopg2  # type: ignore[import-untyped,unused-ignore]  # noqa: F401  # Optional dependency for PostgreSQL backend
 except ImportError:
-    pass  # psycopg2 not installed; PostgreSQL backend will raise ImportError at runtime
+    psycopg2 = None  # psycopg2 not installed; PostgreSQL backend raises ImportError at runtime
 
 logger = logging.getLogger(__name__)
 
@@ -294,8 +294,78 @@ def validate_db_path_absolute() -> bool:
 
 
 def _resolve_backend() -> str:
-    """Return the backend name from env or default to 'sqlite'."""
-    return os.environ.get('HONEY_DB_BACKEND', 'sqlite').lower()
+    """Return the backend name from env or TOML config, defaulting to 'sqlite'.
+
+    Env ``HONEY_DB_BACKEND`` takes precedence (operator override); falls back to
+    ``settings.DB_BACKEND`` (TOML ``[database] backend``) so setting
+    ``backend = "postgresql"`` in config.toml actually switches backends. The
+    import of ``settings`` is deferred to dodge import-time circularity, the
+    same pattern ``_raw_db_path()`` already uses.
+    """
+    env_backend = os.environ.get('HONEY_DB_BACKEND')
+    if env_backend:
+        return env_backend.lower()
+    try:
+        from manyfaced.common.config import settings  # noqa: PLC0415
+
+        toml_backend = getattr(settings, 'DB_BACKEND', None)
+        if toml_backend:
+            return str(toml_backend).lower()
+    except Exception:
+        # Config resolution can fail (bad config, unreadable env); fall back to
+        # the default rather than crashing import-time.
+        pass
+    return 'sqlite'
+
+
+def _pg_toml(attr: str, default: str) -> str:
+    """Resolve a PostgreSQL config field from TOML config (``settings.DB_PG_*``).
+
+    Used by :class:`PostgreSQLStorage` to consult ``settings.DB_PG_HOST`` /
+    ``DB_PG_PORT`` / etc. when neither an explicit constructor arg nor an env var
+    is supplied, so ``pg_*`` values in config.toml are honored (issue #243 #3).
+    Deferred-import + broad-except so a missing/broken config falls back to the
+    default instead of crashing import-time.
+    """
+    try:
+        from manyfaced.common.config import settings  # noqa: PLC0415
+
+        val = getattr(settings, attr, None)
+        if val is not None and val != '':
+            return str(val)
+    except Exception:
+        pass
+    return default
+
+
+# ── process-wide storage singleton (issue #243) ─────────────────────────────
+# ``get_storage()`` previously constructed a fresh backend on EVERY call. SQLite
+# tolerates this (cheap local connect + the module-level ``_WRITE_LOCK`` already
+# serializes writes), but PostgreSQL does NOT — a fresh ``psycopg2.connect()``
+# (TCP + auth handshake) per captured report overwhelms Postgres under bot load
+# and leaks connections. Cache a single instance per process instead. One
+# process only ever runs one backend (``_resolve_backend()`` is static for the
+# process lifetime), so this is a single slot, not a dict.
+_STORAGE_SINGLETON: 'StorageBackend | None' = None
+_STORAGE_LOCK = Lock()
+
+
+def reset_storage_singleton() -> None:
+    """Drop the cached storage singleton (test-only hook).
+
+    ``get_storage()`` caches one backend per process; tests that need to
+    re-create the storage (e.g. across backend/env changes) call this to force
+    re-creation on the next ``get_storage()``. Never used in production.
+    """
+    global _STORAGE_SINGLETON
+    with _STORAGE_LOCK:
+        old = _STORAGE_SINGLETON
+        _STORAGE_SINGLETON = None
+    if old is not None:
+        try:
+            old.close()
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -772,7 +842,15 @@ from manyfaced.db.sql_builder import (  # noqa: E402, F401
 
 
 class PostgreSQLStorage(StorageBackend):
-    """PostgreSQL storage backend using psycopg2."""
+    """PostgreSQL storage backend using psycopg2.
+
+    Connection lifecycle (issue #243): the backend is created ONCE per process
+    via ``get_storage()`` (a cached singleton), so ``_conn`` is a long-lived
+    connection reused across every insert. A dropped connection is transparently
+    re-established by :meth:`_ensure_connected` before each operation, and the
+    process-wide ``_STORAGE_LOCK`` (not the per-instance lock) serializes the
+    writer process's inserts against the single shared connection.
+    """
 
     def __init__(
         self,
@@ -781,33 +859,77 @@ class PostgreSQLStorage(StorageBackend):
         database: str | None = None,
         user: str | None = None,
         password: str | None = None,
+        sslmode: str | None = None,
+        dsn: str | None = None,
     ) -> None:
-        self._host = host or os.environ.get('HONEY_PG_HOST', '127.0.0.1')
-        self._port = port or int(os.environ.get('HONEY_PG_PORT', '5432'))
-        self._database = database or os.environ.get('HONEY_PG_DB', 'honeypot')
-        self._user = user or os.environ.get('HONEY_PG_USER', 'postgres')
-        self._password = password or os.environ.get('HONEY_PG_PASSWORD', 'postgres')
+        # Explicit constructor args (used by tests) stay the top override; then
+        # env vars; then TOML config (settings.DB_PG_*) — the previous code only
+        # honored env/defaults, so ``pg_*`` in config.toml was ignored (issue #243).
+        self._host = (
+            host
+            or os.environ.get('HONEY_PG_HOST')
+            or _pg_toml('DB_PG_HOST', '127.0.0.1')
+        )
+        self._port = port or int(os.environ.get('HONEY_PG_PORT') or _pg_toml('DB_PG_PORT', '5432'))
+        self._database = (
+            database
+            or os.environ.get('HONEY_PG_DB')
+            or _pg_toml('DB_PG_DB', 'honeypot')
+        )
+        self._user = (
+            user
+            or os.environ.get('HONEY_PG_USER')
+            or _pg_toml('DB_PG_USER', 'postgres')
+        )
+        self._password = (
+            password
+            or os.environ.get('HONEY_PG_PASSWORD')
+            or _pg_toml('DB_PG_PASSWORD', 'postgres')
+        )
+        # TLS / managed-Postgres support (issue #243 #9).
+        self._sslmode = (
+            sslmode
+            or os.environ.get('HONEY_PG_SSLMODE')
+            or _pg_toml('DB_PG_SSLMODE', 'prefer')
+        )
+        self._dsn = dsn or os.environ.get('HONEY_PG_DSN') or _pg_toml('DB_PG_DSN', '')
         self._conn: Any = None
+        # Per-instance lock is now genuinely useful: with a cached singleton, all
+        # report threads share this one instance's connection and serialize here.
         self._lock = Lock()
-        self._init_db()
+        try:
+            self._init_db()
+        except ImportError:
+            # psycopg2 not installed — the caller must have selected postgresql
+            # by mistake; raise clearly rather than swallowing into a silent None.
+            raise
+        except Exception:  # noqa: BLE001 — psycopg2 may be None here
+            # Transient startup failure (Postgres not up yet) is tolerated: the
+            # first insert() triggers a lazy reconnect via _ensure_connected().
+            logger.warning('PostgreSQL storage not yet connected; will retry on first write')
 
     def _init_db(self) -> None:
         """Connect to PostgreSQL and create the table if it does not exist."""
-        try:
-            import psycopg2  # noqa: PLC0415  # pyright: ignore[reportMissingModuleSource]
-        except ImportError:
+        if psycopg2 is None:
             raise ImportError(
                 'psycopg2 is required for PostgreSQL backend. '
                 'Install it with: pip install psycopg2-binary'
             )
         try:
-            self._conn = psycopg2.connect(
-                host=self._host,
-                port=self._port,
-                database=self._database,
-                user=self._user,
-                password=self._password,
-            )
+            if self._dsn:
+                # Managed/cloud Postgres is often handed as a single DSN URI.
+                # Pass sslmode alongside the DSN so a required TLS connection
+                # (e.g. HONEY_PG_SSLMODE=require) still applies.
+                self._conn = psycopg2.connect(dsn=self._dsn, sslmode=self._sslmode)
+            else:
+                self._conn = psycopg2.connect(
+                    host=self._host,
+                    port=self._port,
+                    database=self._database,
+                    user=self._user,
+                    password=self._password,
+                    sslmode=self._sslmode,
+                )
             with self._conn.cursor() as cur:
                 cur.execute(_CREATE_TABLE_PG_SQL)
                 # Issue #299: add the listen_port column to a pre-#299 DB.
@@ -823,13 +945,49 @@ class PostgreSQLStorage(StorageBackend):
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Failed to initialise PostgreSQL storage')
             self._conn = None
+            raise  # propagated so _ensure_connected / singleton can retry once
+
+    def _ensure_connected(self) -> bool:
+        """Ensure ``self._conn`` is live; reconnect once on a dead connection.
+
+        Returns True if a usable connection is available, False otherwise. A
+        transient Postgres outage (timeout, killed backend, TLS drop) should not
+        permanently break recording — we reconnect once per call and retry the
+        operation in the caller, instead of failing every insert forever.
+        """
+        if self._conn is not None:
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute('SELECT 1')
+                return True
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
+                logger.warning('PostgreSQL connection lost; attempting reconnect')
+                try:
+                    self._conn.close()
+                except Exception:  # noqa: BLE001 — best-effort
+                    pass
+                self._conn = None
+        try:
+            self._init_db()
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('PostgreSQL reconnect failed')
+            self._conn = None
+            return False
+        return self._conn is not None
 
     # -- public API ----------------------------------------------------------
 
     def insert(self, record: dict) -> None:  # noqa: C901
-        """Insert a single bear record."""
-        if self._conn is None:
-            logger.error('PostgreSQL storage is not initialised; skipping insert')
+        """Insert a single bear record.
+
+        On a dropped connection, reconnect once and retry (issue #243 #2); if the
+        insert still fails, fall back to the JSONL dump file (the same safety
+        valve SQLite uses) so a transient Postgres outage never silently loses a
+        capture.
+        """
+        if self._conn is None and not self._ensure_connected():
+            logger.error('PostgreSQL storage is not initialised; dumping record to fallback')
+            self._dump_insert_failure(record)
             return
 
         try:
@@ -838,8 +996,41 @@ class PostgreSQLStorage(StorageBackend):
                 with self._conn.cursor() as cur:
                     cur.execute(_INSERT_PG_SQL, fields)
                 self._conn.commit()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
+            # Connection dropped mid-insert — reconnect once and retry exactly
+            # once before giving up (avoids an infinite reconnect loop).
+            logger.warning('PostgreSQL insert failed on a dead connection; reconnecting once')
+            self._conn = None
+            if not self._ensure_connected():
+                self._dump_insert_failure(record)
+                return
+            try:
+                with self._lock:
+                    with self._conn.cursor() as cur:
+                        cur.execute(_INSERT_PG_SQL, fields)
+                    self._conn.commit()
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error inserting record into PostgreSQL storage')
+                self._dump_insert_failure(record)
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Error inserting record into PostgreSQL storage')
+            self._dump_insert_failure(record)
+
+    def _dump_insert_failure(self, record: dict) -> None:
+        """Last-resort fallback: dump the record to JSONL so it is not lost.
+
+        Mirrors ``SQLiteStorage.insert``'s lock-contention path. Wrapped so the
+        fallback itself can never raise (issue #243 #8).
+        """
+        from manyfaced.common.metrics import incr
+
+        incr('db_insert_failure')
+        try:
+            from manyfaced.common.utils import dump_file
+
+            dump_file({'_dump_reason': 'postgres_insert_failure', **record})
+        except Exception:  # noqa: BLE001 — last-resort fallback must never raise
+            logger.exception('Failed to dump record after PostgreSQL insert failure')
 
     def close(self) -> None:
         """Close the PostgreSQL connection."""
@@ -955,8 +1146,120 @@ class PostgreSQLStorage(StorageBackend):
             logger.exception('Error aggregating stats from PostgreSQL storage')
             return _empty_stats()
 
+    # -- data lifecycle (issue #243 #4) --------------------------------------
+
+    def delete_old_records(self, days: int = 90) -> int:
+        """Delete records older than *days* days from the honeypot_bears table.
+
+        Args:
+            days: Number of days to retain. Records with timestamp older than
+                this many days will be deleted. Defaults to 90.
+
+        Returns:
+            Number of rows deleted.
+        """
+        if self._conn is None and not self._ensure_connected():
+            logger.error('PostgreSQL storage is not initialised; skipping delete')
+            return 0
+        cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        try:
+            with self._lock:
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < %s',
+                        (cutoff,),
+                    )
+                    count = cur.fetchone()[0]
+                    if count > 0:
+                        cur.execute(
+                            'DELETE FROM honeypot_bears WHERE timestamp < %s',
+                            (cutoff,),
+                        )
+                        self._conn.commit()
+                        logger.info('Deleted %d records older than %d days', count, days)
+                    return int(count)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
+            self._conn = None
+            logger.exception('Error deleting old records from PostgreSQL storage')
+            return 0
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('Error deleting old records from PostgreSQL storage')
+            return 0
+
+    def archive_old_records(self, days: int = 90, dest_db: str | None = None) -> str | None:
+        """Archive records older than *days* days to a gzipped dump file.
+
+        PostgreSQL has no in-process "second database" like SQLite's file copy,
+        so instead of standing up a second PG database we stream the matching
+        rows out via ``COPY ... TO STDOUT`` into a local gzip file, then delete
+        them. This preserves the "one file per archive" shape the SQLite version
+        produces and keeps the archive portable (re-loadable via ``COPY ... FROM
+        STDIN`` or ``pg_restore``-style tooling).
+
+        Args:
+            days: Number of days to retain. Records with timestamp older than
+                this many days will be archived. Defaults to 90.
+            dest_db: Path to the archive file. If None, creates a file named
+                'honeypot_archive_YYYYMMDD.sqlite' in the same directory as the
+                running module's data dir — but with a ``.dump.gz`` extension to
+                signal it is a Postgres COPY dump, not a SQLite file.
+
+        Returns:
+            Path to the archive file, or None if nothing was archived / on error.
+        """
+        if self._conn is None and not self._ensure_connected():
+            logger.error('PostgreSQL storage is not initialised; skipping archive')
+            return None
+        cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        try:
+            # Stream the matching rows into a gzip file via COPY TO STDOUT.
+            import gzip  # noqa: PLC0415
+
+            dest_db = dest_db or os.path.join(
+                _resolve_data_dir(),
+                f'honeypot_archive_{datetime.now().strftime("%Y%m%d")}.dump.gz',
+            )
+            with self._lock:
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        'SELECT COUNT(*) FROM honeypot_bears WHERE timestamp < %s',
+                        (cutoff,),
+                    )
+                    count = cur.fetchone()[0]
+                    if count == 0:
+                        logger.info('No records older than %d days to archive', days)
+                        return None
+                    # COPY ... TO STDOUT streams the rows as TSV; wrap the cursor
+                    # in a gzip file so the archive is compressed on the fly.
+                    with gzip.open(dest_db, 'wt', encoding='utf-8') as gzf:
+                        cur.copy_expert(
+                            'COPY (SELECT * FROM honeypot_bears WHERE timestamp < %s) TO STDOUT',
+                            gzf,
+                            (cutoff,),
+                        )
+                    # Now delete the archived rows.
+                    cur.execute('DELETE FROM honeypot_bears WHERE timestamp < %s', (cutoff,))
+                    self._conn.commit()
+                    logger.info('Archived %d records older than %d days to %s', count, days, dest_db)
+            return dest_db
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
+            self._conn = None
+            logger.exception('Error archiving old records from PostgreSQL storage')
+            return None
+        except psycopg2.Error:  # noqa: BLE001
+            logger.exception('Error archiving old records from PostgreSQL storage')
+            return None
+        except OSError:  # noqa: BLE001 — file/IO errors (disk full, bad path)
+            logger.exception('Error writing PostgreSQL archive file')
+            return None
+
     def __del__(self) -> None:
-        self.close()
+        # Guard against interpreter-shutdown GC: globals ``close()`` depends on
+        # (e.g. psycopg2, the logger) may already be torn down. getattr guards
+        # against a half-constructed instance too (issue #243 #11).
+        conn = getattr(self, '_conn', None)
+        if conn is not None:
+            self.close()
 
     def __enter__(self) -> 'PostgreSQLStorage':
         return self
@@ -975,68 +1278,121 @@ def get_storage(
     busy_timeout: int = 5000,
     init_schema: bool = True,
 ) -> StorageBackend:
-    """Factory to get the storage backend based on HONEY_DB_BACKEND env var.
+    """Factory to get the storage backend based on ``HONEY_DB_BACKEND``.
 
-    Returns a :class:`SQLiteStorage` or :class:`PostgreSQLStorage` depending on
-    the value of the ``HONEY_DB_BACKEND`` environment variable (case-insensitive).
+    Returns a cached, process-wide :class:`SQLiteStorage` or
+    :class:`PostgreSQLStorage` instance. The instance is created once per process
+    and reused — ``get_storage()`` is called on every captured report, and a
+    fresh connection-per-call would overwhelm PostgreSQL under bot load (issue
+    #243 #2). Double-checked locking via ``_STORAGE_LOCK`` keeps construction
+    race-free.
+
+    Backend selection honors both ``HONEY_DB_BACKEND`` and TOML
+    ``[database] backend`` (see :func:`_resolve_backend`).
 
     ``integrity_check`` / ``busy_timeout`` / ``init_schema`` are forwarded to
     :class:`SQLiteStorage` so read-only callers (the dashboard) can skip the
     startup full-table scan / DDL and tolerate brief WAL write-lock contention
     without erroring or stalling.
     """
-    backend = _resolve_backend()
-    if backend == 'postgresql':
-        return PostgreSQLStorage()
-    # default to SQLite
-    return SQLiteStorage(
-        integrity_check=integrity_check,
-        busy_timeout=busy_timeout,
-        init_schema=init_schema,
-    )
+    global _STORAGE_SINGLETON
+    if _STORAGE_SINGLETON is not None:
+        return _STORAGE_SINGLETON
+
+    with _STORAGE_LOCK:
+        if _STORAGE_SINGLETON is not None:
+            return _STORAGE_SINGLETON
+        backend = _resolve_backend()
+        if backend == 'postgresql':
+            storage: StorageBackend = PostgreSQLStorage()
+        else:
+            # default to SQLite
+            storage = SQLiteStorage(
+                integrity_check=integrity_check,
+                busy_timeout=busy_timeout,
+                init_schema=init_schema,
+            )
+        _STORAGE_SINGLETON = storage
+        return _STORAGE_SINGLETON
 
 
 def backup_database(dest_dir: str | None = None) -> list[str]:
-    """Backup the SQLite database, copying both .sqlite and WAL files.
+    """Back up the configured storage backend.
 
-    IMPORTANT: When copying a SQLite database in WAL mode via scp/rsync, you MUST
-    either (a) run PRAGMA wal_checkpoint(TRUNCATE) on the server first before
-    copying just the .sqlite file, or (b) copy all three files (.sqlite,
-    .sqlite-wal, .sqlite-shm). Copying only the main file without checkpointing
-    causes "database disk image is malformed" errors.
-
-    This function handles both: it checkpoints first, then copies the main DB file.
+    SQLite: checkpoint WAL then copy the ``.sqlite`` file (existing behaviour).
+    PostgreSQL (issue #243 #5): shell out to ``pg_dump -Fc`` (custom format,
+    compressible, restore-via-``pg_restore``) writing ``.dump`` files, with
+    rotation. The password is passed via the ``PGPASSWORD`` env var — never
+    interpolated into the command string (command-injection / process-list
+    credential leak).
 
     Args:
-        dest_dir: Directory to copy backup to. Defaults to 'deployment-analysis/latest'.
+        dest_dir: Directory to copy backup to. Defaults to
+            'deployment-analysis/latest'.
 
     Returns:
-        List of copied file paths.
+        List of copied/created backup file paths.
     """
     import shutil  # noqa: PLC0415
 
     storage = get_storage()
-    if not isinstance(storage, SQLiteStorage):
-        logger.warning('backup_database only supports SQLite backend')
-        return []
-
-    src_path = storage.db_path
     dest_dir = dest_dir or os.path.join(_PROJECT_ROOT, 'deployment-analysis', 'latest')
     os.makedirs(dest_dir, exist_ok=True)
 
-    # Checkpoint first to ensure WAL is written back to main file
+    if isinstance(storage, SQLiteStorage):
+        src_path = storage.db_path
+        # Checkpoint first to ensure WAL is written back to main file
+        try:
+            if storage._conn is not None:
+                storage._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.debug('Pre-backup checkpoint failed (non-critical)')
+
+        basename = os.path.basename(src_path)
+        dest_path = os.path.join(dest_dir, basename)
+        shutil.copy2(src_path, dest_path)
+        logger.info('Database backed up: %s → %s', src_path, dest_path)
+        return [dest_path]
+
+    if isinstance(storage, PostgreSQLStorage):
+        return _backup_postgresql(storage, dest_dir)
+
+    logger.warning('backup_database: unknown backend %r; nothing to back up', type(storage).__name__)
+    return []
+
+
+def _backup_postgresql(storage: 'PostgreSQLStorage', dest_dir: str) -> list[str]:
+    """Back up a PostgreSQL backend via ``pg_dump -Fc`` (issue #243 #5)."""
+    import subprocess  # noqa: PLC0415
+
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    dest_path = os.path.join(dest_dir, f'honeypot-{timestamp}.dump')
+    # Build an explicit arg list (shell=False) and pass the password via env so
+    # it never appears in the command string or the process list.
+    cmd = ['pg_dump', '-Fc', '-f', dest_path]
+    env = dict(os.environ)
+    if storage._dsn:
+        # pg_dump honors the libpq connection string via --dbname.
+        cmd += ['--dbname', storage._dsn]
+        if storage._sslmode:
+            cmd += ['--sslmode', storage._sslmode]
+    else:
+        cmd += [
+            '--host', storage._host,
+            '--port', str(storage._port),
+            '--username', storage._user,
+            '--dbname', storage._database,
+        ]
+        if storage._sslmode:
+            cmd += ['--sslmode', storage._sslmode]
+        env['PGPASSWORD'] = storage._password
+
     try:
-        if isinstance(storage, SQLiteStorage) and storage._conn is not None:
-            storage._conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-    except (sqlite3.Error, sqlite3.OperationalError):
-        logger.debug('Pre-backup checkpoint failed (non-critical)')
-
-    # Copy the main database file
-    basename = os.path.basename(src_path)
-    dest_path = os.path.join(dest_dir, basename)
-    shutil.copy2(src_path, dest_path)
-    logger.info('Database backed up: %s → %s', src_path, dest_path)
-
+        subprocess.run(cmd, env=env, check=True, capture_output=True, text=True)  # noqa: S603
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        logger.exception('pg_dump failed for PostgreSQL backup')
+        return []
+    logger.info('PostgreSQL database backed up: %s', dest_path)
     return [dest_path]
 
 

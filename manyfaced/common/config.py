@@ -39,6 +39,8 @@ TOML config file layout (the file is auto-generated if run with --generate-confi
     pg_db = "honeypot"
     pg_user = "postgres"
     pg_password = "postgres"
+    pg_sslmode = "prefer"
+    pg_dsn = ""
 
     [security]
     authorized_bees = ""  # semicolon-separated "bee_id:key" pairs for client sensors
@@ -75,6 +77,8 @@ _DEFAULT_DB_PG_PORT: int = 5432
 _DEFAULT_DB_PG_DB: str = 'honeypot'
 _DEFAULT_DB_PG_USER: str = 'postgres'
 _DEFAULT_DB_PG_PASSWORD: str = '***'
+_DEFAULT_DB_PG_SSLMODE: str = 'prefer'
+_DEFAULT_DB_PG_DSN: str = ''
 _DEFAULT_AUTHORIZED_BEES_DEFAULTS: dict[str, str] = {}
 
 # ── port mode configuration (shared constants) ───────────────────────────────
@@ -153,6 +157,8 @@ class Config:
     DB_PG_DB: str
     DB_PG_USER: str
     DB_PG_PASSWORD: str
+    DB_PG_SSLMODE: str
+    DB_PG_DSN: str
     AUTHORIZED_BEES: dict[str, str]
 
     # Port mode configuration
@@ -243,6 +249,12 @@ class Config:
             ),  # type: ignore[arg-type]
             DB_PG_PASSWORD=str(
                 resolve_setting('pg_password', _DEFAULT_DB_PG_PASSWORD, 'database', toml, prefix)
+            ),
+            DB_PG_SSLMODE=str(
+                resolve_setting('pg_sslmode', _DEFAULT_DB_PG_SSLMODE, 'database', toml, prefix)
+            ),
+            DB_PG_DSN=str(
+                resolve_setting('pg_dsn', _DEFAULT_DB_PG_DSN, 'database', toml, prefix)
             ),
             AUTHORIZED_BEES={
                 str(k): str(v)
@@ -376,6 +388,8 @@ class Config:
             f'pg_db = "{self.DB_PG_DB}"',
             f'pg_user = "{self.DB_PG_USER}"',
             f'pg_password = "{self.DB_PG_PASSWORD}"',
+            f'pg_sslmode = "{self.DB_PG_SSLMODE}"',
+            f'pg_dsn = "{self.DB_PG_DSN}"',
             '',
             '[security]',
             '# semicolon-separated bee_id:key pairs for client sensors; e.g. "sensor1:key1;sensor2:key2"',
