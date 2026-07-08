@@ -26,6 +26,7 @@ class BearRequests:
     continent: str = ''
     login: str = ''
     bot_profile_data: dict[str, Any] | None = None
+    listen_port: int = 0
 
 
 def Insert(bear: BearRequests) -> None:
@@ -42,6 +43,7 @@ def Insert(bear: BearRequests) -> None:
         'country': bear.country,
         'continent': bear.continent,
         'login': bear.login,
+        'listen_port': bear.listen_port,
     }
 
     # Bot profile data — accumulated state (escalation, dialogue, history) for this IP
