@@ -1,4 +1,15 @@
-"""Apache Solr routes (scaffold). TODO: refine to match real probe paths."""
+"""Apache Solr routes (issue #279).
+
+Matches the production Solr probe paths observed in the wild:
+  /solr
+  /solr/admin/
+  /solr/admin/cores
+  /solr/admin/info/system
+  /solr/collection1/select
+  /solr/admin/authentication
+  /solr/%2eenv   (decoded to /solr/.env inside the handler)
+  /admin/cores
+"""
 
 from __future__ import annotations
 
@@ -15,9 +26,9 @@ def _solr() -> type:
 
 ROUTES: list[Route] = [
     # ---- Apache Solr (issue #279) ----
-    Route(PathExact('/solr/admin/info/system'), _solr(), SOLR_HTTP, 'solr_0'),
-    Route(PathPrefix('/solr/admin/info/system/'), _solr(), SOLR_HTTP, 'solr_prefix_0'),
-    Route(PathExact('/solr/admin/cores'), _solr(), SOLR_HTTP, 'solr_1'),
-    Route(PathPrefix('/solr/admin/cores/'), _solr(), SOLR_HTTP, 'solr_prefix_1'),
-    Route(PathExact('/solr'), _solr(), SOLR_HTTP, 'solr_2'),
+    Route(PathExact('/solr'), _solr(), SOLR_HTTP, 'solr_root'),
+    Route(PathExact('/solr/admin/cores'), _solr(), SOLR_HTTP, 'solr_cores'),
+    Route(PathExact('/solr/admin/info/system'), _solr(), SOLR_HTTP, 'solr_info_system'),
+    Route(PathPrefix('/solr/'), _solr(), SOLR_HTTP, 'solr_prefix'),
+    Route(PathPrefix('/admin/'), _solr(), SOLR_HTTP, 'solr_admin_prefix'),
 ]
