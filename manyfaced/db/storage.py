@@ -241,6 +241,8 @@ def _raw_db_path() -> str:
         if toml_path:
             return toml_path
     except Exception:
+        # DB_PATH resolution can fail (bad config, unreadable env); fall back to
+        # the default relative path rather than crashing import-time.
         pass
 
     return 'bots/honeypot.sqlite'

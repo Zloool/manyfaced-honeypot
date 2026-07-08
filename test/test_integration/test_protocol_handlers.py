@@ -81,7 +81,7 @@ class TestMongoDBHandler(unittest.TestCase):
         """ismaster command should return replica set info."""
         raw_data = b'\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x80\x04\x00\x00\x7b\x22\x69\x73\x6d\x61\x73\x74\x65\x72\x22\x3a\x74\x72\x75\x65\x2c\x22\x6f\x6b\x22\x3a\x31\x2e\x30\x7d'
         response = generate_mongodb_response(raw_data, '10.0.0.1')
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_mongodb_auth_credential_capture(self):
         """authenticate command should capture credentials."""
@@ -110,7 +110,7 @@ class TestTelnetHandler(unittest.TestCase):
         """IAC negotiation should return appropriate responses."""
         raw_data = b'\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1f'
         response = generate_telnet_response(raw_data, '10.0.0.1')
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_telnet_login_credential_capture(self):
         """Login interaction should capture username and password."""
@@ -139,7 +139,7 @@ class TestRDPHandler(unittest.TestCase):
         """Initial response should return TPKT/X.224 connection confirm."""
         raw_data = b''
         response = generate_rdp_response(raw_data, '10.0.0.1')
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_rdp_nla_challenge(self):
         """NLA challenge should be generated for authentication data."""
@@ -156,7 +156,7 @@ class TestRDPHandler(unittest.TestCase):
     def test_rdp_greeting(self):
         """Greeting should return TPKT/X.224 response."""
         greeting = generate_rdp_greeting('10.0.0.3')
-        self.assertTrue(len(greeting) > 0)
+        self.assertGreater(len(greeting), 0)
 
 
 class TestVNCHandler(unittest.TestCase):
@@ -166,13 +166,13 @@ class TestVNCHandler(unittest.TestCase):
         """Version string should be returned for initial connection."""
         raw_data = b''
         response = generate_vnc_response(raw_data, '10.0.0.1')
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_vnc_auth_failure(self):
         """Authentication attempt should return failure response."""
         raw_data = bytes([random.randint(0, 255) for _ in range(16)])
         response = generate_vnc_response(raw_data, '10.0.0.2')
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_vnc_credential_capture(self):
         """VNC auth attempt should capture credentials."""
@@ -231,7 +231,7 @@ class TestProtocolHandlerIntegration(unittest.TestCase):
         response, bear_storage = handler._handle_non_http_probe(
             '10.0.0.2', 'mongodb', protocol_info
         )
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_telnet_routing(self):
         """Telnet probe should be routed to Telnet handler."""
@@ -250,7 +250,7 @@ class TestProtocolHandlerIntegration(unittest.TestCase):
         handler = HTTPHandler(mock_args, mock_update_event)
 
         response, bear_storage = handler._handle_non_http_probe('10.0.0.3', 'telnet', protocol_info)
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_rdp_routing(self):
         """RDP probe should be routed to RDP handler."""
@@ -269,7 +269,7 @@ class TestProtocolHandlerIntegration(unittest.TestCase):
         handler = HTTPHandler(mock_args, mock_update_event)
 
         response, bear_storage = handler._handle_non_http_probe('10.0.0.4', 'rdp', protocol_info)
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
     def test_vnc_routing(self):
         """VNC probe should be routed to VNC handler."""
@@ -288,7 +288,7 @@ class TestProtocolHandlerIntegration(unittest.TestCase):
         handler = HTTPHandler(mock_args, mock_update_event)
 
         response, bear_storage = handler._handle_non_http_probe('10.0.0.5', 'vnc', protocol_info)
-        self.assertTrue(len(response) > 0)
+        self.assertGreater(len(response), 0)
 
 
 if __name__ == '__main__':

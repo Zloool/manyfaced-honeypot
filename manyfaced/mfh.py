@@ -43,6 +43,10 @@ def _acquire_lockfile():
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _lock_fd.write(str(os.getpid()))
         _lock_fd.flush()
+        # NOTE: the fd is intentionally kept open (not closed here) so the
+        # fcntl lock stays held for the process lifetime — closing it would
+        # release the lock on Linux and defeat multi-instance prevention.
+        # It is closed in _release_lockfile() at shutdown.
         logger.info('Lockfile acquired (PID %d)', os.getpid())
     except (IOError, OSError) as e:
         if 'Text file busy' in str(e) or 'Resource temporarily unavailable' in str(e):

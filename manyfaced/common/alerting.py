@@ -64,6 +64,8 @@ def submit_alert(task: Callable[[], None]) -> None:
         try:
             task()
         except Exception:  # noqa: BLE001
+            # Inline delivery also failed — give up on this alert; do not block
+            # the calling code path (alerting must never raise into producers).
             pass
 
 

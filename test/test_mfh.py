@@ -86,7 +86,8 @@ class TestLockfile(unittest.TestCase):
                 from manyfaced.mfh import _lock_fd
 
                 self.assertIsNotNone(_lock_fd)
-                tmp_content = open(lockfile_path).read()
+                with open(lockfile_path) as f:
+                    tmp_content = f.read()
                 self.assertEqual(int(tmp_content), os.getpid())
         finally:
             try:

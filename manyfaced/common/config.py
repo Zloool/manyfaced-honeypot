@@ -80,8 +80,6 @@ _DEFAULT_AUTHORIZED_BEES_DEFAULTS: dict[str, str] = {}
 # ── port mode configuration (shared constants) ───────────────────────────────
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS  # noqa: E402, F401
 
-_PORT_MODES: tuple[str, ...] = ('single', 'top', 'all')
-
 # ── Security defaults ───────────────────────────────────────────────────────
 
 _DEFAULT_DEFAULT_KEY: str | None = None
@@ -90,8 +88,6 @@ _DEFAULT_LOG_FILE: str = os.path.join(
 )
 _DEFAULT_DUMP_FILE: str = 'dump.jsonl'
 _DEFAULT_LOCKFILE: str = os.path.join('/opt/manyfaced/bots', 'lockfile')
-
-_DEFAULT_ALERTING: dict[str, Any] = {}
 
 # ── Dashboard defaults (issue #234) ────────────────────────────────────────
 # The dashboard is OFF by default and bound to loopback. The access secret is
@@ -336,7 +332,20 @@ class Config:
     def generate_config_file(self, path: Path | str | None = None) -> Path:
         """Write a config file example at the XDG location and return the path."""
         if path is None:
-            path = Path.home() / '.config' / 'manyfaced' / 'config.toml'
+            # Resolve the default path the same way the loader does. We honor
+            # $HOME explicitly (it may be set even where the platform's
+            # home-resolution ignores it — e.g. Windows Path.home()/expanduser
+            # read USERPROFILE, not HOME), then XDG_CONFIG_HOME, then the
+            # platform home. This keeps the location consistent across
+            # platforms and makes tests that monkeypatch HOME effective
+            # everywhere (issue #266).
+            home = os.environ.get('HOME')
+            if home:
+                base = Path(home)
+            else:
+                xdg = os.environ.get('XDG_CONFIG_HOME')
+                base = Path(xdg) if xdg else Path(os.path.expanduser('~'))
+            path = base / '.config' / 'manyfaced' / 'config.toml'
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
@@ -443,6 +452,8 @@ class Config:
                         {int(p.strip()) for p in self.HONEY_TOP_PORTS.split(',') if p.strip()}
                     )
                 except ValueError:
+                    # Malformed port list (non-integer entry) — fall back to defaults
+                    # rather than crashing startup on a bad config value.
                     pass
             return list(_DEFAULT_TOP_PORTS)
         elif mode == 'all':
