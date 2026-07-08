@@ -149,6 +149,7 @@ def run() -> None:
     procs: dict[str, Process | None] = {
         'client_proc': None,
         'server_proc': None,
+        'dashboard_proc': None,
     }
 
     def _spawn_client() -> Process:
@@ -156,6 +157,11 @@ def run() -> None:
 
     def _spawn_server() -> Process:
         return Process(args=(args, update_event), name='server', target=server.main)
+
+    def _spawn_dashboard() -> Process:
+        from manyfaced.web import dashboard
+
+        return Process(args=(args, update_event), name='dashboard', target=dashboard.run_dashboard)
 
     def _terminate(proc: Process | None) -> None:
         if proc is not None and proc.is_alive():
@@ -170,6 +176,12 @@ def run() -> None:
         procs['server_proc'] = _spawn_server()
         procs['server_proc'].start()
 
+    # Dashboard (issue #234): read-only stats view. Runs alongside the server
+    # (it reads the shared DB) only when explicitly enabled in config.
+    if args.server is not None and settings.DASHBOARD_ENABLED:
+        procs['dashboard_proc'] = _spawn_dashboard()
+        procs['dashboard_proc'].start()
+
     # NOTE: we deliberately do NOT ignore SIGCHLD. The parent supervises its
     # children and restarts any that exit unexpectedly (see loop below). If a
     # child dies (e.g. the server / DB-writer crashes) and is left unrestarted,
@@ -182,7 +194,8 @@ def run() -> None:
     # off between restarts and, if a child keeps dying, fail the whole service
     # so systemd escalates recovery (and its own alerting can fire).
     supervise: dict[str, dict] = {
-        key: {'attempts': 0, 'last': 0.0, 'times': []} for key in ('client_proc', 'server_proc')
+        key: {'attempts': 0, 'last': 0.0, 'times': []}
+        for key in ('client_proc', 'server_proc', 'dashboard_proc')
     }
 
     def _maybe_restart(key: str, spawn) -> None:
@@ -235,6 +248,11 @@ def run() -> None:
                     supervise['server_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
                 elif procs['server_proc'] is None or not procs['server_proc'].is_alive():
                     _maybe_restart('server_proc', _spawn_server)
+            if args.server is not None and settings.DASHBOARD_ENABLED:
+                if procs['dashboard_proc'] is not None and procs['dashboard_proc'].is_alive():
+                    supervise['dashboard_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
+                elif procs['dashboard_proc'] is None or not procs['dashboard_proc'].is_alive():
+                    _maybe_restart('dashboard_proc', _spawn_dashboard)
             time.sleep(1)
     except KeyboardInterrupt:
         pass

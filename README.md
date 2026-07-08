@@ -217,6 +217,39 @@ All settings can be overridden via environment variables. The `HONEY_` prefix ma
 | `DB_PG_DB` | `honeypot` | PostgreSQL database name |
 | `DB_PG_USER` | `postgres` | PostgreSQL username |
 | `DB_PG_PASSWORD` | `postgres` | PostgreSQL password |
+| `DASHBOARD_ENABLED` | `false` | Enable the read-only stats dashboard |
+| `DASHBOARD_PORT` | `8443` | Dashboard listen port (non-standard) |
+| `DASHBOARD_BIND` | `127.0.0.1` | Dashboard bind address (loopback by default) |
+| `DASHBOARD_SECRET` | _(auto-generated)_ | Access secret; every request needs `?token=<secret>` |
+| `DASHBOARD_TIME_RANGE` | `24h` | Default stats window: `24h`, `7d`, `30d`, `all` |
+
+### Stats Dashboard (issue #234)
+
+A read-only web dashboard shows captured-attacker statistics (top services,
+source IPs, countries/continents, most-probed paths, detected vs. undetected
+ratio, request volume over time, and the latest raw capture). It is **off by
+default** and designed to be hostile to probing:
+
+* Only starts when `[dashboard] enabled = true` in `config.toml`.
+* Binds to a **non-standard port** (`DASHBOARD_PORT`, default `8443`) on
+  **loopback** (`127.0.0.1`) unless you deliberately change `DASHBOARD_BIND`.
+* Every request must carry `?token=<secret>`. The secret is
+  **auto-generated** by `generate-config` (`secrets.token_urlsafe`, not a static
+  default) and compared with `hmac.compare_digest`. A missing or wrong token
+  returns a generic **404** — the endpoint never advertises itself as an admin
+  panel.
+* **Read-only**: no config editing, no mutation, no user management. Dashboard
+  access is logged separately (`manyfaced.web.dashboard.access`) so viewing the
+  dashboard never pollutes the `honeypot_bears` capture dataset.
+* All dynamic values are HTML-escaped on render.
+
+```bash
+# Start with the server; the dashboard launches automatically if enabled.
+python -m manyfaced.mfh --server :8080
+
+# Open (token from config.toml [dashboard] secret):
+#   http://127.0.0.1:8443/?token=<DASHBOARD_SECRET>&range=7d
+```
 
 ### Backward compatibility
 

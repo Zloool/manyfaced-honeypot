@@ -93,6 +93,18 @@ _DEFAULT_LOCKFILE: str = os.path.join('/opt/manyfaced/bots', 'lockfile')
 
 _DEFAULT_ALERTING: dict[str, Any] = {}
 
+# ── Dashboard defaults (issue #234) ────────────────────────────────────────
+# The dashboard is OFF by default and bound to loopback. The access secret is
+# auto-generated (secrets.token_urlsafe) and persisted to config.toml by
+# generate_config_file(); it is NEVER a static default (unlike the legacy
+# HONEY_HIVEPASS mistake). Bind address is defense-in-depth — the token is the
+# real control.
+_DEFAULT_DASHBOARD_ENABLED: bool = False
+_DEFAULT_DASHBOARD_PORT: int = 8443
+_DEFAULT_DASHBOARD_BIND: str = '127.0.0.1'
+_DEFAULT_DASHBOARD_SECRET: str | None = None
+_DEFAULT_DASHBOARD_TIME_RANGE: str = '24h'
+
 # ── config file discovery (XDG base dirs) ──────────────────────────────────
 
 
@@ -169,6 +181,17 @@ class Config:
     # ALERT_CONFIG file path (issue #215). Environment variables (HONEY_ALERT_*)
     # still override individual keys in alerting.py.
     ALERTING: dict[str, Any] = field(default_factory=dict)
+
+    # Dashboard (issue #234): read-only stats web view.
+    DASHBOARD_ENABLED: bool = False
+    DASHBOARD_PORT: int = _DEFAULT_DASHBOARD_PORT
+    DASHBOARD_BIND: str = _DEFAULT_DASHBOARD_BIND
+    # Auto-generated URL secret (secrets.token_urlsafe). Persisted to config.toml
+    # by generate_config_file(); compared with hmac.compare_digest per request.
+    # Never a static default — empty/None means "not yet generated".
+    DASHBOARD_SECRET: str = ''
+    # Default time range for the stats view: '24h', '7d', '30d', or 'all'.
+    DASHBOARD_TIME_RANGE: str = _DEFAULT_DASHBOARD_TIME_RANGE
 
     @staticmethod
     def load(config_path: Path | None = None, validate_secrets: bool = False) -> Config:
@@ -252,6 +275,22 @@ class Config:
             ALERTING={
                 k.split('.', 1)[1]: v for k, v in (toml or {}).items() if k.startswith('alerting.')
             },
+            # Dashboard config (issue #234) — [dashboard] section.
+            DASHBOARD_ENABLED=bool(
+                resolve_setting('enabled', _DEFAULT_DASHBOARD_ENABLED, 'dashboard', toml, prefix)
+            ),
+            DASHBOARD_PORT=int(
+                resolve_setting('port', _DEFAULT_DASHBOARD_PORT, 'dashboard', toml, prefix)
+            ),
+            DASHBOARD_BIND=str(
+                resolve_setting('bind', _DEFAULT_DASHBOARD_BIND, 'dashboard', toml, prefix)
+            ),
+            DASHBOARD_SECRET=str(
+                resolve_setting('secret', _DEFAULT_DASHBOARD_SECRET or '', 'dashboard', toml, prefix)
+            ),
+            DASHBOARD_TIME_RANGE=str(
+                resolve_setting('time_range', _DEFAULT_DASHBOARD_TIME_RANGE, 'dashboard', toml, prefix)
+            ),
         )
 
     def generate_config_file(self, path: Path | str | None = None) -> Path:
@@ -323,9 +362,30 @@ class Config:
             '# to_emails = ""',
             '# webhook_url = ""',
             '',
+            '[dashboard]',
+            '# Read-only stats web dashboard (issue #234). OFF by default.',
+            '# The access secret is auto-generated below (secrets.token_urlsafe) —',
+            '# there is no static default. Visit http://<bind>:<port>/?token=<secret>',
+            'enabled = false',
+            f'port = {self.DASHBOARD_PORT}',
+            f'bind = "{self.DASHBOARD_BIND}"',
+            '# Auto-generated on first --generate-config; rotate by deleting this line.',
+            f'secret = "{self._generated_dashboard_secret()}"',
+            f'time_range = "{self.DASHBOARD_TIME_RANGE}"',
+            '',
         ]
         path.write_text('\n'.join(lines))
         return path
+
+    def _generated_dashboard_secret(self) -> str:
+        """Return a fresh unguessable dashboard secret for config generation.
+
+        Uses secrets.token_urlsafe (cryptographically strong, no static
+        fallback) so generated configs never ship with a known default token.
+        """
+        import secrets
+
+        return secrets.token_urlsafe(32)
 
     def resolve_ports(self) -> list[int]:
         """Return the list of ports to listen on based on the port mode.
