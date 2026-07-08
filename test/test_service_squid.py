@@ -1,4 +1,4 @@
-"""Squid handler tests (scaffold)."""
+"""Squid cache-manager handler tests (issue #289)."""
 
 import unittest
 from unittest.mock import MagicMock
@@ -8,7 +8,7 @@ from manyfaced.handlers import SquidHandler
 
 
 class TestSquidHandler(unittest.TestCase):
-    """Test Squid responses."""
+    """Test Squid cachemgr responses."""
 
     def setUp(self):
         self.handler = SquidHandler()
@@ -20,21 +20,26 @@ class TestSquidHandler(unittest.TestCase):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
-            '/squid',
-            'GET /squid HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            '/squid-internal-mgr/',
+            'GET /squid-internal-mgr/ HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
         self.assertIn(b'Squid', response)
         self.assertEqual(detected, SQUID_HTTP)
 
-    def test_login_post_captures_credentials(self):
+    def test_login_post(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
-        response, _ = self.handler.generate_response(
-            '/login',
-            'POST /login HTTP/1.1\r\nHost: example.com\r\n'
+        response, detected = self.handler.generate_response(
+            '/cachemgr.cgi',
+            'POST /cachemgr.cgi HTTP/1.1\r\nHost: x\r\n'
             'Content-Type: application/x-www-form-urlencoded\r\n\r\n'
             'user=admin&pass=secret',
             '1.2.3.4',
         )
         self.assertIn(b'Error', response)
+        self.assertEqual(detected, SQUID_HTTP)
+
+
+if __name__ == '__main__':
+    unittest.main()
