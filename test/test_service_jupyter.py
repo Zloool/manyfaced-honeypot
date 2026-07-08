@@ -1,4 +1,4 @@
-"""Jupyter handler tests (scaffold)."""
+"""Jupyter handler tests (issue #288)."""
 
 import unittest
 from unittest.mock import MagicMock
@@ -21,13 +21,13 @@ class TestJupyterHandler(unittest.TestCase):
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
             '/jupyter',
-            'GET /jupyter HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            'GET /jupyter HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
         self.assertIn(b'Jupyter', response)
         self.assertEqual(detected, JUPYTER_HTTP)
 
-    def test_login_post_captures_credentials(self):
+    def test_login_post(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, _ = self.handler.generate_response(
@@ -38,3 +38,7 @@ class TestJupyterHandler(unittest.TestCase):
             '1.2.3.4',
         )
         self.assertIn(b'Error', response)
+
+
+if __name__ == '__main__':
+    unittest.main()

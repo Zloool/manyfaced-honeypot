@@ -1,4 +1,4 @@
-"""Jupyter routes (scaffold). TODO: refine to match real probe paths."""
+"""Jupyter Notebook routes (issue #288)."""
 
 from __future__ import annotations
 
@@ -14,9 +14,13 @@ def _jupyter() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- Jupyter (issue #296) ----
-    Route(PathExact('/jupyter'), _jupyter(), JUPYTER_HTTP, 'jupyter_0'),
-    Route(PathExact('/lab'), _jupyter(), JUPYTER_HTTP, 'jupyter_1'),
-    Route(PathExact('/notebooks'), _jupyter(), JUPYTER_HTTP, 'jupyter_2'),
-    Route(PathExact('/tree'), _jupyter(), JUPYTER_HTTP, 'jupyter_3'),
+    # ---- Jupyter (issue #288) ----
+    Route(PathExact('/jupyter'), _jupyter(), JUPYTER_HTTP, 'jupyter_jupyter'),
+    Route(PathExact('/login'), _jupyter(), JUPYTER_HTTP, 'jupyter_login'),
+    Route(PathExact('/lab'), _jupyter(), JUPYTER_HTTP, 'jupyter_lab'),
+    Route(PathExact('/tree'), _jupyter(), JUPYTER_HTTP, 'jupyter_tree'),
+    Route(PathExact('/api/contents'), _jupyter(), JUPYTER_HTTP, 'jupyter_api_contents'),
+    Route(PathPrefix('/api/'), _jupyter(), JUPYTER_HTTP, 'jupyter_api'),
+    Route(PathPrefix('/jupyter/'), _jupyter(), JUPYTER_HTTP, 'jupyter_slash'),
+    Route(PathPrefix('/notebook'), _jupyter(), JUPYTER_HTTP, 'jupyter_notebook'),
 ]
