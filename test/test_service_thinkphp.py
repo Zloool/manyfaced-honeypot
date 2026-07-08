@@ -1,4 +1,4 @@
-"""ThinkPHP handler tests (scaffold)."""
+"""ThinkPHP handler tests (issue #287)."""
 
 import unittest
 from unittest.mock import MagicMock
@@ -21,13 +21,28 @@ class TestThinkPHPHandler(unittest.TestCase):
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
             '/index.php',
-            'GET /index.php HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            'GET /index.php HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
         self.assertIn(b'ThinkPHP', response)
         self.assertEqual(detected, THINKPHP_HTTP)
 
-    def test_login_post_captures_credentials(self):
+    def test_rce_probe_returns_exception_page(self):
+        profile = MagicMock()
+        self.handler.bot_profiles = {'1.2.3.4': profile}
+        probe = (
+            'GET /index.php?s=/index/think\\app/invokefunction'
+            '&function=call_user_func_array&vars[0]=md5&vars[1][]=hello '
+            'HTTP/1.1\r\nHost: x\r\n\r\n'
+        )
+        response, detected = self.handler.generate_response(
+            '/index.php', probe, '1.2.3.4'
+        )
+        self.assertIn(b'ThinkPHP', response)
+        self.assertIn(b'invokefunction', response)
+        self.assertEqual(detected, THINKPHP_HTTP)
+
+    def test_login_post(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, _ = self.handler.generate_response(
@@ -38,3 +53,7 @@ class TestThinkPHPHandler(unittest.TestCase):
             '1.2.3.4',
         )
         self.assertIn(b'Error', response)
+
+
+if __name__ == '__main__':
+    unittest.main()
