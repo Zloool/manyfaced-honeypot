@@ -91,14 +91,27 @@ _SINCE_DELTAS: dict[str, timedelta] = {
 def _since_to_iso(since: str | None) -> str | None:
     if since in (None, 'all'):
         return None
+    # The dashboard passes a concrete ISO-8601 cutoff (from _parse_range), not a
+    # window token. Pass those through untouched so windowed aggregates actually
+    # filter — otherwise `delta = _SINCE_DELTAS.get(iso_string)` is None and we
+    # drop the WHERE clause, returning all-time totals for every range.
+    if isinstance(since, str):
+        for _fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S'):
+            try:
+                datetime.strptime(since, _fmt)
+                return since
+            except ValueError:
+                continue
     delta = _SINCE_DELTAS.get(since)
     if delta is not None:
         cutoff = datetime.now() - delta
         return cutoff.strftime('%Y-%m-%d %H:%M:%S')
-    # Not a recognised shorthand token ('24h'/'7d'/'30d') — the caller (e.g.
-    # dashboard._parse_range) has already resolved its own absolute cutoff,
-    # so pass it through unchanged rather than silently dropping the bound.
-    return since
+    # Not a recognised shorthand token ('24h'/'7d'/'30d') AND not a valid
+    # ISO-8601 cutoff (the dashboard's _parse_range resolves those, caught by
+    # the strptime check above). Return None (no WHERE bound) rather than
+    # injecting an arbitrary string into the SQL `WHERE timestamp >= <since>`
+    # clause, which would be a malformed/unsafe query.
+    return None
 
 
 def _sqlite_bucket_expr(bucket: str) -> str:
