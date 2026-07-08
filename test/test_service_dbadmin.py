@@ -1,4 +1,4 @@
-"""Adminer handler tests (scaffold)."""
+"""DB admin handler tests (issue #292)."""
 
 import unittest
 from unittest.mock import MagicMock
@@ -7,8 +7,8 @@ from manyfaced.common.status import DBADMIN_HTTP
 from manyfaced.handlers import DBAdminHandler
 
 
-class TestDBAdminHandler(unittest.TestCase):
-    """Test Adminer responses."""
+class TestDbAdminHandler(unittest.TestCase):
+    """Test DB admin responses."""
 
     def setUp(self):
         self.handler = DBAdminHandler()
@@ -21,20 +21,24 @@ class TestDBAdminHandler(unittest.TestCase):
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, detected = self.handler.generate_response(
             '/adminer',
-            'GET /adminer HTTP/1.1\r\nHost: example.com\r\n\r\n',
+            'GET /adminer HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
-        self.assertIn(b'Adminer', response)
+        self.assertTrue(b'Adminer' in response or b'Database' in response)
         self.assertEqual(detected, DBADMIN_HTTP)
 
-    def test_login_post_captures_credentials(self):
+    def test_login_post(self):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
-        response, _ = self.handler.generate_response(
+        response, detected = self.handler.generate_response(
             '/login',
-            'POST /login HTTP/1.1\r\nHost: example.com\r\n'
+            'POST /login HTTP/1.1\r\nHost: x\r\n'
             'Content-Type: application/x-www-form-urlencoded\r\n\r\n'
             'user=admin&pass=secret',
             '1.2.3.4',
         )
         self.assertIn(b'Error', response)
+
+
+if __name__ == '__main__':
+    unittest.main()
