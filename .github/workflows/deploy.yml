@@ -1,14 +1,18 @@
 name: Deploy to Droplet
 
+# Post-merge deploy only (issue #256).
+#
 # Triggers:
-#   - push to master → CI runs, then deploy (fast path, no workflow_run latency)
-#   - pull_request on main/master → CI only (deploy job skipped via if:)
-#   - manual dispatch → pick any ref; CI runs first, then deploys it
+#   - push to master → deploy the just-merged commit (validation already green
+#     on the PR via ci.yml, which branch protection required before merge).
+#   - manual dispatch → pick any ref and deploy it.
+#
+# This workflow does NOT re-run lint/test/typecheck/security/canary — that would
+# duplicate the pre-merge gate. The squashed commit is identical to what ci.yml
+# validated, so re-validating post-merge is definitionally redundant.
 on:
   push:
     branches: [master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
     inputs:
       ref:
@@ -26,145 +30,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  lint:
-    # Ruff is version-agnostic; single Python version suffices.
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
-
-      - name: Check formatting
-        run: uv run ruff format --check .
-
-      - name: Check linting
-        run: uv run ruff check .
-
-  test:
-    # Run on PRs, push-to-master, and manual dispatch for validation.
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
-
-      - name: Run tests
-        run: uv run pytest -v --tb=short
-
-  typecheck:
-    # Run on PRs, push-to-master, and manual dispatch for validation.
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    name: Typecheck (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
-
-      - name: Type check with basedpyright
-        run: uv run basedpyright manyfaced/
-
-  actionlint:
-    name: Lint GitHub Actions workflows
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run actionlint
-        uses: raven-actions/actionlint@v2
-
-  shellcheck:
-    name: Lint shell scripts
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Syntax-check shell scripts with bash -n
-        run: |
-          set -euo pipefail
-          status=0
-          while IFS= read -r -d '' f; do
-            echo "Checking $f"
-            bash -n "$f" || status=1
-          done < <(find . -name '*.sh' -print0)
-          exit $status
-
-  security-scan:
-    name: Security scan (pip-audit + bandit)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install scan tooling
-        run: python -m pip install --upgrade pip pip-audit bandit
-
-      - name: Dependency vulnerability scan (pip-audit)
-        # Fails if any installed/lockfile dependency has a known CVE.
-        run: pip-audit --desc on
-
-      - name: Static security scan (bandit) on input-parsing modules
-        # Focus on the attacker-input parsing surface; high-severity findings fail CI.
-        # NOTE: B608 (SQL injection) is intentionally NOT skipped repo-wide. The
-        # one legitimate f-string-built query (storage.py archive delete) is scoped
-        # with `# nosec B608` at the call site. Unscoped B608 failures now fail CI
-        # — this is exactly the class of bug worth catching in a honeypot handling
-        # untrusted input (issue #221).
-        run: bandit -ll -ii -r manyfaced/ -f txt --skip B101,B310,B601,B311
-
   build-and-push-image:
     # Issue #149 (partial): make the container image a real, pinned, reproducible
     # deploy artifact. Builds the #146 Dockerfile and pushes it to GHCR tagged
     # with the commit SHA (immutable) plus :latest (rollback pointer).
     #
     # This only BUILDS + PUSHES the artifact — it does NOT touch the droplet.
-    # The droplet-side cutover (install Docker, stop systemd, `docker run`) is a
-    # separate, explicit step once the host is container-ready. Kept non-blocking
-    # so a registry hiccup never blocks the systemd deploy or merges.
-    if: github.event_name != 'pull_request'
-    needs: [lint, actionlint, shellcheck, security-scan, test, typecheck]
+    # The droplet-side cutover (docker run) is a separate step in the deploy job.
+    # Kept non-blocking so a registry hiccup never blocks the deploy or merges.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -210,39 +83,10 @@ jobs:
           echo "Pushed: ghcr.io/zloool/manyfaced-honeypot:sha-${{ steps.sha.outputs.short_sha }}"
           echo "Rollback target for a future cutover: previous sha-<short> tag in GHCR"
 
-  canary:
-    # Issue #165 — in-workflow canary gate. Runs a real (no mocks) synthetic
-    # client->server->DB report through the exact code that gets baked into the
-    # deploy image, and asserts a row lands + the server responds. Catches
-    # "starts but is wrong" regressions (bad responses, silent report-send
-    # failures, data-quality breaks) that the post-restart health check misses.
-    # `deploy` depends on this, so failure aborts before prod traffic sees it.
-    if: github.event_name != 'pull_request'
-    needs: [lint, actionlint, shellcheck, security-scan, test, typecheck]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install dependencies (locked)
-        run: uv sync --locked --extra dev
-
-      - name: Canary smoke — synthetic report reaches DB
-        # Smoke gate only; coverage is enforced by the `test` job, so disable
-        # cov here (a single-file run would otherwise fail the 76% gate).
-        run: uv run pytest -q --no-cov test/test_integration/test_canary_smoke.py
-
   deploy:
-    needs: [lint, actionlint, shellcheck, security-scan, test, typecheck, canary]
-    # Only deploy on push-to-master and manual dispatch; skip on PRs.
-    if: github.event_name != 'pull_request'
+    # Post-merge deploy. No validation deps — ci.yml already gated the commit
+    # on the PR (branch protection required those checks green before merge).
+    needs: [build-and-push-image]
     runs-on: ubuntu-latest
     environment: production
 
@@ -268,31 +112,6 @@ jobs:
       # Host keys are accepted on first connection via StrictHostKeyChecking=
       # accept-new on each ssh call below (no separate ssh-keyscan, which can
       # hang/fail intermittently over a custom port).
-
-      - name: Migrate legacy deployment to release-symlink scheme
-        env:
-          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
-          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
-          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
-        run: |
-          set -euo pipefail
-
-          # Only migrate if current is not yet a symlink (first deploy with new mechanism)
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            set -euo pipefail && \
-            if [ ! -L /opt/manyfaced/current ]; then \
-              mkdir -p /opt/manyfaced/releases && \
-              PRE_DIR=\"/opt/manyfaced/releases/pre-symlink\" && \
-              mkdir -p \"\$PRE_DIR\" && \
-              if [ -d /opt/manyfaced/manyfaced ]; then \
-                mv /opt/manyfaced/manyfaced \"\$PRE_DIR/\"; \
-              fi && \
-              ln -sfn \"\$PRE_DIR\" \"/opt/manyfaced/current.new\" && \
-              mv -Tf \"/opt/manyfaced/current.new\" \"/opt/manyfaced/current\" && \
-              echo 'Migrated legacy deployment to releases/pre-symlink'; \
-            else \
-              echo 'Already using release-symlink scheme — no migration needed'; \
-            fi"
 
       # ── Container-based deploy (issue #149) ──────────────────────────────
       # The honeypot now runs as a pinned GHCR image instead of a
