@@ -76,6 +76,28 @@ def _scalar(conn, sql: str, params: tuple) -> int:
     return int(row[0]) if row and row[0] is not None else 0
 
 
+# Dashboard ``since`` values are human-friendly windows, not SQL. Convert them to
+# a real ISO-8601 cutoff string so the ``idx_bears_timestamp`` index can bound the
+# scan. Without this, ``timestamp >= '24h'`` is a malformed text comparison that
+# defeats the index and forces a full-table scan (which hangs the dashboard under
+# the live WAL writer on a multi-million-row DB). Returns None for 'all'/unknown.
+_SINCE_DELTAS: dict[str, timedelta] = {
+    '24h': timedelta(hours=24),
+    '7d': timedelta(days=7),
+    '30d': timedelta(days=30),
+}
+
+
+def _since_to_iso(since: str | None) -> str | None:
+    if since in (None, 'all'):
+        return None
+    delta = _SINCE_DELTAS.get(since)
+    if delta is None:
+        return None
+    cutoff = datetime.now() - delta
+    return cutoff.strftime('%Y-%m-%d %H:%M:%S')
+
+
 def _empty_stats() -> dict:
     """Return a well-shaped empty aggregate result."""
     return {
@@ -620,9 +642,14 @@ class SQLiteStorage(StorageBackend):
         if self._conn is None:
             return _empty_stats()
         conn = self._conn
-        if since is not None:
+        # Convert the human-friendly window ('24h'/'7d'/'30d'/'all') into a real
+        # ISO cutoff so the timestamp index bounds the scan. A raw string like
+        # '24h' compared against the TEXT timestamp column defeats the index and
+        # forces a full-table scan that hangs under the live WAL writer.
+        cutoff = _since_to_iso(since)
+        if cutoff is not None:
             where = ' WHERE timestamp >= ?'
-            params: tuple = (since,)
+            params: tuple = (cutoff,)
             and_prefix = ' AND'
         else:
             where = ''
