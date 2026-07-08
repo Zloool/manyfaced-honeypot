@@ -297,7 +297,11 @@ class SQLiteStorage(StorageBackend):
     CHECKPOINT_INTERVAL = 100  # Run PRAGMA wal_checkpoint(TRUNCATE) every N inserts
 
     def __init__(
-        self, db_path: str | None = None, busy_timeout: int = 5000, integrity_check: bool = True
+        self,
+        db_path: str | None = None,
+        busy_timeout: int = 5000,
+        integrity_check: bool = True,
+        init_schema: bool = True,
     ) -> None:
         self._db_path = db_path or _resolve_db_path()
         # Ensure parent directories exist
@@ -307,25 +311,42 @@ class SQLiteStorage(StorageBackend):
         self._conn: sqlite3.Connection | None = None
         self._lock = Lock()
         self._insert_count = 0
-        self._init_db(busy_timeout=busy_timeout, integrity_check=integrity_check)
+        self._init_db(
+            busy_timeout=busy_timeout,
+            integrity_check=integrity_check,
+            init_schema=init_schema,
+        )
 
-    def _init_db(self, busy_timeout: int = 5000, integrity_check: bool = True) -> None:
-        """Open the connection, create the table if it does not exist, and run integrity check.
+    def _init_db(
+        self,
+        busy_timeout: int = 5000,
+        integrity_check: bool = True,
+        init_schema: bool = True,
+    ) -> None:
+        """Open the connection and (optionally) create the schema.
 
         ``busy_timeout`` makes concurrent reads (e.g. the dashboard) wait for a
         brief WAL write lock instead of immediately raising "database is locked"
         — important on a live honeypot where the writer is constantly inserting.
-        ``integrity_check`` is skipped for read-only callers (the dashboard) to
-        avoid a full-table scan on every connection open.
+
+        ``init_schema`` gates DDL (CREATE TABLE + CREATE INDEXES). Read-only
+        callers such as the dashboard MUST pass ``init_schema=False``: the schema
+        already exists (the writer created it at startup), and running DDL on
+        every connection open — including the per-request dashboard connection —
+        stalls under WAL write contention and makes the dashboard hang.
+        ``integrity_check`` is also skipped for read-only callers to avoid a
+        full-table scan on every connection open.
         """
         try:
             self._conn = sqlite3.connect(self._db_path)
             self._conn.execute(f'PRAGMA busy_timeout={busy_timeout}')
             self._conn.execute('PRAGMA journal_mode=WAL')
-            self._conn.execute(_CREATE_TABLE_SQL)
-            # Idempotent performance indexes for the dashboard aggregates.
-            self._conn.executescript(_CREATE_INDEXES_SQL)
-            self._conn.commit()
+            if init_schema:
+                self._conn.execute(_CREATE_TABLE_SQL)
+                # Idempotent performance indexes for the dashboard aggregates.
+                # Created once at writer startup, NOT on every read connection.
+                self._conn.executescript(_CREATE_INDEXES_SQL)
+                self._conn.commit()
 
             if integrity_check:
                 # Run startup integrity check and warn if corruption is detected
@@ -857,21 +878,30 @@ class PostgreSQLStorage(StorageBackend):
 # ---------------------------------------------------------------------------
 
 
-def get_storage(integrity_check: bool = True, busy_timeout: int = 5000) -> StorageBackend:
+def get_storage(
+    integrity_check: bool = True,
+    busy_timeout: int = 5000,
+    init_schema: bool = True,
+) -> StorageBackend:
     """Factory to get the storage backend based on HONEY_DB_BACKEND env var.
 
     Returns a :class:`SQLiteStorage` or :class:`PostgreSQLStorage` depending on
     the value of the ``HONEY_DB_BACKEND`` environment variable (case-insensitive).
 
-    ``integrity_check`` / ``busy_timeout`` are forwarded to :class:`SQLiteStorage`
-    so read-only callers (the dashboard) can skip the startup full-table scan and
-    tolerate brief WAL write-lock contention without erroring.
+    ``integrity_check`` / ``busy_timeout`` / ``init_schema`` are forwarded to
+    :class:`SQLiteStorage` so read-only callers (the dashboard) can skip the
+    startup full-table scan / DDL and tolerate brief WAL write-lock contention
+    without erroring or stalling.
     """
     backend = _resolve_backend()
     if backend == 'postgresql':
         return PostgreSQLStorage()
     # default to SQLite
-    return SQLiteStorage(integrity_check=integrity_check, busy_timeout=busy_timeout)
+    return SQLiteStorage(
+        integrity_check=integrity_check,
+        busy_timeout=busy_timeout,
+        init_schema=init_schema,
+    )
 
 
 def backup_database(dest_dir: str | None = None) -> list[str]:
