@@ -60,17 +60,14 @@ class ElasticsearchHandler(HTTPHandlerBase):
         """Elasticsearch placeholder page (scaffold)."""
         return (
             '<!DOCTYPE html><html><head><title>Elasticsearch</title></head>'
-            f'<body><h1>Elasticsearch</h1>'
-            f'<p>Service: Elasticsearch 8.12.0</p>'
+            '<body><h1>Elasticsearch</h1>'
+            '<p>Service: Elasticsearch 8.12.0</p>'
             '</body></html>'
         )
 
     def _login_failed_response(self) -> bytes:
         """Login failed response - encourages further probing."""
-        body = (
-            '<html><body><h3>Authorization Error</h3>'
-            '<p>Invalid credentials.</p></body></html>'
-        )
+        body = '<html><body><h3>Authorization Error</h3><p>Invalid credentials.</p></body></html>'
         return self._build_http_response(body, 200, 'OK')
 
     def _extract_method(self, raw_request: str) -> str:

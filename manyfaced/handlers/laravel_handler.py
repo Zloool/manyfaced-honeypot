@@ -57,9 +57,7 @@ class LaravelHandler(HTTPHandlerBase):
         decoded = self._decode_path(path_lower)
 
         # Handle login POST requests (named login/authenticate paths).
-        if method == 'POST' and any(
-            kw in path_lower for kw in ['login', 'auth', 'session']
-        ):
+        if method == 'POST' and any(kw in path_lower for kw in ['login', 'auth', 'session']):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -117,8 +115,7 @@ class LaravelHandler(HTTPHandlerBase):
         if method == 'POST' and 'execute-solution' in path_lower:
             # Ignition "execute-solution" endpoint — return a JSON-style debug ack.
             return (
-                '{"message":"The solution was executed successfully.",'
-                '"solutions":[],"status":"ok"}'
+                '{"message":"The solution was executed successfully.","solutions":[],"status":"ok"}'
             )
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -164,24 +161,24 @@ class LaravelHandler(HTTPHandlerBase):
 </body></html>"""
         if 'laravel.log' in path_lower:
             return (
-                "[2026-07-08 12:00:01] local.ERROR: RuntimeException: "
-                "Unable to boot Laravel application. in Laravel " + self.VERSION + "\n"
-                "[2026-07-08 12:00:02] local.DEBUG: Session started for Laravel app\n"
+                '[2026-07-08 12:00:01] local.ERROR: RuntimeException: '
+                'Unable to boot Laravel application. in Laravel ' + self.VERSION + '\n'
+                '[2026-07-08 12:00:02] local.DEBUG: Session started for Laravel app\n'
             )
         # .env disclosure
         return (
-            "APP_NAME=Laravel\n"
-            "APP_ENV=local\nAPP_KEY=base64:REPLACE_ME_APP_KEY_HERE==\n"
-            "APP_DEBUG=true\nAPP_URL=http://localhost\n\n"
-            "LOG_CHANNEL=stack\nLOG_DEPRECATIONS_CHANNEL=null\nLOG_LEVEL=debug\n\n"
-            "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\n"
-            "DB_DATABASE=laravel\nDB_USERNAME=root\nDB_PASSWORD=\n\n"
-            "BROADCAST_DRIVER=log\nCACHE_DRIVER=file\nQUEUE_CONNECTION=sync\n"
-            "SESSION_DRIVER=file\nSESSION_LIFETIME=120\n\n"
-            "REDIS_HOST=127.0.0.1\nREDIS_PASSWORD=null\nREDIS_PORT=6379\n\n"
-            "MAIL_MAILER=smtp\nMAIL_HOST=mailpit\nMAIL_PORT=1025\n\n"
-            "AWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\n\n"
-            "Laravel " + self.VERSION + "\n"
+            'APP_NAME=Laravel\n'
+            'APP_ENV=local\nAPP_KEY=base64:REPLACE_ME_APP_KEY_HERE==\n'
+            'APP_DEBUG=true\nAPP_URL=http://localhost\n\n'
+            'LOG_CHANNEL=stack\nLOG_DEPRECATIONS_CHANNEL=null\nLOG_LEVEL=debug\n\n'
+            'DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\n'
+            'DB_DATABASE=laravel\nDB_USERNAME=root\nDB_PASSWORD=\n\n'
+            'BROADCAST_DRIVER=log\nCACHE_DRIVER=file\nQUEUE_CONNECTION=sync\n'
+            'SESSION_DRIVER=file\nSESSION_LIFETIME=120\n\n'
+            'REDIS_HOST=127.0.0.1\nREDIS_PASSWORD=null\nREDIS_PORT=6379\n\n'
+            'MAIL_MAILER=smtp\nMAIL_HOST=mailpit\nMAIL_PORT=1025\n\n'
+            'AWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\n\n'
+            'Laravel ' + self.VERSION + '\n'
         )
 
     def _login_failed_response(self) -> bytes:

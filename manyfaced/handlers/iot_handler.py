@@ -195,12 +195,7 @@ LOG_LEVEL=info
     @staticmethod
     def _normalise_path(path: str) -> str:
         """Decode common URL-encoded separators used to bypass filters."""
-        return (
-            path.replace('%2e', '.')
-            .replace('%2E', '.')
-            .replace('%2f', '/')
-            .replace('%2F', '/')
-        )
+        return path.replace('%2e', '.').replace('%2E', '.').replace('%2f', '/').replace('%2F', '/')
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""

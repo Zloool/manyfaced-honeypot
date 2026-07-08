@@ -62,11 +62,7 @@ class MagentoHandler(HTTPHandlerBase):
 
         # Capture credentials from any login-style POST (admin sign-in,
         # customer sign-in, or a generic login path).
-        is_login_path = (
-            'login' in path_lower
-            or 'admin' in path_lower
-            or 'account' in path_lower
-        )
+        is_login_path = 'login' in path_lower or 'admin' in path_lower or 'account' in path_lower
         if method == 'POST' and is_login_path:
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
@@ -75,7 +71,11 @@ class MagentoHandler(HTTPHandlerBase):
                 return self._login_failed_response(), detected
 
         # Route to appropriate response.
-        if '/magento/.env' == path_lower or '.env' in path_lower and path_lower.startswith('/magento'):
+        if (
+            '/magento/.env' == path_lower
+            or '.env' in path_lower
+            and path_lower.startswith('/magento')
+        ):
             body = self._env_disclosure()
         elif '/admin' in path_lower or path_lower in (
             '/customer/account/login',

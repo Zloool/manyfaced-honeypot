@@ -55,9 +55,7 @@ class PlexHandler(HTTPHandlerBase):
         method = self._extract_method(raw_request)
 
         if method == 'POST' and (
-            'login' in path.lower()
-            or 'auth' in path.lower()
-            or path.lower().startswith('/myplex')
+            'login' in path.lower() or 'auth' in path.lower() or path.lower().startswith('/myplex')
         ):
             credentials, response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
@@ -79,30 +77,44 @@ class PlexHandler(HTTPHandlerBase):
 
         if decoded == '/identity':
             body = self._device_description()
-            return self._build_http_response(body, 200, 'OK', 'text/xml; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/xml; charset=UTF-8'
+            ), self.DETECTED_ID
 
         if decoded == '/status/sessions':
             body = self._status_sessions()
-            return self._build_http_response(body, 200, 'OK', 'text/xml; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/xml; charset=UTF-8'
+            ), self.DETECTED_ID
 
         if decoded.startswith('/myplex/') or decoded == '/myplex':
             body = self._myplex_account()
-            return self._build_http_response(body, 200, 'OK', 'text/xml; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/xml; charset=UTF-8'
+            ), self.DETECTED_ID
 
         if decoded == '/library/sections' or decoded.startswith('/library/'):
             body = self._library_sections()
-            return self._build_http_response(body, 200, 'OK', 'text/xml; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/xml; charset=UTF-8'
+            ), self.DETECTED_ID
 
         if decoded == '/player':
             body = self._player_response()
-            return self._build_http_response(body, 200, 'OK', 'text/xml; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/xml; charset=UTF-8'
+            ), self.DETECTED_ID
 
         if decoded.startswith('/plex/'):
             body = self._plex_env_disclosure()
-            return self._build_http_response(body, 200, 'OK', 'text/plain; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/plain; charset=UTF-8'
+            ), self.DETECTED_ID
 
         body = self._web_app_page()
-        return self._build_http_response(body, 200, 'OK', 'text/html; charset=UTF-8'), self.DETECTED_ID
+        return self._build_http_response(
+            body, 200, 'OK', 'text/html; charset=UTF-8'
+        ), self.DETECTED_ID
 
     def _web_app_page(self) -> str:
         """Plex web client app shell (HTML)."""

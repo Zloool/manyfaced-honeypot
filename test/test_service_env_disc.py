@@ -39,9 +39,7 @@ class TestEnvDiscHandler(unittest.TestCase):
             'GET /.env HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
-        self.assertTrue(
-            b'DB_PASSWORD' in response or b'APP_KEY' in response or b'=' in response
-        )
+        self.assertTrue(b'DB_PASSWORD' in response or b'APP_KEY' in response or b'=' in response)
         self.assertEqual(detected, ENV_DISC_HTTP)
 
     def test_config_dot_env_disclosure(self):

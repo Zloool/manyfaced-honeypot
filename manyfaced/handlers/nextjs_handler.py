@@ -77,7 +77,11 @@ class NextjsHandler(HTTPHandlerBase):
         elif path_lower.startswith('/_next/image'):
             body, ctype, status = self._next_image_error(), 'application/json', 400
         elif path_lower.startswith('/_next'):
-            body, ctype, status = self._next_asset(decoded), 'application/javascript; charset=UTF-8', 200
+            body, ctype, status = (
+                self._next_asset(decoded),
+                'application/javascript; charset=UTF-8',
+                200,
+            )
         elif path_lower == '/vercel' or path_lower.startswith('/vercel/'):
             body, ctype, status = self._vercel_probe(), 'application/json', 200
         elif path_lower.startswith('/nextjs'):
@@ -143,16 +147,12 @@ class NextjsHandler(HTTPHandlerBase):
 
     def _api_health(self) -> str:
         """/api/health JSON health-check probe response."""
-        return (
-            '{"status":"ok","service":"nextjs",'
-            '"version":"14.2.0","uptime":1337,"region":"iad1"}'
-        )
+        return '{"status":"ok","service":"nextjs","version":"14.2.0","uptime":1337,"region":"iad1"}'
 
     def _api_response(self, path: str) -> str:
         """Generic Next.js API route JSON response."""
         return (
-            '{"message":"OK","path":' + f'"{path}"' + ','
-            '"framework":"next.js","runtime":"nodejs"}'
+            '{"message":"OK","path":' + f'"{path}"' + ',"framework":"next.js","runtime":"nodejs"}'
         )
 
     def _next_asset(self, path: str) -> str:
@@ -168,9 +168,7 @@ class NextjsHandler(HTTPHandlerBase):
 
     def _next_image_error(self) -> str:
         """Next.js image optimization endpoint error (missing params)."""
-        return (
-            '{"error":"url parameter is valid but image type is not allowed"}'
-        )
+        return '{"error":"url parameter is valid but image type is not allowed"}'
 
     def _vercel_probe(self) -> str:
         """Vercel platform probe response (/vercel)."""

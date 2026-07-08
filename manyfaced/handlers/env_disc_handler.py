@@ -62,7 +62,9 @@ class EnvDiscHandler(HTTPHandlerBase):
             return self._login_failed_response(), self.DETECTED_ID
 
         # Fake .env disclosure for env-file probes.
-        if decoded_lower in ('/.env', '/config.env', '/.env.example') or decoded_lower.endswith('/.env'):
+        if decoded_lower in ('/.env', '/config.env', '/.env.example') or decoded_lower.endswith(
+            '/.env'
+        ):
             body = self._env_file()
             return (
                 self._build_http_response(body, 200, 'OK', 'text/plain; charset=utf-8'),

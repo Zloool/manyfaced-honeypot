@@ -32,8 +32,7 @@ class TestPlexHandler(unittest.TestCase):
         self.handler.bot_profiles = {'1.2.3.4': profile}
         response, _ = self.handler.generate_response(
             '/myplex/account',
-            'POST /myplex/account HTTP/1.1\r\nHost: x\r\n\r\n'
-            'user=admin&password=secret',
+            'POST /myplex/account HTTP/1.1\r\nHost: x\r\n\r\nuser=admin&password=secret',
             '1.2.3.4',
         )
         self.assertIn(b'Error', response)

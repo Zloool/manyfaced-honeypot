@@ -82,7 +82,9 @@ class PhpUnitHandler(HTTPHandlerBase):
             request_data['cve'] = 'CVE-2017-9841'
             request_data['vector'] = 'phpunit_eval_stdin_rce'
             profile.record_request(request_data)
-            return self._build_http_response(self._eval_stdin_response(), 200, 'OK'), self.DETECTED_ID
+            return self._build_http_response(
+                self._eval_stdin_response(), 200, 'OK'
+            ), self.DETECTED_ID
 
         # --- PHPUnit test-runner UI ---------------------------------------
         # Serves a believable PHPUnit 11 UI for the canonical probe paths.
@@ -148,12 +150,12 @@ OK (1 test, 1 assertion)
         POST body input (the CVE-2017-9841 RCE vector).  Contains ``Error``
         so probes can be trivially fingerprinted/captured."""
         return (
-            "<br>\n"
-            "<b>Fatal error</b>:  Uncaught Error: Call to undefined function "
+            '<br>\n'
+            '<b>Fatal error</b>:  Uncaught Error: Call to undefined function '
             "in eval()'d code:1<br>\n"
-            "Stack trace:<br>\n"
-            "#0 /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php(1): eval()<br>\n"
-            "#1 {main}<br>\n"
+            'Stack trace:<br>\n'
+            '#0 /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php(1): eval()<br>\n'
+            '#1 {main}<br>\n'
             "  thrown in <b>eval()'d code</b> on line 1<br>\n"
         )
 

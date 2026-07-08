@@ -93,10 +93,10 @@ class ThinkPHPHandler(HTTPHandlerBase):
             file='/www/web/application/',
             line='0',
             trace=[
-                "0  think\\App::module()",
-                "1  think\\App::exec()",
-                "2  think\\App::run()",
-                "3  think\\App::start()",
+                '0  think\\App::module()',
+                '1  think\\App::exec()',
+                '2  think\\App::run()',
+                '3  think\\App::start()',
                 "4  require('/www/web/thinkphp/start.php')",
             ],
         )
@@ -112,12 +112,12 @@ class ThinkPHPHandler(HTTPHandlerBase):
             file='/www/web/thinkphp/library/think/App.php',
             line='343',
             trace=[
-                "0  call_user_func_array()",
-                "1  think\\App::invokefunction()",
-                "2  think\\App::module()",
-                "3  think\\App::exec()",
-                "4  think\\App::run()",
-                "5  think\\App::start()",
+                '0  call_user_func_array()',
+                '1  think\\App::invokefunction()',
+                '2  think\\App::module()',
+                '3  think\\App::exec()',
+                '4  think\\App::run()',
+                '5  think\\App::start()',
                 "6  require('/www/web/thinkphp/start.php')",
             ],
         )
@@ -132,8 +132,7 @@ class ThinkPHPHandler(HTTPHandlerBase):
     ) -> str:
         """Render a realistic ThinkPHP 5/6 exception/error page."""
         trace_html = ''.join(
-            f'<li><span class="num">{i}</span> {row}</li>'
-            for i, row in enumerate(trace)
+            f'<li><span class="num">{i}</span> {row}</li>' for i, row in enumerate(trace)
         )
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">

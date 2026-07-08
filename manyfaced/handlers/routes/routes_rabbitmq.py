@@ -28,7 +28,9 @@ ROUTES: list[Route] = [
     Route(PathExact('/api/queues'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_queues'),
     Route(PathExact('/api/exchanges'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_exchanges'),
     Route(PathExact('/api/connections'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_connections'),
-    Route(PathExact('/api/aliveness-test/%2f'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_aliveness'),
+    Route(
+        PathExact('/api/aliveness-test/%2f'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_aliveness'
+    ),
     # Prefixes last.
     Route(PathPrefix('/api/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api'),
     Route(PathPrefix('/cli/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_cli'),

@@ -67,18 +67,15 @@ class JupyterHandler(HTTPHandlerBase):
         # API endpoints return JSON.
         if path_lower.startswith('/api/contents'):
             body = self._api_contents(path_lower)
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         if path_lower.startswith('/api/sessions'):
             body = self._api_sessions()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         if path_lower.startswith('/api'):
             body = self._api_root()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Login page for the main entry points.
         if path_lower in ('/jupyter', '/login', '/lab', '/tree', '/notebook'):
@@ -199,20 +196,22 @@ class JupyterHandler(HTTPHandlerBase):
 
     def _api_root(self) -> str:
         """Jupyter /api root metadata."""
-        return json.dumps({
-            'version': self.VERSION,
-            'notebook_version': [6, 5, 0],
-        })
+        return json.dumps(
+            {
+                'version': self.VERSION,
+                'notebook_version': [6, 5, 0],
+            }
+        )
 
     def _login_failed_response(self) -> bytes:
         """Login failed response – returns a JSON error to encourage retries."""
-        body = json.dumps({
-            'message': 'Invalid credentials',
-            'error': 'Error: Invalid username or password.',
-        })
-        return self._build_http_response(
-            body, 200, 'OK', 'application/json'
+        body = json.dumps(
+            {
+                'message': 'Invalid credentials',
+                'error': 'Error: Invalid username or password.',
+            }
         )
+        return self._build_http_response(body, 200, 'OK', 'application/json')
 
     # -- Helpers ------------------------------------------------------------
 

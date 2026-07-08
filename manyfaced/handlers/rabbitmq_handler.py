@@ -66,9 +66,7 @@ class RabbitMQHandler(HTTPHandlerBase):
         path_lower = path.lower()
 
         # Credential submission (login / auth) -> capture + fake failure.
-        if method == 'POST' and any(
-            kw in path_lower for kw in self._LOGIN_KEYWORDS
-        ):
+        if method == 'POST' and any(kw in path_lower for kw in self._LOGIN_KEYWORDS):
             credentials, _response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -107,9 +105,7 @@ class RabbitMQHandler(HTTPHandlerBase):
         if decoded_lower.startswith('/rabbitmq/') and decoded_lower.endswith('.env'):
             body = self._env_disclosure()
             return (
-                self._build_http_response(
-                    body, 200, 'OK', 'text/plain; charset=UTF-8'
-                ),
+                self._build_http_response(body, 200, 'OK', 'text/plain; charset=UTF-8'),
                 self.DETECTED_ID,
             )
 
@@ -131,16 +127,15 @@ class RabbitMQHandler(HTTPHandlerBase):
         Only the two encodings seen in production probes are decoded
         (%2e -> '.', %2f -> '/') so routing matches the real plugin.
         """
-        return path.replace('%2e', '.').replace('%2E', '.').replace(
-            '%2f', '/'
-        ).replace('%2F', '/')
+        return path.replace('%2e', '.').replace('%2E', '.').replace('%2f', '/').replace('%2F', '/')
 
     # ------------------------------------------------------------------ #
     # HTML responses
     # ------------------------------------------------------------------ #
     def _management_login_page(self) -> str:
         """RabbitMQ Management UI sign-in page."""
-        return """<!DOCTYPE html>
+        return (
+            """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -169,7 +164,9 @@ class RabbitMQHandler(HTTPHandlerBase):
       <img src="/img/rabbitmq-logo.svg" alt="RabbitMQ">
     </div>
     <h1>RabbitMQ</h1>
-    <div class="subtitle">Management Plugin &mdash; """ + self.VERSION + """</div>
+    <div class="subtitle">Management Plugin &mdash; """
+            + self.VERSION
+            + """</div>
     <form method="POST" action="/api/whoami" name="loginForm" autocomplete="off">
       <label for="username">Username</label>
       <input type="text" id="username" name="username" autocomplete="off">
@@ -181,6 +178,7 @@ class RabbitMQHandler(HTTPHandlerBase):
   </div>
 </body>
 </html>"""
+        )
 
     def _cli_page(self) -> str:
         """RabbitMQ CLI landing page (mqtt/cli-style console hint)."""
@@ -205,11 +203,11 @@ class RabbitMQHandler(HTTPHandlerBase):
     def _env_disclosure(self) -> str:
         """Fake .env-style disclosure for the /rabbitmq/.env probe."""
         return (
-            "RABBITMQ_DEFAULT_USER=guest\n"
-            "RABBITMQ_DEFAULT_PASS=guest\n"
-            "RABBITMQ_MANAGEMENT_PORT=15672\n"
-            "RABBITMQ_ERLANG_COOKIE=SFMYZNUVIRKCOABZJLQN\n"
-            "RABBITMQ_NODENAME=rabbit@localhost\n"
+            'RABBITMQ_DEFAULT_USER=guest\n'
+            'RABBITMQ_DEFAULT_PASS=guest\n'
+            'RABBITMQ_MANAGEMENT_PORT=15672\n'
+            'RABBITMQ_ERLANG_COOKIE=SFMYZNUVIRKCOABZJLQN\n'
+            'RABBITMQ_NODENAME=rabbit@localhost\n'
         )
 
     # ------------------------------------------------------------------ #
@@ -290,7 +288,7 @@ class RabbitMQHandler(HTTPHandlerBase):
     def _api_aliveness(self, decoded_path: str) -> str:
         """Aliveness test for a vhost."""
         # Extract vhost: /api/aliveness-test/<vhost>
-        vhost = decoded_path.split('/api/aliveness-test/', 1)[-1] or '/'
+        decoded_path.split('/api/aliveness-test/', 1)[-1] or '/'
         result = {'status': 'ok'}
         return json.dumps(result)
 

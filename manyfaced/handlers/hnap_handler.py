@@ -65,9 +65,7 @@ class HNAPHandler(HTTPHandlerBase):
         if path == '/':
             body = self._router_login_page()
             return (
-                self._build_http_response(
-                    body, 200, 'OK', 'text/html; charset=UTF-8'
-                ),
+                self._build_http_response(body, 200, 'OK', 'text/html; charset=UTF-8'),
                 self.DETECTED_ID,
             )
 

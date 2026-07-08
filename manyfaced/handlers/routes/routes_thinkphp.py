@@ -31,7 +31,12 @@ ROUTES: list[Route] = [
     Route(PathExact('/public/index.php'), _thinkphp(), THINKPHP_HTTP, 'thinkphp_public_index_php'),
     # Prefixed catch-alls for anything under the entry scripts.
     Route(PathPrefix('/index.php'), _thinkphp(), THINKPHP_HTTP, 'thinkphp_index_php_prefix'),
-    Route(PathPrefix('/public/index.php'), _thinkphp(), THINKPHP_HTTP, 'thinkphp_public_index_php_prefix'),
+    Route(
+        PathPrefix('/public/index.php'),
+        _thinkphp(),
+        THINKPHP_HTTP,
+        'thinkphp_public_index_php_prefix',
+    ),
     # General framework namespace catch.
     Route(PathPrefix('/thinkphp'), _thinkphp(), THINKPHP_HTTP, 'thinkphp_namespace'),
 ]

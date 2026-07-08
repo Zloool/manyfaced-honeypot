@@ -17,7 +17,6 @@ any login/auth POST.
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 import logging
 
@@ -204,25 +203,24 @@ class ZabbixHandler(HTTPHandlerBase):
         """Minimal valid ICO favicon so /zabbix/favicon.ico resolves."""
         # 16x16 32-bit ICO header + a single blank-ish bitmap header.
         ico = (
-            b'\x00\x00'          # Reserved
-            b'\x01\x00'          # Type = icon
-            b'\x01\x00'          # Count = 1
+            b'\x00\x00'  # Reserved
+            b'\x01\x00'  # Type = icon
+            b'\x01\x00'  # Count = 1
             # Directory entry
-            b'\x10'              # Width 16
-            b'\x10'              # Height 16
-            b'\x00'              # Palette
-            b'\x00'              # Reserved
-            b'\x01\x00'          # Color planes
-            b'\x20\x00'          # Bit count 32
+            b'\x10'  # Width 16
+            b'\x10'  # Height 16
+            b'\x00'  # Palette
+            b'\x00'  # Reserved
+            b'\x01\x00'  # Color planes
+            b'\x20\x00'  # Bit count 32
             b'\x00\x00\x00\x00'  # Data size (placeholder, ignored by most clients)
             b'\x16\x00\x00\x00'  # Offset = 22
             # BITMAPINFOHEADER (40 bytes) + 16x16x4 RGBA
             b'\x28\x00\x00\x00'  # Header size
             b'\x10\x00\x00\x00'  # Width
             b'\x20\x00\x00\x00'  # Height (2 * 16)
-            b'\x01\x00'          # Planes
-            b'\x20\x00'          # Bit count
-            + b'\x00' * 72       # Remaining header + pixel data (zeroed)
+            b'\x01\x00'  # Planes
+            b'\x20\x00' + b'\x00' * 72  # Bit count  # Remaining header + pixel data (zeroed)
         )
         return self._build_http_response(
             ico.decode('latin-1'), 200, 'OK', content_type='image/x-icon'
@@ -230,7 +228,7 @@ class ZabbixHandler(HTTPHandlerBase):
 
     def _login_failed_response(self) -> bytes:
         """Login failed response – contains 'Error' (credential-capture probe)."""
-        body = f"""<!DOCTYPE html>
+        body = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">

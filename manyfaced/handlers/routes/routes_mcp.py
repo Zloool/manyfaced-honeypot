@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from manyfaced.handlers.router import PathExact, PathPrefix, Route
+from manyfaced.handlers.router import PathExact, Route
 
 from manyfaced.common.status import MCP_HTTP
 

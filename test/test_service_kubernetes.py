@@ -24,9 +24,7 @@ class TestKubernetesHandler(unittest.TestCase):
             'GET /api/v1 HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
         )
-        self.assertTrue(
-            b'kube' in response.lower() or b'kubernetes' in response.lower()
-        )
+        self.assertTrue(b'kube' in response.lower() or b'kubernetes' in response.lower())
         self.assertEqual(detected, KUBERNETES_HTTP)
 
     def test_login_post(self):

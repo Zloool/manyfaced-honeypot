@@ -214,18 +214,18 @@ class GitLabHandler(HTTPHandlerBase):
     def _env_disclosure(self) -> str:
         """Fake .env disclosure (responds to /gitlab/%2eenv probes)."""
         return (
-            "APP_NAME=GitLab\\n"
-            "APP_ENV=production\\n"
-            "GITLAB_VERSION=16.9.0\\n"
-            "DATABASE_URL=postgresql://gitlab:gitlab@127.0.0.1:5432/gitlabhq_production\\n"
-            "REDIS_URL=redis://127.0.0.1:6379/0\\n"
-            "SECRET_KEY_BASE=CHANGE_ME_DO_NOT_USE_IN_PRODUCTION\\n"
-            "GITLAB_HOST=gitlab.example.com\\n"
+            'APP_NAME=GitLab\\n'
+            'APP_ENV=production\\n'
+            'GITLAB_VERSION=16.9.0\\n'
+            'DATABASE_URL=postgresql://gitlab:gitlab@127.0.0.1:5432/gitlabhq_production\\n'
+            'REDIS_URL=redis://127.0.0.1:6379/0\\n'
+            'SECRET_KEY_BASE=CHANGE_ME_DO_NOT_USE_IN_PRODUCTION\\n'
+            'GITLAB_HOST=gitlab.example.com\\n'
         )
 
     def _asset_response(self) -> str:
         """Generic asset response (probes to /assets/...)."""
-        return "/* GitLab static asset */"
+        return '/* GitLab static asset */'
 
     # ------------------------------------------------------------------- API
 
@@ -252,18 +252,18 @@ class GitLabHandler(HTTPHandlerBase):
     def _metrics(self) -> str:
         """GitLab Prometheus metrics endpoint (/-/metrics)."""
         return (
-            "# HELP gitlab_usage_ping_requests_total Total usage ping requests\n"
-            "# TYPE gitlab_usage_ping_requests_total counter\n"
-            "gitlab_usage_ping_requests_total 0\n"
-            "# HELP gitlab_pipeline_duration_seconds Pipeline duration\n"
-            "# TYPE gitlab_pipeline_duration_seconds histogram\n"
-            "gitlab_pipeline_duration_seconds_sum 0\n"
-            "gitlab_pipeline_duration_seconds_count 0\n"
-            "# HELP ruby_gc_stat_bytes_allocated Total bytes allocated\n"
-            "# TYPE ruby_gc_stat_bytes_allocated counter\n"
-            "ruby_gc_stat_bytes_allocated 12345678\n"
-            "# HELP gitlab_version_info GitLab version information\n"
-            "# TYPE gitlab_version_info gauge\n"
+            '# HELP gitlab_usage_ping_requests_total Total usage ping requests\n'
+            '# TYPE gitlab_usage_ping_requests_total counter\n'
+            'gitlab_usage_ping_requests_total 0\n'
+            '# HELP gitlab_pipeline_duration_seconds Pipeline duration\n'
+            '# TYPE gitlab_pipeline_duration_seconds histogram\n'
+            'gitlab_pipeline_duration_seconds_sum 0\n'
+            'gitlab_pipeline_duration_seconds_count 0\n'
+            '# HELP ruby_gc_stat_bytes_allocated Total bytes allocated\n'
+            '# TYPE ruby_gc_stat_bytes_allocated counter\n'
+            'ruby_gc_stat_bytes_allocated 12345678\n'
+            '# HELP gitlab_version_info GitLab version information\n'
+            '# TYPE gitlab_version_info gauge\n'
             'gitlab_version_info{version="16.9.0",edition="ee"} 1\n'
         )
 

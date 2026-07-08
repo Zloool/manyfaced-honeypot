@@ -58,9 +58,7 @@ class TestLaravelHandler(unittest.TestCase):
         profile = MagicMock()
         self.handler.bot_profiles = {'1.2.3.4': profile}
         raw = 'GET /laravel/%2eenv HTTP/1.1\r\nHost: example.com\r\n\r\n'
-        response, detected = self.handler.generate_response(
-            '/laravel/%2eenv', raw, '1.2.3.4'
-        )
+        response, detected = self.handler.generate_response('/laravel/%2eenv', raw, '1.2.3.4')
         self.assertIn(b'APP_KEY', response)
         self.assertEqual(detected, LARAVEL_HTTP)
 

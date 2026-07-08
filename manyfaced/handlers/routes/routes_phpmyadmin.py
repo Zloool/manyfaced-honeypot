@@ -29,17 +29,26 @@ ROUTES: list[Route] = [
     Route(PathExact('/phpMyAdmin'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_phpMyAdmin'),
     Route(PathExact('/pma'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_pma'),
     Route(PathExact('/index.php'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_index_php'),
-    Route(PathPrefix('/phpmyadmin/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_phpmyadmin_slash'),
+    Route(
+        PathPrefix('/phpmyadmin/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_phpmyadmin_slash'
+    ),
     Route(PathPrefix('/pma/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_pma_slash'),
     # Legacy aliases (kept so the ConfigDisclosure /mysql overlap tests stay green).
     # /mysql — phpMyAdmin wins (overlap: ConfigDisclosure also claims it).
     Route(PathExact('/mysql'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_mysql'),
     Route(PathPrefix('/mysql/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_mysql_slash'),
-    Route(PathExact('/mysql/index.php'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_mysql_index_php'),
+    Route(
+        PathExact('/mysql/index.php'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_mysql_index_php'
+    ),
     Route(PathExact('/db'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_db'),
     Route(PathPrefix('/db/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_db_slash'),
     Route(PathExact('/db/index.php'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_db_index_php'),
     Route(PathExact('/database'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_database'),
     Route(PathPrefix('/database/'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_database_slash'),
-    Route(PathExact('/database/index.php'), _phpmyadmin(), PHPMYADMIN_HTTP, 'phpmyadmin_database_index_php'),
+    Route(
+        PathExact('/database/index.php'),
+        _phpmyadmin(),
+        PHPMYADMIN_HTTP,
+        'phpmyadmin_database_index_php',
+    ),
 ]

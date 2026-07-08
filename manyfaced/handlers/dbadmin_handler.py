@@ -100,7 +100,9 @@ class DBAdminHandler(HTTPHandlerBase):
     @staticmethod
     def _is_login_path(decoded_path: str) -> bool:
         low = decoded_path.lower()
-        return any(kw in low for kw in ('login', 'auth', 'index.php', 'dbadmin', 'myadmin', 'adminer'))
+        return any(
+            kw in low for kw in ('login', 'auth', 'index.php', 'dbadmin', 'myadmin', 'adminer')
+        )
 
     def _brand_for_path(self, decoded_path: str) -> str:
         low = decoded_path.lower().strip('/')
@@ -113,7 +115,7 @@ class DBAdminHandler(HTTPHandlerBase):
     # ------------------------------------------------------------- responses
     def _login_page(self, brand: str = 'Adminer') -> str:
         """DB admin login page impersonating the requested brand."""
-        server_header = {
+        {
             'Adminer': f'Adminer/{self.VERSION}',
             'phpMyAdmin': 'phpMyAdmin/5.2.1',
             'SQL Buddy': 'SQLBuddy/1.3.3',
@@ -182,21 +184,21 @@ input[type=text], input[type=password], select {{ width: 100%; padding: 9px 10px
     def _env_page(self) -> str:
         """Fake .env disclosure (DB credentials-style file)."""
         return (
-            "# Environment configuration (leaked)\n"
-            "APP_ENV=production\n"
-            "APP_DEBUG=false\n"
-            "APP_KEY=base64:Z3VsbHmV3JlYWxseW5vdGFyZWFsa2V5\n"
-            "DB_CONNECTION=mysql\n"
-            "DB_HOST=127.0.0.1\n"
-            "DB_PORT=3306\n"
-            "DB_DATABASE=app_prod\n"
-            "DB_USERNAME=admin\n"
-            "DB_PASSWORD=S3cr3tP@ssw0rd!\n"
-            "REDIS_HOST=127.0.0.1\n"
-            "REDIS_PASSWORD=null\n"
-            "MAIL_HOST=smtp.localhost\n"
-            "MAIL_USERNAME=noreply@example.com\n"
-            "MAIL_PASSWORD=mailpass123\n"
+            '# Environment configuration (leaked)\n'
+            'APP_ENV=production\n'
+            'APP_DEBUG=false\n'
+            'APP_KEY=base64:Z3VsbHmV3JlYWxseW5vdGFyZWFsa2V5\n'
+            'DB_CONNECTION=mysql\n'
+            'DB_HOST=127.0.0.1\n'
+            'DB_PORT=3306\n'
+            'DB_DATABASE=app_prod\n'
+            'DB_USERNAME=admin\n'
+            'DB_PASSWORD=S3cr3tP@ssw0rd!\n'
+            'REDIS_HOST=127.0.0.1\n'
+            'REDIS_PASSWORD=null\n'
+            'MAIL_HOST=smtp.localhost\n'
+            'MAIL_USERNAME=noreply@example.com\n'
+            'MAIL_PASSWORD=mailpass123\n'
         )
 
     def _login_failed_response(self) -> bytes:

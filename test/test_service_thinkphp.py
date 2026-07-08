@@ -35,9 +35,7 @@ class TestThinkPHPHandler(unittest.TestCase):
             '&function=call_user_func_array&vars[0]=md5&vars[1][]=hello '
             'HTTP/1.1\r\nHost: x\r\n\r\n'
         )
-        response, detected = self.handler.generate_response(
-            '/index.php', probe, '1.2.3.4'
-        )
+        response, detected = self.handler.generate_response('/index.php', probe, '1.2.3.4')
         self.assertIn(b'ThinkPHP', response)
         self.assertIn(b'invokefunction', response)
         self.assertEqual(detected, THINKPHP_HTTP)

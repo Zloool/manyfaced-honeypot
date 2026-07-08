@@ -112,7 +112,9 @@ class GrafanaHandler(HTTPHandlerBase):
         if path_lower.startswith('/api/'):
             body = self._api_response(path_lower)
             return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
-        if path_lower in ('/grafana', '/login', '/grafana/login') or path_lower.startswith('/grafana/'):
+        if path_lower in ('/grafana', '/login', '/grafana/login') or path_lower.startswith(
+            '/grafana/'
+        ):
             body = self._login_page()
             return self._build_http_response(body, 200, 'OK'), self.DETECTED_ID
 

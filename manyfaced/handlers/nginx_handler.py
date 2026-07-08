@@ -136,8 +136,7 @@ class NginxHandler(HTTPHandlerBase):
             + ' GMT</dt>\n'
             '<dt>Server Version: nginx/' + self.VERSION + '</dt>\n'
             '<dt>Server MPM: event</dt>\n'
-            '<dt>Server Built: ' + datetime.now(timezone.utc).strftime('%b %d %Y')
-            + '</dt></dl>\n'
+            '<dt>Server Built: ' + datetime.now(timezone.utc).strftime('%b %d %Y') + '</dt></dl>\n'
             '</body></html>\n'
         )
 

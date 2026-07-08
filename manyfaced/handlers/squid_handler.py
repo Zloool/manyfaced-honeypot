@@ -146,10 +146,7 @@ Squid proxy process for runtime statistics and configuration.</p>
 
     def _login_failed_response(self) -> bytes:
         """Cachemgr login failed response — echoes 'Error' for probing bots."""
-        body = (
-            '<html><body><h3>Authorization Error</h3>'
-            '<p>Invalid credentials.</p></body></html>'
-        )
+        body = '<html><body><h3>Authorization Error</h3><p>Invalid credentials.</p></body></html>'
         return self._build_http_response(body, 200, 'OK')
 
     # -- helpers ------------------------------------------------------------

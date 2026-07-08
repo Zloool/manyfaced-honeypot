@@ -87,12 +87,15 @@ class PhpMyAdminHandler(HTTPHandlerBase):
 
     def _login_page(self) -> str:
         """Generate the phpMyAdmin login page (logo, title, login form)."""
-        return """<!DOCTYPE html>
+        return (
+            """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>phpMyAdmin """ + self.VERSION + """ - Login</title>
+    <title>phpMyAdmin """
+            + self.VERSION
+            + """ - Login</title>
     <link rel="stylesheet" type="text/css" href="phpmyadmin.css.php?nocache=1">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <style>
@@ -118,7 +121,9 @@ class PhpMyAdminHandler(HTTPHandlerBase):
         <div class="logo">
             <img src="themes/dot.gif" alt="phpMyAdmin">
         </div>
-        <h1>phpMyAdmin """ + self.VERSION + """</h1>
+        <h1>phpMyAdmin """
+            + self.VERSION
+            + """</h1>
         <form method="post" action="index.php" name="login_form" id="login_form">
             <input type="hidden" name="token" value="3f9a1c7b2e4d5f60817293a4b5c6d7e8">
             <label for="input_username">Username:</label>
@@ -137,18 +142,24 @@ class PhpMyAdminHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
+        )
 
     def _login_failed_response(self) -> bytes:
         """Return a fake 'access denied' login response (contains 'Error')."""
-        body = """<!DOCTYPE html>
+        body = (
+            """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>phpMyAdmin """ + self.VERSION + """ - Error</title>
+    <title>phpMyAdmin """
+            + self.VERSION
+            + """ - Error</title>
 </head>
 <body>
     <div id="page_content">
-        <h1>phpMyAdmin """ + self.VERSION + """</h1>
+        <h1>phpMyAdmin """
+            + self.VERSION
+            + """</h1>
         <div class="error">
             <strong>Error</strong>
             <p>#1045 - Access denied for user 'root'@'localhost' (using password: YES)</p>
@@ -164,18 +175,24 @@ class PhpMyAdminHandler(HTTPHandlerBase):
     </div>
 </body>
 </html>"""
+        )
         return self._build_http_response(body, 'text/html; charset=UTF-8')
 
     def _sql_endpoint(self) -> str:
         """Fake phpMyAdmin SQL query endpoint response."""
-        return """<!DOCTYPE html>
+        return (
+            """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>phpMyAdmin """ + self.VERSION + """ - SQL</title>
+    <title>phpMyAdmin """
+            + self.VERSION
+            + """ - SQL</title>
 </head>
 <body>
-    <h1>phpMyAdmin """ + self.VERSION + """</h1>
+    <h1>phpMyAdmin """
+            + self.VERSION
+            + """</h1>
     <div id="sqlqueryresults">
         <table class="data">
             <caption>1 row(s) returned</caption>
@@ -186,20 +203,21 @@ class PhpMyAdminHandler(HTTPHandlerBase):
     <p class="server-info">Server: localhost via TCP/IP &middot; MySQL 8.0.36</p>
 </body>
 </html>"""
+        )
 
     def _env_disclosure(self) -> str:
         """Fake environment / .env disclosure for the /.env probe."""
         return (
-            "# phpMyAdmin environment configuration (fake)\n"
-            "APP_ENV=production\n"
-            "APP_DEBUG=false\n"
-            "PMA_VERSION=" + self.VERSION + "\n"
-            "DB_HOST=127.0.0.1\n"
-            "DB_PORT=3306\n"
-            "DB_NAME=phpmyadmin\n"
-            "DB_USER=root\n"
-            "DB_PASSWORD=Sup3rSecret!PMA\n"
-            "BLOWFISH_SECRET=4f1c8a9b2e7d6c5a4039281746553f1b\n"
+            '# phpMyAdmin environment configuration (fake)\n'
+            'APP_ENV=production\n'
+            'APP_DEBUG=false\n'
+            'PMA_VERSION=' + self.VERSION + '\n'
+            'DB_HOST=127.0.0.1\n'
+            'DB_PORT=3306\n'
+            'DB_NAME=phpmyadmin\n'
+            'DB_USER=root\n'
+            'DB_PASSWORD=Sup3rSecret!PMA\n'
+            'BLOWFISH_SECRET=4f1c8a9b2e7d6c5a4039281746553f1b\n'
         )
 
     # ------------------------------------------------------------------

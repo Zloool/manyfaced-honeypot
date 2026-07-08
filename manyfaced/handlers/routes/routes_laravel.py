@@ -26,7 +26,12 @@ def _laravel() -> type:
 ROUTES: list[Route] = [
     # ---- Laravel (issue #286) ------------------------------------------------
     # Ignition debug handler — exact endpoints first, then prefix catch-all.
-    Route(PathExact('/_ignition/execute-solution'), _laravel(), LARAVEL_HTTP, 'laravel_ignition_execute'),
+    Route(
+        PathExact('/_ignition/execute-solution'),
+        _laravel(),
+        LARAVEL_HTTP,
+        'laravel_ignition_execute',
+    ),
     Route(PathExact('/_ignition'), _laravel(), LARAVEL_HTTP, 'laravel_ignition_exact'),
     Route(PathPrefix('/_ignition/'), _laravel(), LARAVEL_HTTP, 'laravel_ignition_prefix'),
     # laravel/core/.env.* disclosure probes (more specific before /laravel/ prefix).

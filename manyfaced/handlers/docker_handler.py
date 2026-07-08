@@ -69,7 +69,9 @@ class DockerHandler(HTTPHandlerBase):
         path_lower = decoded.lower()
 
         # Capture credentials from login/registry auth attempts.
-        if method == 'POST' and ('login' in path_lower or 'auth' in path_lower or 'token' in path_lower):
+        if method == 'POST' and (
+            'login' in path_lower or 'auth' in path_lower or 'token' in path_lower
+        ):
             credentials, _response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
@@ -79,56 +81,51 @@ class DockerHandler(HTTPHandlerBase):
         # Registry v2 "ping" endpoint.
         if decoded in ('/v2', '/v2/'):
             body = self._registry_ping()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Registry v2 catalog.
         if decoded == '/v2/_catalog':
             body = self._registry_catalog()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Registry v2 repository tags: /v2/<name>/tags/list
         if decoded.endswith('/tags/list') and decoded.startswith('/v2/'):
-            repo = decoded[len('/v2/'):-len('/tags/list')].rstrip('/')
+            repo = decoded[len('/v2/') : -len('/tags/list')].rstrip('/')
             body = self._registry_tags(repo)
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Registry v2 manifest / blob probes -> 404 like a real empty registry.
         if decoded.startswith('/v2/'):
             body = self._registry_manifest_missing(decoded)
-            return self._build_http_response(body, 404, 'Not Found',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 404, 'Not Found', 'application/json'
+            ), self.DETECTED_ID
 
         # Daemon info endpoint.
         if decoded in ('/info', '/_info'):
             body = self._daemon_info()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Daemon version endpoint.
         if decoded in ('/version', '/_version'):
             body = self._daemon_version()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Daemon container listing endpoint.
         if decoded in ('/containers/json', '/containers'):
             body = self._daemon_containers()
-            return self._build_http_response(body, 200, 'OK',
-                                             'application/json'), self.DETECTED_ID
+            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
         # Path-traversal probe for a leaked .env (e.g. /docker/.env, /docker/%2eenv).
         if path_lower.endswith('.env'):
             body = self._env_disclosure()
-            return self._build_http_response(body, 200, 'OK',
-                                             'text/plain; charset=UTF-8'), self.DETECTED_ID
+            return self._build_http_response(
+                body, 200, 'OK', 'text/plain; charset=UTF-8'
+            ), self.DETECTED_ID
 
         # Fallback: registry v2 ping is the safest default for this face.
         body = self._registry_ping()
-        return self._build_http_response(body, 200, 'OK',
-                                         'application/json'), self.DETECTED_ID
+        return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
 
     # -- Registry v2 API ---------------------------------------------------
 
@@ -146,107 +143,115 @@ class DockerHandler(HTTPHandlerBase):
 
     def _registry_manifest_missing(self, path: str) -> str:
         """404 for manifest/blob lookups, mirroring a real empty registry."""
-        return json.dumps({
-            'errors': [{
-                'code': 'MANIFEST_UNKNOWN',
-                'message': 'manifest unknown',
-                'detail': {'Name': path, 'Tag': 'latest'},
-            }],
-        })
+        return json.dumps(
+            {
+                'errors': [
+                    {
+                        'code': 'MANIFEST_UNKNOWN',
+                        'message': 'manifest unknown',
+                        'detail': {'Name': path, 'Tag': 'latest'},
+                    }
+                ],
+            }
+        )
 
     # -- Docker daemon API --------------------------------------------------
 
     def _daemon_version(self) -> str:
         """Daemon ``GET /version`` response."""
-        return json.dumps({
-            'Platform': {'Name': 'Docker Engine - Community'},
-            'Components': [
-                {
-                    'Name': 'Engine',
-                    'Version': self.ENGINE_VERSION,
-                    'Details': {
-                        'ApiVersion': self.API_VERSION,
-                        'Arch': self.ARCH,
-                        'BuildTime': '2024-03-20T10:36:13.000000000+00:00',
-                        'Experimental': 'false',
-                        'GitCommit': '8e96db1',
-                        'GoVersion': self.GO_VERSION,
-                        'KernelVersion': '5.15.0',
-                        'MinAPIVersion': '1.24',
-                        'Os': self.OS,
+        return json.dumps(
+            {
+                'Platform': {'Name': 'Docker Engine - Community'},
+                'Components': [
+                    {
+                        'Name': 'Engine',
+                        'Version': self.ENGINE_VERSION,
+                        'Details': {
+                            'ApiVersion': self.API_VERSION,
+                            'Arch': self.ARCH,
+                            'BuildTime': '2024-03-20T10:36:13.000000000+00:00',
+                            'Experimental': 'false',
+                            'GitCommit': '8e96db1',
+                            'GoVersion': self.GO_VERSION,
+                            'KernelVersion': '5.15.0',
+                            'MinAPIVersion': '1.24',
+                            'Os': self.OS,
+                        },
                     },
-                },
-            ],
-            'Version': self.ENGINE_VERSION,
-            'ApiVersion': self.API_VERSION,
-            'MinAPIVersion': '1.24',
-            'GitCommit': '8e96db1',
-            'GoVersion': self.GO_VERSION,
-            'Os': self.OS,
-            'Arch': self.ARCH,
-            'KernelVersion': '5.15.0',
-            'BuildTime': '2024-03-20T10:36:13.000000000+00:00',
-        })
+                ],
+                'Version': self.ENGINE_VERSION,
+                'ApiVersion': self.API_VERSION,
+                'MinAPIVersion': '1.24',
+                'GitCommit': '8e96db1',
+                'GoVersion': self.GO_VERSION,
+                'Os': self.OS,
+                'Arch': self.ARCH,
+                'KernelVersion': '5.15.0',
+                'BuildTime': '2024-03-20T10:36:13.000000000+00:00',
+            }
+        )
 
     def _daemon_info(self) -> str:
         """Daemon ``GET /info`` response."""
-        return json.dumps({
-            'ID': 'ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123',
-            'Containers': 0,
-            'ContainersRunning': 0,
-            'ContainersPaused': 0,
-            'ContainersStopped': 0,
-            'Images': 0,
-            'Driver': 'overlay2',
-            'DriverStatus': [['Backing Filesystem', 'extfs']],
-            'SystemStatus': None,
-            'Plugins': {
-                'Volume': ['local'],
-                'Network': ['bridge', 'host', 'none', 'overlay'],
-                'Authorization': None,
-                'Log': ['json-file', 'syslog', 'journald'],
-            },
-            'MemoryLimit': True,
-            'SwapLimit': True,
-            'CpuCfsPeriod': True,
-            'CpuCfsQuota': True,
-            'CPUShares': True,
-            'CPUSet': True,
-            'PidsLimit': True,
-            'IPv4Forwarding': True,
-            'BridgeNfIptables': True,
-            'BridgeNfIp6tables': True,
-            'Debug': False,
-            'NFd': 23,
-            'NGoroutines': 45,
-            'SystemTime': datetime.now(timezone.utc).isoformat(),
-            'LoggingDriver': 'json-file',
-            'CgroupDriver': 'systemd',
-            'CgroupVersion': '2',
-            'KernelVersion': '5.15.0',
-            'OperatingSystem': 'Ubuntu 22.04.4 LTS',
-            'OSVersion': '22.04',
-            'OSType': self.OS,
-            'Architecture': self.ARCH,
-            'NCPU': 4,
-            'MemTotal': 16777216000,
-            'IndexServerAddress': 'https://index.docker.io/v1/',
-            'RegistryConfig': {
-                'InsecureRegistryCIDRs': ['127.0.0.0/8'],
-                'IndexConfigs': {
-                    'docker.io': {
-                        'Name': 'docker.io',
-                        'Mirrors': [],
-                        'Secure': True,
-                        'Official': True,
-                    },
+        return json.dumps(
+            {
+                'ID': 'ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123',
+                'Containers': 0,
+                'ContainersRunning': 0,
+                'ContainersPaused': 0,
+                'ContainersStopped': 0,
+                'Images': 0,
+                'Driver': 'overlay2',
+                'DriverStatus': [['Backing Filesystem', 'extfs']],
+                'SystemStatus': None,
+                'Plugins': {
+                    'Volume': ['local'],
+                    'Network': ['bridge', 'host', 'none', 'overlay'],
+                    'Authorization': None,
+                    'Log': ['json-file', 'syslog', 'journald'],
                 },
-                'Mirrors': [],
-            },
-            'DockerRootDir': '/var/lib/docker',
-            'Name': 'docker-host',
-            'ServerVersion': self.ENGINE_VERSION,
-        })
+                'MemoryLimit': True,
+                'SwapLimit': True,
+                'CpuCfsPeriod': True,
+                'CpuCfsQuota': True,
+                'CPUShares': True,
+                'CPUSet': True,
+                'PidsLimit': True,
+                'IPv4Forwarding': True,
+                'BridgeNfIptables': True,
+                'BridgeNfIp6tables': True,
+                'Debug': False,
+                'NFd': 23,
+                'NGoroutines': 45,
+                'SystemTime': datetime.now(timezone.utc).isoformat(),
+                'LoggingDriver': 'json-file',
+                'CgroupDriver': 'systemd',
+                'CgroupVersion': '2',
+                'KernelVersion': '5.15.0',
+                'OperatingSystem': 'Ubuntu 22.04.4 LTS',
+                'OSVersion': '22.04',
+                'OSType': self.OS,
+                'Architecture': self.ARCH,
+                'NCPU': 4,
+                'MemTotal': 16777216000,
+                'IndexServerAddress': 'https://index.docker.io/v1/',
+                'RegistryConfig': {
+                    'InsecureRegistryCIDRs': ['127.0.0.0/8'],
+                    'IndexConfigs': {
+                        'docker.io': {
+                            'Name': 'docker.io',
+                            'Mirrors': [],
+                            'Secure': True,
+                            'Official': True,
+                        },
+                    },
+                    'Mirrors': [],
+                },
+                'DockerRootDir': '/var/lib/docker',
+                'Name': 'docker-host',
+                'ServerVersion': self.ENGINE_VERSION,
+            }
+        )
 
     def _daemon_containers(self) -> str:
         """Daemon ``GET /containers/json`` response (empty ps)."""
@@ -275,10 +280,7 @@ class DockerHandler(HTTPHandlerBase):
 
     def _login_failed_response(self) -> bytes:
         """Login failed response - encourages further probing."""
-        body = (
-            '<html><body><h3>Error</h3>'
-            '<p>Invalid username or password.</p></body></html>'
-        )
+        body = '<html><body><h3>Error</h3><p>Invalid username or password.</p></body></html>'
         return self._build_http_response(body, 200, 'OK')
 
     def _extract_method(self, raw_request: str) -> str:
