@@ -311,15 +311,29 @@ jobs:
           SHORT_SHA="${{ steps.sha.outputs.short_sha }}"
           IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${SHORT_SHA}"
 
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            set -euo pipefail && \
-            command -v docker >/dev/null 2>&1 || { echo 'FAIL: docker not installed on droplet'; exit 1; } && \
-            if [ -n \"${GHCR_TOKEN}\" ]; then echo \"${GHCR_TOKEN}\" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin; fi && \
-            # GHCR is eventually consistent — a just-pushed tag may take a few
-            # seconds to be visible. Retry the pull with backoff so a registry
-            # propagation delay doesn't fail the whole deploy.
-            for a in 1 2 3 4 5; do docker pull '${IMAGE}' && break; echo \"pull attempt $a failed, retrying in 5s\"; sleep 5; done && \
-            echo \"Pulled ${IMAGE}\""
+          # Re-authenticate on the droplet only if a pull token is provided;
+          # otherwise rely on the droplet's existing docker login (cached in
+          # /root/.docker/config.json from the manual cutover).
+          if [ -n "${GHCR_TOKEN}" ]; then
+            ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "echo \"${GHCR_TOKEN}\" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          fi
+
+          # GHCR is eventually consistent — a just-pushed tag may take a few
+          # seconds to be visible. Retry the pull (on the runner side, looping
+          # ssh calls) so a brief registry propagation delay doesn't fail the
+          # whole deploy. The retry loop lives OUTSIDE the ssh string to avoid
+          # bash quoting/set -u pitfalls.
+          PULLED=""
+          for i in 1 2 3 4 5; do
+            if ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "docker pull '${IMAGE}'"; then
+              PULLED=1
+              break
+            fi
+            echo "pull attempt ${i} failed, retrying in 5s..."
+            sleep 5
+          done
+          [ -n "${PULLED}" ] || { echo "FAIL: could not pull ${IMAGE}"; exit 1; }
+          echo "Pulled ${IMAGE}"
 
       - name: Prepare host mounts (config dir + writable log paths)
         env:
@@ -504,22 +518,30 @@ jobs:
           set -euo pipefail
 
           # Re-pin the container to the previously deployed image tag.
-          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
-            set -euo pipefail && \
-            if [ ! -f /opt/manyfaced/deployed-images.log ]; then \
-              echo 'No deployed-images.log — cannot auto-rollback'; exit 1; \
-            fi && \
-            CURRENT_IMG=\$(docker inspect --format='{{.Config.Image}}' manyfaced 2>/dev/null || true) && \
-            PREV_IMG=\$(grep -v \"^\${CURRENT_IMG}\$\" /opt/manyfaced/deployed-images.log | tail -1) && \
-            if [ -z \"\$PREV_IMG\" ]; then \
-              echo 'No prior image tag to roll back to — manual intervention required'; exit 1; \
-            fi && \
-            for a in 1 2 3 4 5; do docker pull \"\$PREV_IMG\" && break; echo \"rollback pull attempt \$a failed, retrying in 5s\"; sleep 5; done && \
-            docker rm -f manyfaced 2>/dev/null || true && \
-            docker run -d --name manyfaced --restart unless-stopped --network host --user 1001:1001 \
-              --env HOME=/opt/manyfaced/bots --env XDG_CONFIG_HOME=/opt/manyfaced/host-config \
-              --env-file /opt/manyfaced/honeypot.env \
-              -v /home/honeypot/.config/manyfaced:/opt/manyfaced/host-config/manyfaced:ro \
-              -v /opt/manyfaced/bots:/opt/manyfaced/bots \
-              \"\$PREV_IMG\" && \
-            echo \"Rollback successful — container running on \$PREV_IMG\""
+          # Resolve PREV_IMG on the droplet, then pull (with runner-side retry)
+          # and re-launch — all kept OUTSIDE a single ssh string to avoid the
+          # bash quoting/set -u pitfalls that broke the earlier loop.
+          PREV_IMG=$(ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "
+            if [ ! -f /opt/manyfaced/deployed-images.log ]; then echo 'NO_LOG'; exit 0; fi
+            CURRENT_IMG=\$(docker inspect --format='{{.Config.Image}}' manyfaced 2>/dev/null || true)
+            grep -v \"^\${CURRENT_IMG}\$\" /opt/manyfaced/deployed-images.log | tail -1")
+
+          if [ -z "${PREV_IMG}" ] || [ "${PREV_IMG}" = "NO_LOG" ]; then
+            echo 'No prior image tag to roll back to — manual intervention required'
+            exit 1
+          fi
+
+          PULLED=""
+          for i in 1 2 3 4 5; do
+            if ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "docker pull '${PREV_IMG}'"; then
+              PULLED=1
+              break
+            fi
+            echo "rollback pull attempt ${i} failed, retrying in 5s..."
+            sleep 5
+          done
+          [ -n "${PULLED}" ] || { echo "FAIL: could not pull ${PREV_IMG}"; exit 1; }
+
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "docker rm -f manyfaced 2>/dev/null || true"
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" "docker run -d --name manyfaced --restart unless-stopped --network host --user 1001:1001 --env HOME=/opt/manyfaced/bots --env XDG_CONFIG_HOME=/opt/manyfaced/host-config --env-file /opt/manyfaced/honeypot.env -v /home/honeypot/.config/manyfaced:/opt/manyfaced/host-config/manyfaced:ro -v /opt/manyfaced/bots:/opt/manyfaced/bots '${PREV_IMG}'"
+          echo "Rollback successful — container running on ${PREV_IMG}"
