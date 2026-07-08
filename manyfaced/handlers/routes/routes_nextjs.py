@@ -1,4 +1,13 @@
-"""Next.js routes (scaffold). TODO: refine to match real probe paths."""
+"""Next.js (Vercel) routes.
+
+Matches the production probe paths observed in the wild (issue #277):
+  /                 Next.js app shell home page
+  /_next            Next.js production asset directory (/_next/static, /_next/image)
+  /api              Next.js API routes (/api/health health probe)
+  /vercel           Vercel platform probe
+  /nextjs/          Next.js-specific probe namespace (.env / traversal probes,
+                    e.g. /nextjs/%2eenv -> /nextjs/.env after decoding)
+"""
 
 from __future__ import annotations
 
@@ -14,8 +23,11 @@ def _nextjs() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- Next.js (issue #277) ----
-    Route(PathExact('/_next'), _nextjs(), NEXTJS_HTTP, 'nextjs_0'),
-    Route(PathExact('/__nextjs_action'), _nextjs(), NEXTJS_HTTP, 'nextjs_1'),
-    Route(PathExact('/vercel.json'), _nextjs(), NEXTJS_HTTP, 'nextjs_2'),
+    # ---- Next.js (Vercel) (issue #277) ------------------------------------
+    Route(PathExact('/'), _nextjs(), NEXTJS_HTTP, 'nextjs_root'),
+    Route(PathExact('/api/health'), _nextjs(), NEXTJS_HTTP, 'nextjs_api_health'),
+    Route(PathExact('/vercel'), _nextjs(), NEXTJS_HTTP, 'nextjs_vercel'),
+    Route(PathPrefix('/_next/'), _nextjs(), NEXTJS_HTTP, 'nextjs_next_prefix'),
+    Route(PathPrefix('/api/'), _nextjs(), NEXTJS_HTTP, 'nextjs_api_prefix'),
+    Route(PathPrefix('/nextjs/'), _nextjs(), NEXTJS_HTTP, 'nextjs_probe_prefix'),
 ]
