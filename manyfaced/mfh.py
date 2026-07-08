@@ -161,9 +161,7 @@ def run() -> None:
     def _spawn_dashboard() -> Process:
         from manyfaced.web import dashboard
 
-        return Process(
-            args=(args, update_event), name='dashboard', target=dashboard.run_dashboard
-        )
+        return Process(args=(args, update_event), name='dashboard', target=dashboard.run_dashboard)
 
     def _terminate(proc: Process | None) -> None:
         if proc is not None and proc.is_alive():
