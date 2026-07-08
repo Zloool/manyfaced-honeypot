@@ -1053,9 +1053,14 @@ class PostgreSQLStorage(StorageBackend):
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         if self._conn is None:
             return _empty_stats()
-        if since is not None:
+        # Mirror the SQLite backend: convert the human-friendly window
+        # ('24h'/'7d'/'30d'/'all') into an ISO cutoff. 'all' (and None) map to
+        # None so no WHERE clause is emitted — a raw 'all' string compared
+        # against the timestamp column matches nothing.
+        cutoff = _since_to_iso(since)
+        if cutoff is not None:
             where = ' WHERE timestamp >= %s'
-            params: list = [since]
+            params: list = [cutoff]
             and_prefix = ' AND'
         else:
             where = ''

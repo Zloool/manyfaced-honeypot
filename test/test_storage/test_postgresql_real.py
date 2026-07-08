@@ -54,7 +54,8 @@ def _reset_singleton():
 @pytest.fixture()
 def storage():
     reset_storage_singleton()
-    s = PostgreSQLStorage()
+    s = get_storage()
+    assert isinstance(s, PostgreSQLStorage)
     # Ensure a clean table for each test.
     with s._conn.cursor() as cur:
         cur.execute('DELETE FROM honeypot_bears')
