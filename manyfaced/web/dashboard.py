@@ -203,7 +203,11 @@ def _build_payload(range_str: str, token: str) -> dict:
         display_port_list = _data.resolve_display_ports(configured_ports, overview['by_port'])
         display_ports = [(p, max(1, weight_by_port.get(p, 0))) for p in display_port_list]
     finally:
-        store.close()
+        # Do NOT close: get_storage() returns the shared singleton also used by
+        # the capture writer. Closing it here drops the writer's connection and
+        # leaves this query on a broken transaction (aggregate_stats -> 0).
+        # The connection is self-healing (issue #243), so just leave it open.
+        pass
 
     return {
         'token': token,
@@ -238,7 +242,11 @@ def _payload_with_port(payload: dict, port_filter: int) -> dict:
             since=vol_since, bucket=_VOLUME_BUCKETS[payload['range']], port=port_filter
         )
     finally:
-        store.close()
+        # Do NOT close: get_storage() returns the shared singleton also used by
+        # the capture writer. Closing it here drops the writer's connection and
+        # leaves this query on a broken transaction (aggregate_stats -> 0).
+        # The connection is self-healing (issue #243), so just leave it open.
+        pass
     scoped = dict(payload)
     scoped['volume_bars'] = _shape_volume_bars(volume_raw, payload['range'])
     return scoped
