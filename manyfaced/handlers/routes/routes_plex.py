@@ -1,4 +1,4 @@
-"""Plex routes (scaffold). TODO: refine to match real probe paths."""
+"""Plex Media Server routes (issue #284)."""
 
 from __future__ import annotations
 
@@ -14,10 +14,12 @@ def _plex() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- Plex (issue #295) ----
-    Route(PathExact('/web/index.html'), _plex(), PLEX_HTTP, 'plex_0'),
-    Route(PathExact('/status/sessions'), _plex(), PLEX_HTTP, 'plex_1'),
-    Route(PathPrefix('/status/sessions/'), _plex(), PLEX_HTTP, 'plex_prefix_1'),
-    Route(PathExact('/identity'), _plex(), PLEX_HTTP, 'plex_2'),
-    Route(PathExact('/plex'), _plex(), PLEX_HTTP, 'plex_3'),
+    # ---- Plex (issue #284) --------------------------------------------------
+    Route(PathExact('/web'), _plex(), PLEX_HTTP, 'plex_web'),
+    Route(PathExact('/:32400/web'), _plex(), PLEX_HTTP, 'plex_32400_web'),
+    Route(PathExact('/identity'), _plex(), PLEX_HTTP, 'plex_identity'),
+    Route(PathExact('/status/sessions'), _plex(), PLEX_HTTP, 'plex_status_sessions'),
+    Route(PathPrefix('/myplex/'), _plex(), PLEX_HTTP, 'plex_myplex'),
+    Route(PathPrefix('/library/'), _plex(), PLEX_HTTP, 'plex_library'),
+    Route(PathPrefix('/plex/'), _plex(), PLEX_HTTP, 'plex_env'),
 ]
