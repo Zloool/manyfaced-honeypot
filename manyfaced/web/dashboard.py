@@ -284,6 +284,8 @@ def _build_page(range_str: str, token: str) -> bytes:
         try:
             store.close()
         except Exception:  # noqa: BLE001
+            # Best-effort close of the read-only stats store; ignore if it was
+            # already closed or the connection dropped.
             pass
     return _render_html(stats, recent, range_str, token or '').encode('utf-8')
 
@@ -452,6 +454,7 @@ def run_dashboard(args: Any, update_event: Any) -> None:
             httpd.shutdown()
             httpd.server_close()
         except Exception:  # noqa: BLE001
+            # Best-effort shutdown; the refresher is being stopped regardless.
             pass
         _REFRESHER_STOP.set()
         t.join(timeout=2)

@@ -6,7 +6,6 @@ import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime
 
 LOG_PATH = "honeypot.log"
 DB_PATH = "honeypot.db"
@@ -53,30 +52,30 @@ def analyze_logs(log_path):
     
     # Time range
     if parsed:
-        print(f"\n--- Time Range ---")
+        print("\n--- Time Range ---")
         print(f"First entry: {parsed[0]['timestamp']}")
         print(f"Last entry:  {parsed[-1]['timestamp']}")
     
     # Log level distribution
-    print(f"\n--- Log Level Distribution ---")
+    print("\n--- Log Level Distribution ---")
     level_counts = Counter(p["level"] for p in parsed)
     for level, count in level_counts.most_common():
         print(f"  {level:8s}: {count:>6d}")
     
     # Process distribution
-    print(f"\n--- Process Distribution ---")
+    print("\n--- Process Distribution ---")
     proc_counts = Counter(p["process"] for p in parsed)
     for proc, count in proc_counts.most_common():
         print(f"  {proc:20s}: {count:>6d}")
     
     # Module distribution
-    print(f"\n--- Module Distribution ---")
+    print("\n--- Module Distribution ---")
     mod_counts = Counter(p["module"] for p in parsed)
     for mod, count in mod_counts.most_common(15):
         print(f"  {mod:40s}: {count:>6d}")
     
     # Error/Exception analysis
-    print(f"\n--- Errors / Warnings ---")
+    print("\n--- Errors / Warnings ---")
     error_lines = [p for p in parsed if p["level"] in ("ERROR", "WARNING", "CRITICAL")]
     print(f"Total errors/warnings: {len(error_lines)}")
     
@@ -87,12 +86,12 @@ def analyze_logs(log_path):
         error_counter[short] += 1
     
     if error_counter:
-        print(f"\nTop error types:")
+        print("\nTop error types:")
         for msg, count in error_counter.most_common(15):
             print(f"  [{count:>3d}x] {msg}")
     
     # Extract bot IPs from log messages
-    print(f"\n--- Bot IPs Detected in Logs ---")
+    print("\n--- Bot IPs Detected in Logs ---")
     ip_pattern = re.compile(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b")
     all_ips = []
     for p in parsed:
@@ -102,12 +101,12 @@ def analyze_logs(log_path):
     ip_counter = Counter(all_ips)
     print(f"Total IP mentions: {len(all_ips)}")
     print(f"Unique IPs: {len(ip_counter)}")
-    print(f"\nTop 20 attacking IPs:")
+    print("\nTop 20 attacking IPs:")
     for ip, count in ip_counter.most_common(20):
         print(f"  {ip:20s}: {count:>5d} mentions")
     
     # Extract detected flag values
-    print(f"\n--- Detected Service Flags ---")
+    print("\n--- Detected Service Flags ---")
     detected_pattern = re.compile(r"detected=(\d+)")
     detected_values = []
     for p in parsed:
@@ -135,7 +134,7 @@ def analyze_logs(log_path):
             print(f"  {name:30s} (ID={flag:>10d}): {count:>5d}")
     
     # Requests per minute / time distribution
-    print(f"\n--- Temporal Distribution ---")
+    print("\n--- Temporal Distribution ---")
     if parsed:
         hour_counts = Counter()
         for p in parsed:
@@ -152,7 +151,7 @@ def analyze_logs(log_path):
             print(f"  {hour}: {bar} ({hour_counts[hour]})")
     
     # Bot IP activity over time
-    print(f"\n--- Bot Activity Timeline ---")
+    print("\n--- Bot Activity Timeline ---")
     bot_activity = defaultdict(list)
     for p in parsed:
         ips = ip_pattern.findall(p["message"])
@@ -173,13 +172,13 @@ def analyze_logs(log_path):
     print(f"IPs in interaction messages: {len(interaction_ips)}")
     
     # Sample error/warning messages
-    print(f"\n--- Sample Warning Messages ---")
+    print("\n--- Sample Warning Messages ---")
     warnings = [p for p in parsed if p["level"] == "WARNING"]
     for w in warnings[:10]:
         print(f"  [{w['timestamp']}] [{w['module']}] {w['message'][:120]}")
     
     # Sample info messages about bot interactions
-    print(f"\n--- Sample Bot Interaction Messages ---")
+    print("\n--- Sample Bot Interaction Messages ---")
     bot_msgs = [p for p in parsed if any(kw in p["message"] for kw in ["Generated response", "BearStorage", "send_report", "data saved", "Report sent", "receive_timeout"])]
     for m in bot_msgs[:15]:
         msg = m["message"]
@@ -216,7 +215,7 @@ def analyze_db(db_path):
             print(f"  {col[1]:30s} {col[2]:20s} {'NOT NULL' if col[3] else 'NULLABLE'}")
     
     # Row counts
-    print(f"\n--- Row Counts ---")
+    print("\n--- Row Counts ---")
     for table in tables:
         cursor.execute(f"SELECT COUNT(*) FROM {table};")
         count = cursor.fetchone()[0]
@@ -224,7 +223,7 @@ def analyze_db(db_path):
     
     # Analyze honeypot_bears table
     if "honeypot_bears" in tables:
-        print(f"\n--- honeypot_bears Analysis ---")
+        print("\n--- honeypot_bears Analysis ---")
         
         # Count
         cursor.execute("SELECT COUNT(*) FROM honeypot_bears;")
@@ -239,7 +238,7 @@ def analyze_db(db_path):
         # Sample records
         cursor.execute("SELECT * FROM honeypot_bears ORDER BY id DESC LIMIT 3;")
         samples = cursor.fetchall()
-        print(f"\nLatest 3 records:")
+        print("\nLatest 3 records:")
         for row in samples:
             for col_name, val in zip(cols, row):
                 if isinstance(val, str) and len(val) > 100:
@@ -251,7 +250,7 @@ def analyze_db(db_path):
         cursor.execute("SELECT DISTINCT bot_ip, COUNT(*) as cnt FROM honeypot_bears GROUP BY bot_ip ORDER BY cnt DESC;")
         ip_rows = cursor.fetchall()
         print(f"\nUnique IPs in DB: {len(ip_rows)}")
-        print(f"Top 20 IPs by request count:")
+        print("Top 20 IPs by request count:")
         for row in ip_rows[:20]:
             print(f"  {row[0]:20s}: {row[1]:>5d} requests")
         
@@ -259,7 +258,7 @@ def analyze_db(db_path):
         cursor.execute("SELECT DISTINCT bot_user_agent, COUNT(*) as cnt FROM honeypot_bears GROUP BY bot_user_agent ORDER BY cnt DESC;")
         ua_rows = cursor.fetchall()
         print(f"\nUnique User-Agents: {len(ua_rows)}")
-        print(f"Top 20 User-Agents:")
+        print("Top 20 User-Agents:")
         for row in ua_rows[:20]:
             ua = row[0]
             if ua and len(ua) > 80:
@@ -269,7 +268,7 @@ def analyze_db(db_path):
         # Detected services
         cursor.execute("SELECT DISTINCT detected_id, COUNT(*) as cnt FROM honeypot_bears GROUP BY detected_id ORDER BY cnt DESC;")
         det_rows = cursor.fetchall()
-        print(f"\nDetected services distribution:")
+        print("\nDetected services distribution:")
         # Canonical detected_id values: manyfaced/common/status.py
         det_names = {
             1: "HTTP Handler (WordPress/Drupal/Jenkins/etc)",
@@ -289,14 +288,14 @@ def analyze_db(db_path):
         # Countries
         cursor.execute("SELECT DISTINCT bot_country, COUNT(*) as cnt FROM honeypot_bears GROUP BY bot_country ORDER BY cnt DESC;")
         country_rows = cursor.fetchall()
-        print(f"\nCountries distribution:")
+        print("\nCountries distribution:")
         for row in country_rows[:20]:
             print(f"  {str(row[0]):20s}: {row[1]:>5d}")
         
         # DNS names / Hostnames
         cursor.execute("SELECT DISTINCT bot_dns_name, COUNT(*) as cnt FROM honeypot_bears GROUP BY bot_dns_name ORDER BY cnt DESC;")
         dns_rows = cursor.fetchall()
-        print(f"\nTop 20 Hostnames/DNS names:")
+        print("\nTop 20 Hostnames/DNS names:")
         for row in dns_rows[:20]:
             val = str(row[0])
             if len(val) > 40:
@@ -306,7 +305,7 @@ def analyze_db(db_path):
         # Paths requested
         cursor.execute("SELECT DISTINCT request_path, COUNT(*) as cnt FROM honeypot_bears GROUP BY request_path ORDER BY cnt DESC;")
         path_rows = cursor.fetchall()
-        print(f"\nRequest paths distribution:")
+        print("\nRequest paths distribution:")
         for row in path_rows[:20]:
             val = row[0]
             if val and len(val) > 50:
@@ -321,12 +320,12 @@ def analyze_db(db_path):
         # Request commands
         cursor.execute("SELECT DISTINCT request_command, COUNT(*) as cnt FROM honeypot_bears GROUP BY request_command ORDER BY cnt DESC;")
         cmd_rows = cursor.fetchall()
-        print(f"\nRequest commands:")
+        print("\nRequest commands:")
         for row in cmd_rows:
             print(f"  {row[0]:10s}: {row[1]:>5d}")
         
         # Login values
-        print(f"\n--- Login/Credential Data ---")
+        print("\n--- Login/Credential Data ---")
         cursor.execute("SELECT DISTINCT login, COUNT(*) as cnt FROM honeypot_bears GROUP BY login ORDER BY cnt DESC;")
         login_rows = cursor.fetchall()
         print(f"Unique login values: {len(login_rows)}")
@@ -334,7 +333,7 @@ def analyze_db(db_path):
             print(f"  {str(row[0]):30s}: {row[1]:>5d}")
         
         # Request raw samples (truncated)
-        print(f"\n--- Sample Full Requests ---")
+        print("\n--- Sample Full Requests ---")
         cursor.execute("SELECT bot_ip, request_path, request_raw FROM honeypot_bears WHERE request_raw IS NOT NULL AND request_raw != '' ORDER BY id DESC LIMIT 5;")
         raw_rows = cursor.fetchall()
         for row in raw_rows:

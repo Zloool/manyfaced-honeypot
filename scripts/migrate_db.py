@@ -145,6 +145,8 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
             try:
                 os.remove(backup_path)
             except OSError:
+                # Best-effort cleanup of the failed backup; ignore if it was
+                # already removed or we lack permission.
                 pass
         raise
     print(f'[migrate] backup written: {backup_path}')
