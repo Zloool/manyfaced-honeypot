@@ -38,7 +38,6 @@ jobs:
     # This only BUILDS + PUSHES the artifact — it does NOT touch the droplet.
     # The droplet-side cutover (docker run) is a separate step in the deploy job.
     # Kept non-blocking so a registry hiccup never blocks the deploy or merges.
-    needs: []
     runs-on: ubuntu-latest
     permissions:
       contents: read
