@@ -65,9 +65,46 @@ def _seed(storage: SQLiteStorage):
         'hive_id': 1,
         'login': '',
     }
-    storage.insert(dict(base, timestamp='2026-07-08 10:00:00.000', parsed_request={'path': '/wp-admin', 'command': 'GET', 'version': 'HTTP/1.1'}, raw_request='RAW wp', country='US', continent='NA', is_detected=status_mod.WORDPRESS_HTTP, ua='uawp', dns_name='dns'))
-    storage.insert(dict(base, timestamp='2026-07-08 11:00:00.000', parsed_request={'path': '/phpmyadmin', 'command': 'GET', 'version': 'HTTP/1.1'}, raw_request='RAW pm', country='US', continent='NA', is_detected=status_mod.PHPMYADMIN_HTTP, ua='uapm', dns_name='dns'))
-    storage.insert(dict(base, timestamp='2026-07-08 12:00:00.000', ip='9.9.9.9', parsed_request={}, raw_request='RAW ssh', country='RU', continent='EU', is_detected=status_mod.SSH_CLIENT, ua='uassh', dns_name='dns'))
+    storage.insert(
+        dict(
+            base,
+            timestamp='2026-07-08 10:00:00.000',
+            parsed_request={'path': '/wp-admin', 'command': 'GET', 'version': 'HTTP/1.1'},
+            raw_request='RAW wp',
+            country='US',
+            continent='NA',
+            is_detected=status_mod.WORDPRESS_HTTP,
+            ua='uawp',
+            dns_name='dns',
+        )
+    )
+    storage.insert(
+        dict(
+            base,
+            timestamp='2026-07-08 11:00:00.000',
+            parsed_request={'path': '/phpmyadmin', 'command': 'GET', 'version': 'HTTP/1.1'},
+            raw_request='RAW pm',
+            country='US',
+            continent='NA',
+            is_detected=status_mod.PHPMYADMIN_HTTP,
+            ua='uapm',
+            dns_name='dns',
+        )
+    )
+    storage.insert(
+        dict(
+            base,
+            timestamp='2026-07-08 12:00:00.000',
+            ip='9.9.9.9',
+            parsed_request={},
+            raw_request='RAW ssh',
+            country='RU',
+            continent='EU',
+            is_detected=status_mod.SSH_CLIENT,
+            ua='uassh',
+            dns_name='dns',
+        )
+    )
 
 
 def test_recent_records_returns_newest_first(tmp_path):
@@ -165,16 +202,33 @@ def test_config_loads_dashboard_fields_defaults():
 def _build_dashboard_config(secret, port):
     cfg = Config.load(validate_secrets=False)
     return Config(
-        HONEYPORT=cfg.HONEYPORT, HONEYFOLDER=cfg.HONEYFOLDER, HIVEHOST=cfg.HIVEHOST,
-        HIVEPORT=cfg.HIVEPORT, HIVELOGIN=cfg.HIVELOGIN, HIVEPASS=cfg.HIVEPASS or 'x',
-        DB_BACKEND='sqlite', DB_BACKENDS=cfg.DB_BACKENDS, DB_PATH=cfg.DB_PATH,
-        DB_PG_HOST=cfg.DB_PG_HOST, DB_PG_PORT=cfg.DB_PG_PORT, DB_PG_DB=cfg.DB_PG_DB,
-        DB_PG_USER=cfg.DB_PG_USER, DB_PG_PASSWORD=cfg.DB_PG_PASSWORD,
-        AUTHORIZED_BEES=cfg.AUTHORIZED_BEES, HONEY_PORT_MODE='single', HONEY_TOP_PORTS='',
-        DEFAULT_KEY=cfg.DEFAULT_KEY or 'x', LOG_FILE=cfg.LOG_FILE, DUMP_FILE=cfg.DUMP_FILE,
-        LOCKFILE=cfg.LOCKFILE, ALERTING={},
-        DASHBOARD_ENABLED=True, DASHBOARD_PORT=port, DASHBOARD_BIND='127.0.0.1',
-        DASHBOARD_SECRET=secret, DASHBOARD_TIME_RANGE='24h',
+        HONEYPORT=cfg.HONEYPORT,
+        HONEYFOLDER=cfg.HONEYFOLDER,
+        HIVEHOST=cfg.HIVEHOST,
+        HIVEPORT=cfg.HIVEPORT,
+        HIVELOGIN=cfg.HIVELOGIN,
+        HIVEPASS=cfg.HIVEPASS or 'x',
+        DB_BACKEND='sqlite',
+        DB_BACKENDS=cfg.DB_BACKENDS,
+        DB_PATH=cfg.DB_PATH,
+        DB_PG_HOST=cfg.DB_PG_HOST,
+        DB_PG_PORT=cfg.DB_PG_PORT,
+        DB_PG_DB=cfg.DB_PG_DB,
+        DB_PG_USER=cfg.DB_PG_USER,
+        DB_PG_PASSWORD=cfg.DB_PG_PASSWORD,
+        AUTHORIZED_BEES=cfg.AUTHORIZED_BEES,
+        HONEY_PORT_MODE='single',
+        HONEY_TOP_PORTS='',
+        DEFAULT_KEY=cfg.DEFAULT_KEY or 'x',
+        LOG_FILE=cfg.LOG_FILE,
+        DUMP_FILE=cfg.DUMP_FILE,
+        LOCKFILE=cfg.LOCKFILE,
+        ALERTING={},
+        DASHBOARD_ENABLED=True,
+        DASHBOARD_PORT=port,
+        DASHBOARD_BIND='127.0.0.1',
+        DASHBOARD_SECRET=secret,
+        DASHBOARD_TIME_RANGE='24h',
     )
 
 
@@ -252,13 +306,22 @@ def test_dashboard_escapes_raw_capture(tmp_path):
     # Seed with an HTML-injection payload BEFORE the server starts (no concurrent
     # writer, which would block on the WAL DB under load).
     storage = SQLiteStorage(db_path=str(db))
-    storage.insert({
-        'ip': '1.1.1.1', 'hostname': 'h', 'timestamp': '2026-07-08 23:00:00.000',
-        'parsed_request': {'path': '/x', 'command': 'GET', 'version': 'HTTP/1.1'},
-        'raw_request': '<script>alert(1)</script>', 'ua': 'ua', 'country': 'US',
-        'continent': 'NA', 'dns_name': 'dns', 'is_detected': status_mod.PHPMYADMIN_HTTP,
-        'hive_id': 1, 'login': '',
-    })
+    storage.insert(
+        {
+            'ip': '1.1.1.1',
+            'hostname': 'h',
+            'timestamp': '2026-07-08 23:00:00.000',
+            'parsed_request': {'path': '/x', 'command': 'GET', 'version': 'HTTP/1.1'},
+            'raw_request': '<script>alert(1)</script>',
+            'ua': 'ua',
+            'country': 'US',
+            'continent': 'NA',
+            'dns_name': 'dns',
+            'is_detected': status_mod.PHPMYADMIN_HTTP,
+            'hive_id': 1,
+            'login': '',
+        }
+    )
     storage.close()
 
     cfg = _build_dashboard_config(secret, port)
@@ -293,16 +356,33 @@ def test_dashboard_escapes_raw_capture(tmp_path):
 def test_dashboard_disabled_when_not_enabled():
     cfg = Config.load(validate_secrets=False)
     disabled = Config(
-        HONEYPORT=cfg.HONEYPORT, HONEYFOLDER=cfg.HONEYFOLDER, HIVEHOST=cfg.HIVEHOST,
-        HIVEPORT=cfg.HIVEPORT, HIVELOGIN=cfg.HIVELOGIN, HIVEPASS=cfg.HIVEPASS or 'x',
-        DB_BACKEND='sqlite', DB_BACKENDS=cfg.DB_BACKENDS, DB_PATH=cfg.DB_PATH,
-        DB_PG_HOST=cfg.DB_PG_HOST, DB_PG_PORT=cfg.DB_PG_PORT, DB_PG_DB=cfg.DB_PG_DB,
-        DB_PG_USER=cfg.DB_PG_USER, DB_PG_PASSWORD=cfg.DB_PG_PASSWORD,
-        AUTHORIZED_BEES=cfg.AUTHORIZED_BEES, HONEY_PORT_MODE='single', HONEY_TOP_PORTS='',
-        DEFAULT_KEY=cfg.DEFAULT_KEY or 'x', LOG_FILE=cfg.LOG_FILE, DUMP_FILE=cfg.DUMP_FILE,
-        LOCKFILE=cfg.LOCKFILE, ALERTING={},
-        DASHBOARD_ENABLED=False, DASHBOARD_PORT=8512, DASHBOARD_BIND='127.0.0.1',
-        DASHBOARD_SECRET=secrets.token_urlsafe(32), DASHBOARD_TIME_RANGE='24h',
+        HONEYPORT=cfg.HONEYPORT,
+        HONEYFOLDER=cfg.HONEYFOLDER,
+        HIVEHOST=cfg.HIVEHOST,
+        HIVEPORT=cfg.HIVEPORT,
+        HIVELOGIN=cfg.HIVELOGIN,
+        HIVEPASS=cfg.HIVEPASS or 'x',
+        DB_BACKEND='sqlite',
+        DB_BACKENDS=cfg.DB_BACKENDS,
+        DB_PATH=cfg.DB_PATH,
+        DB_PG_HOST=cfg.DB_PG_HOST,
+        DB_PG_PORT=cfg.DB_PG_PORT,
+        DB_PG_DB=cfg.DB_PG_DB,
+        DB_PG_USER=cfg.DB_PG_USER,
+        DB_PG_PASSWORD=cfg.DB_PG_PASSWORD,
+        AUTHORIZED_BEES=cfg.AUTHORIZED_BEES,
+        HONEY_PORT_MODE='single',
+        HONEY_TOP_PORTS='',
+        DEFAULT_KEY=cfg.DEFAULT_KEY or 'x',
+        LOG_FILE=cfg.LOG_FILE,
+        DUMP_FILE=cfg.DUMP_FILE,
+        LOCKFILE=cfg.LOCKFILE,
+        ALERTING={},
+        DASHBOARD_ENABLED=False,
+        DASHBOARD_PORT=8512,
+        DASHBOARD_BIND='127.0.0.1',
+        DASHBOARD_SECRET=secrets.token_urlsafe(32),
+        DASHBOARD_TIME_RANGE='24h',
     )
     with patch.object(config_mod, 'settings', disabled):
         import multiprocessing as mp

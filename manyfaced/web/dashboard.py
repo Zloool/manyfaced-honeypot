@@ -111,6 +111,7 @@ def _get_recent(limit: int, range_str: str, store: _storage.StorageBackend) -> l
 # HTML rendering (all dynamic values escaped)
 # ---------------------------------------------------------------------------
 
+
 def _esc(value: Any) -> str:
     if value is None:
         return ''
@@ -121,8 +122,7 @@ def _table(rows: list[dict], value_label: str = 'count') -> str:
     if not rows:
         return '<p class="muted">no data</p>'
     body = ''.join(
-        f'<tr><td>{_esc(r["key"])}</td><td class="num">{_esc(r["count"])}</td></tr>'
-        for r in rows
+        f'<tr><td>{_esc(r["key"])}</td><td class="num">{_esc(r["count"])}</td></tr>' for r in rows
     )
     return (
         f'<table><thead><tr><th>key</th><th class="num">{value_label}</th></tr></thead>'
@@ -183,8 +183,7 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
 
     ranges = ['24h', '7d', '30d', 'all']
     nav = ''.join(
-        f'<a href="/?token={token}&range={r}">{r}</a>' if r != range_str
-        else f'<b>{r}</b>'
+        f'<a href="/?token={token}&range={r}">{r}</a>' if r != range_str else f'<b>{r}</b>'
         for r in ranges
     )
 
@@ -254,6 +253,7 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
+
 
 class _DashboardHandler(BaseHTTPRequestHandler):
     # Quieter than the default (which logs to stderr via the bear logger).

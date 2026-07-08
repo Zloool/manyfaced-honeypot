@@ -608,7 +608,7 @@ class SQLiteStorage(StorageBackend):
             def _group(col: str, top: int = 15) -> list[dict]:
                 q = (
                     f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
-                    f'{col} IS NOT NULL AND {col} != \'\' '
+                    f"{col} IS NOT NULL AND {col} != '' "
                     f'GROUP BY {col} ORDER BY c DESC LIMIT ?'
                 )
                 rows = conn.execute(q, (*params, top)).fetchall()
@@ -616,16 +616,14 @@ class SQLiteStorage(StorageBackend):
 
             # Service grouping maps detected_id -> friendly name.
             svc_rows = conn.execute(
-                f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '
+                f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY detected_id ORDER BY c DESC',
                 params,
             ).fetchall()
-            by_service = [
-                {'key': detected_id_name(r[0]), 'count': r[1]} for r in svc_rows
-            ]
+            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in svc_rows]
 
             vol_rows = conn.execute(
-                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '
+                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY b ORDER BY b',
                 params,
             ).fetchall()
@@ -781,9 +779,7 @@ class PostgreSQLStorage(StorageBackend):
                     row = cur.fetchone()
                     return int(row[0]) if row and row[0] is not None else 0
 
-                total = _pg_scalar(
-                    f'SELECT COUNT(*) FROM honeypot_bears{where}', params
-                )
+                total = _pg_scalar(f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
                 detected = _pg_scalar(
                     f'SELECT COUNT(*) FROM honeypot_bears{where}{and_prefix} detected_id BETWEEN 1 AND %s',
                     [*params, _DETECTED_SERVICE_MAX],
@@ -793,14 +789,14 @@ class PostgreSQLStorage(StorageBackend):
                 def _group(col: str, top: int = 15) -> list[dict]:
                     q = (
                         f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
-                        f'{col} IS NOT NULL AND {col} != \'\' '
+                        f"{col} IS NOT NULL AND {col} != '' "
                         f'GROUP BY {col} ORDER BY c DESC LIMIT %s'
                     )
                     cur.execute(q, [*params, top])
                     return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
 
                 cur.execute(
-                    f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '
+                    f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                     'GROUP BY detected_id ORDER BY c DESC',
                     params,
                 )
@@ -809,7 +805,7 @@ class PostgreSQLStorage(StorageBackend):
                 ]
 
                 cur.execute(
-                    f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '
+                    f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                     'GROUP BY b ORDER BY b',
                     params,
                 )

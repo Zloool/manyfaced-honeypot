@@ -286,10 +286,14 @@ class Config:
                 resolve_setting('bind', _DEFAULT_DASHBOARD_BIND, 'dashboard', toml, prefix)
             ),
             DASHBOARD_SECRET=str(
-                resolve_setting('secret', _DEFAULT_DASHBOARD_SECRET or '', 'dashboard', toml, prefix)
+                resolve_setting(
+                    'secret', _DEFAULT_DASHBOARD_SECRET or '', 'dashboard', toml, prefix
+                )
             ),
             DASHBOARD_TIME_RANGE=str(
-                resolve_setting('time_range', _DEFAULT_DASHBOARD_TIME_RANGE, 'dashboard', toml, prefix)
+                resolve_setting(
+                    'time_range', _DEFAULT_DASHBOARD_TIME_RANGE, 'dashboard', toml, prefix
+                )
             ),
         )
 

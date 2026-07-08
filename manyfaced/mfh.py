@@ -178,7 +178,7 @@ def run() -> None:
 
     # Dashboard (issue #234): read-only stats view. Runs alongside the server
     # (it reads the shared DB) only when explicitly enabled in config.
-    if args.server is not None and settings.DASHBOARD_ENABLED:
+    if args.server is not None and getattr(settings, 'DASHBOARD_ENABLED', False):
         procs['dashboard_proc'] = _spawn_dashboard()
         procs['dashboard_proc'].start()
 
@@ -248,7 +248,7 @@ def run() -> None:
                     supervise['server_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
                 elif procs['server_proc'] is None or not procs['server_proc'].is_alive():
                     _maybe_restart('server_proc', _spawn_server)
-            if args.server is not None and settings.DASHBOARD_ENABLED:
+            if args.server is not None and getattr(settings, 'DASHBOARD_ENABLED', False):
                 if procs['dashboard_proc'] is not None and procs['dashboard_proc'].is_alive():
                     supervise['dashboard_proc'] = {'attempts': 0, 'last': 0.0, 'times': []}
                 elif procs['dashboard_proc'] is None or not procs['dashboard_proc'].is_alive():
