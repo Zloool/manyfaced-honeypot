@@ -210,6 +210,7 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
             '<tr>'
             f'<td class="bk">{_esc(r.get("timestamp"))}</td>'
             f'<td>{_esc(r.get("_service"))}</td>'
+            f'<td>{_esc(r.get("listen_port"))}</td>'
             f'<td>{_esc(r.get("bot_ip"))}</td>'
             f'<td>{_esc(r.get("bot_country"))}</td>'
             f'<td>{_esc(r.get("request_path"))}</td>'
@@ -217,7 +218,7 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
             '</tr>'
         )
     recent_table = (
-        '<table><thead><tr><th>timestamp</th><th>service</th><th>bot_ip</th>'
+        '<table><thead><tr><th>timestamp</th><th>service</th><th>port</th><th>bot_ip</th>'
         '<th>country</th><th>path</th><th>user-agent</th></tr></thead><tbody>'
         + ''.join(recent_rows)
         + '</tbody></table>'
@@ -250,6 +251,7 @@ def _render_html(stats: dict, recent: list[dict], range_str: str, token: str) ->
 </div>
 
 <div class="grid">
+  <div class="card"><h2>top targeted ports</h2>{_table(stats.get('by_port', []))}</div>
   <div class="card"><h2>top targeted services</h2>{_table(stats.get('by_service', []))}</div>
   <div class="card"><h2>top source countries</h2>{_table(stats.get('by_country', []))}</div>
   <div class="card"><h2>top source continents</h2>{_table(stats.get('by_continent', []))}</div>

@@ -139,6 +139,7 @@ class TestBearRequestsDataclassRepr:
             'continent',
             'login',
             'bot_profile_data',
+            'listen_port',
         ]
 
     def test_dataclass_repr(self):
@@ -211,6 +212,28 @@ class TestInsertFunction:
         assert record['parsed_request'] == {'path': '/login', 'command': 'POST'}
         assert record['is_detected'] == 1
         assert record['HIVELOGIN'] == 'testuser'
+        # listen_port must be plumbed through Insert() (issue #299)
+        assert record['listen_port'] == 0  # default when not set on the dataclass
+
+    def test_insert_includes_listen_port_when_set(self, tmp_path):
+        """Insert() should carry a non-default listen_port through to storage (issue #299)."""
+        mock_storage = MagicMock()
+
+        bear = BearRequests(
+            ip='1.2.3.4',
+            raw_request='POST /login HTTP/1.1',
+            timestamp='2024-06-01 12:00:00',
+            parsed_request={'path': '/login', 'command': 'POST'},
+            is_detected=1,
+            HIVELOGIN='testuser',
+            listen_port=8080,
+        )
+
+        with patch('manyfaced.db.dbconnect.get_storage', return_value=mock_storage):
+            Insert(bear)
+
+        record = mock_storage.insert.call_args[0][0]
+        assert record['listen_port'] == 8080
 
     def test_insert_with_empty_parsed_request(self):
         """Insert handles BearRequests with empty parsed_request dict."""
@@ -364,6 +387,7 @@ class TestInsertFunction:
             'country',
             'continent',
             'login',
+            'listen_port',
         }
         assert set(record.keys()) == expected_keys
 

@@ -109,6 +109,7 @@ def _empty_stats() -> dict:
         'by_continent': [],
         'by_ip': [],
         'by_path': [],
+        'by_port': [],
         'volume': [],
     }
 
@@ -367,6 +368,14 @@ class SQLiteStorage(StorageBackend):
             self._conn.execute('PRAGMA journal_mode=WAL')
             if init_schema:
                 self._conn.execute(_CREATE_TABLE_SQL)
+                # Issue #299: add the listen_port column to an existing DB that
+                # predates this schema. CREATE TABLE IF NOT EXISTS won't add a
+                # column to a pre-existing table, and inserts now reference it,
+                # so the migration MUST run before the index script (which
+                # indexes listen_port) and before the first insert, or they fail
+                # with "no such column". Guarded by PRAGMA table_info so it is a
+                # safe no-op on a fresh DB.
+                self._add_listen_port_column()
                 # Idempotent performance indexes for the dashboard aggregates.
                 # Created once at writer startup, NOT on every read connection.
                 self._conn.executescript(_CREATE_INDEXES_SQL)
@@ -385,6 +394,24 @@ class SQLiteStorage(StorageBackend):
             self._conn = None
 
     # -- public API ----------------------------------------------------------
+
+    def _add_listen_port_column(self) -> None:
+        """Add the issue #299 ``listen_port`` column to a pre-#299 DB.
+
+        SQLite cannot add a column inside CREATE TABLE IF NOT EXISTS once the
+        table already exists, so we migrate explicitly. Guarded by
+        PRAGMA table_info so repeated calls (every writer startup) are cheap
+        no-ops, and the redundant ALTER is swallowed if the column is present.
+        """
+        try:
+            cols = {
+                r[1] for r in self._conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()
+            }
+            if 'listen_port' in cols:
+                return
+            self._conn.execute('ALTER TABLE honeypot_bears ADD COLUMN listen_port INTEGER')
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
+            logger.exception('Failed to add listen_port column to honeypot_bears')
 
     def insert(self, record: dict) -> None:  # noqa: C901
         """Insert a single bear record.
@@ -680,6 +707,19 @@ class SQLiteStorage(StorageBackend):
                 rows = conn.execute(q, (*params, top)).fetchall()
                 return [{'key': r[0], 'count': r[1]} for r in rows]
 
+            # by_port groups by the local honeypot port (issue #299). listen_port
+            # is INTEGER and 0 is the "unknown" sentinel, so the generic _group's
+            # `!= ''` filter (which only excludes TEXT empties) would let 0 slip
+            # through; exclude it explicitly.
+            def _group_port(top: int = 15) -> list[dict]:
+                q = (
+                    f'SELECT listen_port, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                    'listen_port IS NOT NULL AND listen_port != 0 '
+                    f'GROUP BY listen_port ORDER BY c DESC LIMIT ?'
+                )
+                rows = conn.execute(q, (*params, top)).fetchall()
+                return [{'key': r[0], 'count': r[1]} for r in rows]
+
             # Service grouping maps detected_id -> friendly name.
             svc_rows = conn.execute(
                 f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
@@ -704,6 +744,7 @@ class SQLiteStorage(StorageBackend):
                 'by_continent': _group('bot_continent'),
                 'by_ip': _group('bot_ip'),
                 'by_path': _group('request_path'),
+                'by_port': _group_port(),
                 'volume': volume,
             }
         except (sqlite3.Error, sqlite3.OperationalError):
@@ -769,6 +810,15 @@ class PostgreSQLStorage(StorageBackend):
             )
             with self._conn.cursor() as cur:
                 cur.execute(_CREATE_TABLE_PG_SQL)
+                # Issue #299: add the listen_port column to a pre-#299 DB.
+                # Online/safe for Postgres; guarded by information_schema so it
+                # is a cheap no-op on a fresh DB.
+                cur.execute(
+                    'SELECT 1 FROM information_schema.columns '
+                    "WHERE table_name = 'honeypot_bears' AND column_name = 'listen_port'"
+                )
+                if cur.fetchone() is None:
+                    cur.execute('ALTER TABLE honeypot_bears ADD COLUMN listen_port INTEGER')
             self._conn.commit()
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Failed to initialise PostgreSQL storage')
@@ -861,6 +911,18 @@ class PostgreSQLStorage(StorageBackend):
                     cur.execute(q, [*params, top])
                     return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
 
+                # by_port groups by local honeypot port (issue #299). listen_port
+                # is INTEGER and 0 is the "unknown" sentinel; the generic _group's
+                # `!= ''` only excludes TEXT empties, so exclude 0 explicitly.
+                def _group_port(top: int = 15) -> list[dict]:
+                    q = (
+                        f'SELECT listen_port, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                        'listen_port IS NOT NULL AND listen_port <> 0 '
+                        f'GROUP BY listen_port ORDER BY c DESC LIMIT %s'
+                    )
+                    cur.execute(q, [*params, top])
+                    return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
+
                 cur.execute(
                     f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                     'GROUP BY detected_id ORDER BY c DESC',
@@ -886,6 +948,7 @@ class PostgreSQLStorage(StorageBackend):
                     'by_continent': _group('bot_continent'),
                     'by_ip': _group('bot_ip'),
                     'by_path': _group('request_path'),
+                    'by_port': _group_port(),
                     'volume': volume,
                 }
         except psycopg2.Error:  # noqa: BLE001

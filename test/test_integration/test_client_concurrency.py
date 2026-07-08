@@ -35,7 +35,7 @@ def test_create_server_serves_connections_concurrently(monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
-    def _slow_handler(conn_sock, args, bot_addr, update_event):
+    def _slow_handler(conn_sock, args, bot_addr, update_event, listen_port=0):
         handled_threads.append(threading.current_thread().ident)
         started.set()
         release.wait(timeout=10)  # hold the (per-connection) thread

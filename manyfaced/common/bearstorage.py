@@ -37,6 +37,7 @@ class BearStorage:
         self.dns_name = ''
         self.tracert = ''  # TODO
         self.login = ''  # Captured credentials (user:pass or user only)
+        self.listen_port = 0  # Local honeypot port the bot connected to (issue #299); 0 = unknown
         if hasattr(parsed_request, 'path'):
             self.path = parsed_request.path
         if getattr(parsed_request, 'command', None) is not None:
