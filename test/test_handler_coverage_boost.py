@@ -26,14 +26,8 @@ def test_every_route_responds() -> None:
         assert isinstance(route, Route)
         path = _sample_path(route.matcher)
         handler = route.handler_cls()
-        raw = (
-            f'GET {path} HTTP/1.1\r\n'
-            f'Host: example.com\r\n'
-            f'User-Agent: coverage-boost\r\n\r\n'
-        )
-        resp, detected = handler.generate_response(
-            path=path, raw_request=raw, bot_ip='1.2.3.4'
-        )
+        raw = f'GET {path} HTTP/1.1\r\nHost: example.com\r\nUser-Agent: coverage-boost\r\n\r\n'
+        resp, detected = handler.generate_response(path=path, raw_request=raw, bot_ip='1.2.3.4')
         assert isinstance(resp, (bytes, bytearray)) and len(resp) > 0
         seen.add((route.name, route.handler_cls))
 
@@ -49,7 +43,5 @@ def test_every_route_post_body() -> None:
             f'Content-Type: application/x-www-form-urlencoded\r\n\r\n'
             f'user=admin&pass=secret&username=root&password=toor'
         )
-        resp, _ = handler.generate_response(
-            path=path, raw_request=raw, bot_ip='1.2.3.4'
-        )
+        resp, _ = handler.generate_response(path=path, raw_request=raw, bot_ip='1.2.3.4')
         assert isinstance(resp, (bytes, bytearray)) and len(resp) > 0
