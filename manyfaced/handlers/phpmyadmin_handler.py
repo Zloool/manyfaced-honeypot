@@ -1,16 +1,21 @@
 """PhpMyAdminHandler – handles phpMyAdmin-specific paths and interactions.
 
 Provides realistic phpMyAdmin responses including:
-- Login page (/phpmyadmin/, /pma/, /mysql/)
-- Database management pages
+- The phpMyAdmin login UI (/phpmyadmin, /phpMyAdmin, /pma, /index.php, /)
+- A fake SQL endpoint (/sql.php) that echoes a realistic query result
+- A fake environment disclosure for the /.env probe (/phpmyadmin/%2eenv)
 - Captures login credentials from POST requests
-- Returns realistic error pages for unavailable endpoints
+- Returns a realistic "access denied" error page for failed logins
+
+phpMyAdmin is one of the most heavily probed web DB admin tools on the
+internet (alongside Adminer), targeted by credential-stuffing and exploit bots.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
+from urllib.parse import unquote
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
@@ -24,6 +29,7 @@ class PhpMyAdminHandler(HTTPHandlerBase):
 
     domain = 'phpmyadmin'
     DETECTED_ID = PHPMYADMIN_HTTP
+    VERSION = '5.2.1'
 
     def generate_response(
         self,
@@ -45,186 +51,160 @@ class PhpMyAdminHandler(HTTPHandlerBase):
         profile.record_request(request_data)
 
         method = self._extract_method(raw_request)
-        path_lower = path.lower()
 
-        # Handle login POST requests
-        if method == 'POST' and ('index.php' in path_lower or path_lower.endswith('/')):
-            credentials, response, detected = self.handle_login(
+        # Decode URL-encoded path segments (probes use %2e -> '.', %2f -> '/').
+        decoded_path = unquote(path)
+
+        # Handle login POST requests (credentials captured by base handler).
+        if method == 'POST':
+            credentials, _response, detected = self.handle_login(
                 path, raw_request, bot_ip, headers or {}
             )
             if credentials:
-                # Fake "access denied" response (encourages more attempts)
-                response = self._login_denied_response()
+                # Fake "access denied" response (encourages more attempts).
+                response = self._login_failed_response()
                 return response, detected
 
-        # Route to appropriate response
-        if 'index.php' in path_lower or path_lower.endswith('/'):
-            body = self._login_page()
-        elif 'export.php' in path_lower or 'sql.php' in path_lower:
-            body = self._error_page('endpoint')
-        elif 'server_status.php' in path_lower:
-            body = self._error_page('endpoint')
-        elif 'db_structure.php' in path_lower or 'db_sql.php' in path_lower:
-            body = self._error_page('database')
+        # Route to the appropriate response body.
+        path_lower = decoded_path.lower()
+
+        if path_lower.endswith('/%2eenv') or path_lower.endswith('/.env'):
+            body = self._env_disclosure()
+            content_type = 'text/plain; charset=UTF-8'
+        elif 'sql.php' in path_lower:
+            body = self._sql_endpoint()
+            content_type = 'text/html; charset=UTF-8'
         else:
+            # Default: the phpMyAdmin login page.
             body = self._login_page()
+            content_type = 'text/html; charset=UTF-8'
 
-        response = self._build_http_response(body, path)
-        self._response_count += 1
+        return self._build_http_response(body, content_type), self.DETECTED_ID
 
-        return response, self.DETECTED_ID
+    # ------------------------------------------------------------------
+    # Response bodies
+    # ------------------------------------------------------------------
 
     def _login_page(self) -> str:
-        """Generate a phpMyAdmin login page."""
-        return """\
-<!DOCTYPE html>
+        """Generate the phpMyAdmin login page (logo, title, login form)."""
+        return """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>phpMyAdmin - Login</title>
-    <link rel="stylesheet" href="themes/dot.css" type="text/css">
-    <link rel="stylesheet" href="scripts/normalize.css" type="text/css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>phpMyAdmin """ + self.VERSION + """ - Login</title>
+    <link rel="stylesheet" type="text/css" href="phpmyadmin.css.php?nocache=1">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <style>
+        body { font-family: "Segoe UI", Tahoma, sans-serif; background: #f3f3f3; margin: 0; }
+        #page_content { max-width: 420px; margin: 60px auto; background: #fff;
+                        border: 1px solid #ddd; border-radius: 4px; padding: 24px; }
+        h1 { font-size: 20px; color: #2c3e50; }
+        .logo { text-align: center; margin-bottom: 12px; }
+        .logo img { height: 48px; }
+        label { display: block; margin: 10px 0 4px; color: #555; font-size: 13px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 8px;
+                        border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; }
+        input[type="submit"] { margin-top: 16px; width: 100%; padding: 9px;
+                        background: #337ab7; color: #fff; border: 0; border-radius: 3px;
+                        cursor: pointer; font-size: 14px; }
+        .error { color: #a94442; background: #f2dede; border: 1px solid #ebccd1;
+                        padding: 8px; border-radius: 3px; margin-top: 12px; font-size: 13px; }
+        .server-info { color: #888; font-size: 12px; margin-top: 16px; text-align: center; }
+    </style>
 </head>
-<body class="index page-setup">
-    <div id="pma_navigation">
-        <div class="pma_navigation_header">
-            <h2>phpMyAdmin 5.2.1</h2>
+<body>
+    <div id="page_content">
+        <div class="logo">
+            <img src="themes/dot.gif" alt="phpMyAdmin">
         </div>
-    </div>
-    <div id="pma_content">
-        <div class="container">
-            <h1>phpMyAdmin - Login</h1>
-            <form method="post" action="index.php" name="login_form" id="loginForm" class="ajax">
-                <fieldset class="dbinfo">
-                    <legend>Login</legend>
-                    <table>
-                        <tr>
-                            <td><label for="input_server">Server:</label></td>
-                            <td>
-                                <select name="server" id="input_server">
-                                    <option value="0" selected>localhost</option>
-                                </select>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td><label for="input_username">Username:</label></td>
-                            <td><input type="text" name="pma_username" id="input_username" value="" autocomplete="off"></td>
-                        </tr>
-                        <tr>
-                            <td><label for="input_password">Password:</label></td>
-                            <td><input type="password" name="pma_password" id="input_password" autocomplete="off"></td>
-                        </tr>
-                        <tr>
-                            <td colspan="2">
-                                <input type="checkbox" name="is_js_required" value="1" id="is_js_required" checked disabled>
-                                <label for="is_js_required">JavaScript is required for full functionality. Some features are disabled.</label>
-                            </td>
-                        </tr>
-                    </table>
-                    <input type="hidden" name="server" value="0">
-                    <input type="hidden" name="token" value="a1b2c3d4e5f6g7h8i9j0">
-                    <input type="submit" value="Go" id="button_go">
-                </fieldset>
-            </form>
-            <div class="error">
-                <p>Warning: mysqli extension is not loaded or not configured properly.</p>
-                <p>Warning: The configuration file now needs a secret passphrase (blowfish_secret).</p>
-            </div>
+        <h1>phpMyAdmin """ + self.VERSION + """</h1>
+        <form method="post" action="index.php" name="login_form" id="login_form">
+            <input type="hidden" name="token" value="3f9a1c7b2e4d5f60817293a4b5c6d7e8">
+            <label for="input_username">Username:</label>
+            <input type="text" name="pma_username" id="input_username" value="" autocomplete="off">
+            <label for="input_password">Password:</label>
+            <input type="password" name="pma_password" id="input_password" autocomplete="off">
+            <label for="input_server">Server:</label>
+            <select name="server" id="input_server">
+                <option value="0" selected>localhost:3306</option>
+            </select>
+            <input type="submit" value="Log in" id="button_go">
+        </form>
+        <div class="server-info">
+            Server: localhost via TCP/IP &middot; PHP 8.2.15 &middot; MySQL 8.0.36
         </div>
-    </div>
-    <div id="pma_footer">
-        <span class="version">phpMyAdmin 5.2.1</span>
-        <span> | </span>
-        <span>Server: localhost via TCP/IP</span>
-        <span> | </span>
-        <span>PHP Version: 8.2.15-1ubuntu2.11</span>
-        <span> | </span>
-        <span>MySQL Version: 8.0.36-0ubuntu0.22.04.1</span>
     </div>
 </body>
 </html>"""
 
-    def _login_denied_response(self) -> bytes:
-        """Return a fake login denied response."""
-        body = """\
-<!DOCTYPE html>
+    def _login_failed_response(self) -> bytes:
+        """Return a fake 'access denied' login response (contains 'Error')."""
+        body = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>phpMyAdmin - Error</title>
+    <title>phpMyAdmin """ + self.VERSION + """ - Error</title>
 </head>
 <body>
-    <div id="pma_content">
-        <div class="container">
-            <h1>phpMyAdmin 5.2.1</h1>
-            <div class="error">
-                <p><strong> mysqli</strong></p>
-                <p>Access denied for user 'root'@'localhost' (using password: YES)</p>
-            </div>
-            <form method="post" action="index.php" name="login_form" id="loginForm">
-                <fieldset>
-                    <legend>Login</legend>
-                    <table>
-                        <tr>
-                            <td><label for="input_username">Username:</label></td>
-                            <td><input type="text" name="pma_username" id="input_username" value="" autocomplete="off"></td>
-                        </tr>
-                        <tr>
-                            <td><label for="input_password">Password:</label></td>
-                            <td><input type="password" name="pma_password" id="input_password" autocomplete="off"></td>
-                        </tr>
-                    </table>
-                    <input type="hidden" name="server" value="0">
-                    <input type="submit" value="Go" id="button_go">
-                </fieldset>
-            </form>
-            <p class="debug">Server: localhost via TCP/IP | PHP Version: 8.2.15-1ubuntu2.11 | MySQL Version: 8.0.36-0ubuntu0.22.04.1</p>
+    <div id="page_content">
+        <h1>phpMyAdmin """ + self.VERSION + """</h1>
+        <div class="error">
+            <strong>Error</strong>
+            <p>#1045 - Access denied for user 'root'@'localhost' (using password: YES)</p>
         </div>
+        <form method="post" action="index.php" name="login_form" id="login_form">
+            <input type="hidden" name="token" value="3f9a1c7b2e4d5f60817293a4b5c6d7e8">
+            <label for="input_username">Username:</label>
+            <input type="text" name="pma_username" id="input_username" value="" autocomplete="off">
+            <label for="input_password">Password:</label>
+            <input type="password" name="pma_password" id="input_password" autocomplete="off">
+            <input type="submit" value="Log in" id="button_go">
+        </form>
     </div>
 </body>
 </html>"""
-        return self._build_http_response(body, '/phpmyadmin/index.php')
+        return self._build_http_response(body, 'text/html; charset=UTF-8')
 
-    def _error_page(self, error_type: str = 'general') -> str:
-        """Generate a phpMyAdmin error page."""
-        if error_type == 'endpoint':
-            return """\
-<!DOCTYPE html>
-<html>
-<head><title>phpMyAdmin - Error</title></head>
+    def _sql_endpoint(self) -> str:
+        """Fake phpMyAdmin SQL query endpoint response."""
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>phpMyAdmin """ + self.VERSION + """ - SQL</title>
+</head>
 <body>
-    <div id="pma_content">
-        <h2>phpMyAdmin 5.2.1</h2>
-        <div class="error">
-            <p>The requested endpoint is not available.</p>
-            <p>Available endpoints:</p>
-            <ul>
-                <li><a href="index.php">Login</a></li>
-                <li><a href="export.php">Export</a></li>
-                <li><a href="sql.php">SQL Query</a></li>
-                <li><a href="server_status.php">Server Status</a></li>
-            </ul>
-            <p class="debug">Server: localhost via TCP/IP | PHP Version: 8.2.15-1ubuntu2.11 | MySQL Version: 8.0.36-0ubuntu0.22.04.1</p>
-        </div>
+    <h1>phpMyAdmin """ + self.VERSION + """</h1>
+    <div id="sqlqueryresults">
+        <table class="data">
+            <caption>1 row(s) returned</caption>
+            <thead><tr><th>id</th><th>name</th></tr></thead>
+            <tbody><tr><td>1</td><td>localhost</td></tr></tbody>
+        </table>
     </div>
+    <p class="server-info">Server: localhost via TCP/IP &middot; MySQL 8.0.36</p>
 </body>
 </html>"""
-        return """\
-<!DOCTYPE html>
-<html>
-<head><title>phpMyAdmin - Error</title></head>
-<body>
-    <div id="pma_content">
-        <h2>phpMyAdmin 5.2.1</h2>
-        <div class="error">
-            <p>An error has occurred:</p>
-            <p>MySQL server has gone away</p>
-            <p class="debug">Error: Connection refused (111)</p>
-            <p class="debug">Server: localhost via TCP/IP | PHP Version: 8.2.15-1ubuntu2.11</p>
-        </div>
-    </div>
-</body>
-</html>"""
+
+    def _env_disclosure(self) -> str:
+        """Fake environment / .env disclosure for the /.env probe."""
+        return (
+            "# phpMyAdmin environment configuration (fake)\n"
+            "APP_ENV=production\n"
+            "APP_DEBUG=false\n"
+            "PMA_VERSION=" + self.VERSION + "\n"
+            "DB_HOST=127.0.0.1\n"
+            "DB_PORT=3306\n"
+            "DB_NAME=phpmyadmin\n"
+            "DB_USER=root\n"
+            "DB_PASSWORD=Sup3rSecret!PMA\n"
+            "BLOWFISH_SECRET=4f1c8a9b2e7d6c5a4039281746553f1b\n"
+        )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
@@ -233,19 +213,30 @@ class PhpMyAdminHandler(HTTPHandlerBase):
             return parts[0].upper()
         return 'GET'
 
-    def _build_http_response(self, body: str, path: str, status: str = '200 OK') -> bytes:
-        """Build a complete HTTP response."""
+    def _build_http_response(
+        self,
+        body: str,
+        content_type: str = 'text/html; charset=UTF-8',
+        status_code: int = 200,
+        status_text: str = 'OK',
+    ) -> bytes:
+        """Build a complete HTTP response encoded as iso-8859-1."""
         now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        body_bytes = body.encode('iso-8859-1')
 
         response = (
-            f'HTTP/1.1 {status}\r\n'
-            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
-            f'X-Powered-By: PHP/8.2.15-1ubuntu2.11\r\n'
-            f'Set-Cookie: phpMyAdmin=abc123def456; path=/\r\n'
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
             f'Date: {now}\r\n'
-            f'Content-Type: text/html; charset=UTF-8\r\n'
+            f'Server: Apache/2.4.57 (Ubuntu)\r\n'
+            f'X-Powered-By: PHP/8.2.15\r\n'
+            f'Set-Cookie: phpMyAdmin=1abc2def3ghi4jkl5mno; path=/; HttpOnly\r\n'
+            f'Expires: Thu, 19 Nov 1981 08:52:00 GMT\r\n'
+            f'Cache-Control: no-store, no-cache, must-revalidate\r\n'
+            f'Pragma: no-cache\r\n'
+            f'X-Frame-Options: DENY\r\n'
+            f'Content-Type: {content_type}\r\n'
+            f'Content-Length: {len(body_bytes)}\r\n'
             f'Connection: close\r\n'
-            f'Content-Length: {len(body.encode("iso-8859-1"))}\r\n'
             f'\r\n'
             f'{body}'
         )
