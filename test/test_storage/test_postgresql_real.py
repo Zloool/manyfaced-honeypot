@@ -69,8 +69,8 @@ def test_real_insert_and_query(storage):
     rec = {
         'ip': '203.0.113.5',
         'timestamp': '2026-07-08T12:00:00',
-        'detected_id': 1,
-        'path': '/admin',
+        'is_detected': 1,
+        'parsed_request': {'command': 'GET', 'path': '/admin'},
         'raw_request': 'GET /admin HTTP/1.1',
     }
     storage.insert(rec)
@@ -90,15 +90,15 @@ def test_real_delete_old_records(storage):
     old = {
         'ip': '198.51.100.7',
         'timestamp': '2000-01-01T00:00:00',
-        'detected_id': 1,
-        'path': '/old',
+        'is_detected': 1,
+        'parsed_request': {'command': 'GET', 'path': '/old'},
         'raw_request': 'GET /old HTTP/1.1',
     }
     new = {
         'ip': '198.51.100.8',
         'timestamp': '2026-07-08T12:00:00',
-        'detected_id': 1,
-        'path': '/new',
+        'is_detected': 1,
+        'parsed_request': {'command': 'GET', 'path': '/new'},
         'raw_request': 'GET /new HTTP/1.1',
     }
     storage.insert(old)
@@ -115,8 +115,8 @@ def test_real_aggregate_stats(storage):
         {
             'ip': '203.0.113.9',
             'timestamp': '2026-07-08T12:00:00',
-            'detected_id': 2,
-            'path': '/x',
+            'is_detected': 2,
+            'parsed_request': {'command': 'GET', 'path': '/x'},
             'raw_request': 'GET /x HTTP/1.1',
         }
     )

@@ -433,7 +433,7 @@ class SQLiteStorage(StorageBackend):
         full-table scan on every connection open.
         """
         try:
-            self._conn = sqlite3.connect(self._db_path)
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
             self._conn.execute(f'PRAGMA busy_timeout={busy_timeout}')
             self._conn.execute('PRAGMA journal_mode=WAL')
             if init_schema:
@@ -865,22 +865,12 @@ class PostgreSQLStorage(StorageBackend):
         # Explicit constructor args (used by tests) stay the top override; then
         # env vars; then TOML config (settings.DB_PG_*) — the previous code only
         # honored env/defaults, so ``pg_*`` in config.toml was ignored (issue #243).
-        self._host = (
-            host
-            or os.environ.get('HONEY_PG_HOST')
-            or _pg_toml('DB_PG_HOST', '127.0.0.1')
-        )
+        self._host = host or os.environ.get('HONEY_PG_HOST') or _pg_toml('DB_PG_HOST', '127.0.0.1')
         self._port = port or int(os.environ.get('HONEY_PG_PORT') or _pg_toml('DB_PG_PORT', '5432'))
         self._database = (
-            database
-            or os.environ.get('HONEY_PG_DB')
-            or _pg_toml('DB_PG_DB', 'honeypot')
+            database or os.environ.get('HONEY_PG_DB') or _pg_toml('DB_PG_DB', 'honeypot')
         )
-        self._user = (
-            user
-            or os.environ.get('HONEY_PG_USER')
-            or _pg_toml('DB_PG_USER', 'postgres')
-        )
+        self._user = user or os.environ.get('HONEY_PG_USER') or _pg_toml('DB_PG_USER', 'postgres')
         self._password = (
             password
             or os.environ.get('HONEY_PG_PASSWORD')
@@ -888,9 +878,7 @@ class PostgreSQLStorage(StorageBackend):
         )
         # TLS / managed-Postgres support (issue #243 #9).
         self._sslmode = (
-            sslmode
-            or os.environ.get('HONEY_PG_SSLMODE')
-            or _pg_toml('DB_PG_SSLMODE', 'prefer')
+            sslmode or os.environ.get('HONEY_PG_SSLMODE') or _pg_toml('DB_PG_SSLMODE', 'prefer')
         )
         self._dsn = dsn or os.environ.get('HONEY_PG_DSN') or _pg_toml('DB_PG_DSN', '')
         self._conn: Any = None
@@ -1240,7 +1228,9 @@ class PostgreSQLStorage(StorageBackend):
                     # Now delete the archived rows.
                     cur.execute('DELETE FROM honeypot_bears WHERE timestamp < %s', (cutoff,))
                     self._conn.commit()
-                    logger.info('Archived %d records older than %d days to %s', count, days, dest_db)
+                    logger.info(
+                        'Archived %d records older than %d days to %s', count, days, dest_db
+                    )
             return dest_db
         except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
             self._conn = None
@@ -1357,7 +1347,9 @@ def backup_database(dest_dir: str | None = None) -> list[str]:
     if isinstance(storage, PostgreSQLStorage):
         return _backup_postgresql(storage, dest_dir)
 
-    logger.warning('backup_database: unknown backend %r; nothing to back up', type(storage).__name__)
+    logger.warning(
+        'backup_database: unknown backend %r; nothing to back up', type(storage).__name__
+    )
     return []
 
 
@@ -1378,10 +1370,14 @@ def _backup_postgresql(storage: 'PostgreSQLStorage', dest_dir: str) -> list[str]
             cmd += ['--sslmode', storage._sslmode]
     else:
         cmd += [
-            '--host', storage._host,
-            '--port', str(storage._port),
-            '--username', storage._user,
-            '--dbname', storage._database,
+            '--host',
+            storage._host,
+            '--port',
+            str(storage._port),
+            '--username',
+            storage._user,
+            '--dbname',
+            storage._database,
         ]
         if storage._sslmode:
             cmd += ['--sslmode', storage._sslmode]

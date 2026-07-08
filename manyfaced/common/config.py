@@ -157,8 +157,6 @@ class Config:
     DB_PG_DB: str
     DB_PG_USER: str
     DB_PG_PASSWORD: str
-    DB_PG_SSLMODE: str
-    DB_PG_DSN: str
     AUTHORIZED_BEES: dict[str, str]
 
     # Port mode configuration
@@ -194,6 +192,13 @@ class Config:
     DASHBOARD_SECRET: str = ''
     # Default time range for the stats view: '24h', '7d', '30d', or 'all'.
     DASHBOARD_TIME_RANGE: str = _DEFAULT_DASHBOARD_TIME_RANGE
+
+    # PostgreSQL backend tuning (issue #243) — optional; default to a safe
+    # sslmode and an empty DSN (DSN takes precedence over the individual
+    # DB_PG_* fields when set). Defaults keep existing Config(...) constructions
+    # valid and let the backend fall back to individual pg_* settings.
+    DB_PG_SSLMODE: str = 'prefer'
+    DB_PG_DSN: str = ''
 
     @staticmethod
     def load(config_path: Path | None = None, validate_secrets: bool = False) -> Config:
@@ -253,9 +258,7 @@ class Config:
             DB_PG_SSLMODE=str(
                 resolve_setting('pg_sslmode', _DEFAULT_DB_PG_SSLMODE, 'database', toml, prefix)
             ),
-            DB_PG_DSN=str(
-                resolve_setting('pg_dsn', _DEFAULT_DB_PG_DSN, 'database', toml, prefix)
-            ),
+            DB_PG_DSN=str(resolve_setting('pg_dsn', _DEFAULT_DB_PG_DSN, 'database', toml, prefix)),
             AUTHORIZED_BEES={
                 str(k): str(v)
                 for k, v in (
