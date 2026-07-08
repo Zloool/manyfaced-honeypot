@@ -1,4 +1,8 @@
-"""HNAP routes (scaffold). TODO: refine to match real probe paths."""
+"""HNAP (Home Network Administration Protocol) routes — issue #288.
+
+Mirrors the production probe paths bots use to locate the HNAP1 endpoint on
+consumer routers. Encoded variants decode inside the handler.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +18,11 @@ def _hnap() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- HNAP (issue #288) ----
-    Route(PathExact('/HNAP1'), _hnap(), HNAP_HTTP, 'hnap_0'),
-    Route(PathExact('/hnap'), _hnap(), HNAP_HTTP, 'hnap_1'),
-    Route(PathExact('/post_login.xml'), _hnap(), HNAP_HTTP, 'hnap_2'),
+    # ---- HNAP (issue #288) ------------------------------------------------
+    Route(PathExact('/HNAP1'), _hnap(), HNAP_HTTP, 'hnap_hnap1'),
+    Route(PathExact('/hnap1'), _hnap(), HNAP_HTTP, 'hnap_hnap1_lower'),
+    Route(PathExact('/HNAP1/'), _hnap(), HNAP_HTTP, 'hnap_hnap1_slash'),
+    Route(PathExact('/cgi-bin/HNAP1'), _hnap(), HNAP_HTTP, 'hnap_cgi'),
+    Route(PathExact('/PrivateHNAP'), _hnap(), HNAP_HTTP, 'hnap_private'),
+    Route(PathPrefix('/HNAP1/'), _hnap(), HNAP_HTTP, 'hnap_prefix'),
 ]
