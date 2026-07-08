@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     hive_id      INTEGER,
     login        TEXT,
     bot_profile_data TEXT,
+    listen_port  INTEGER,
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -40,15 +41,16 @@ CREATE INDEX IF NOT EXISTS idx_bears_bot_country  ON honeypot_bears(bot_country)
 CREATE INDEX IF NOT EXISTS idx_bears_bot_continent ON honeypot_bears(bot_continent);
 CREATE INDEX IF NOT EXISTS idx_bears_bot_ip       ON honeypot_bears(bot_ip);
 CREATE INDEX IF NOT EXISTS idx_bears_request_path ON honeypot_bears(request_path);
+CREATE INDEX IF NOT EXISTS idx_bears_listen_port  ON honeypot_bears(listen_port);
 """
 
 INSERT_SQL = """\
 INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port)
 VALUES
-    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 CREATE_TABLE_PG_SQL = """\
@@ -70,6 +72,7 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     hive_id      INTEGER,
     login        VARCHAR(255),
     bot_profile_data TEXT,
+    listen_port  INTEGER,
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -78,9 +81,9 @@ INSERT_PG_SQL = """\
 INSERT INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port)
 VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT(bot_ip, timestamp) DO NOTHING
 """
 
@@ -121,6 +124,17 @@ def extract_record_fields(record: dict) -> tuple:
     hive_id = record.get('hive_id')
     login = record.get('login') or ''
 
+    # listen_port — local honeypot port the bot connected to (issue #299).
+    # 0 means "unknown" (older clients / pre-#299 reports / fallback paths).
+    raw_listen_port = record.get('listen_port')
+    if raw_listen_port is None or raw_listen_port == '':
+        listen_port = 0
+    else:
+        try:
+            listen_port = int(raw_listen_port)
+        except (TypeError, ValueError):
+            listen_port = 0
+
     # Bot profile data — JSON-serialised full report from BotProfile.get_full_report()
     bot_profile_data = record.get('bot_profile_data')
     if isinstance(bot_profile_data, dict):
@@ -157,4 +171,5 @@ def extract_record_fields(record: dict) -> tuple:
         int(hive_id) if hive_id is not None else None,
         login,
         bot_profile_data,
+        listen_port,
     )

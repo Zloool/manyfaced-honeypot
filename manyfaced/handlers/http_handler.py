@@ -83,9 +83,13 @@ class HTTPHandler:
     a honeypot response, and queues reports for sending to the server.
     """
 
-    def __init__(self, args, update_event):
+    def __init__(self, args, update_event, listen_port: int = 0):
         self.args = args
         self.update_event = update_event
+        # Local honeypot port the bot connected to (issue #299). 0 = unknown
+        # (only accurate when the handler was constructed per-connection with the
+        # real listening port, as the client does).
+        self.listen_port = listen_port
 
     def handle_request(self, message: str, bot_ip: str = '127.0.0.1'):
         """Handle a raw HTTP request from a bot.
@@ -312,6 +316,9 @@ class HTTPHandler:
 
     def _enrich_and_send(self, bs: BearStorage, bot_ip: str) -> None:
         """Resolve DNS/geo and queue report for a BearStorage entry."""
+        # Tag the record with the local honeypot port it was captured on (issue #299).
+        if self.listen_port:
+            bs.listen_port = self.listen_port
         try:
             bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
         except Exception:

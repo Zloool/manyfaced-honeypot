@@ -434,6 +434,35 @@ class TestEmptyConnection:
         # resolve_geo should still be called even after DNS failure
         mock_bs.resolve_geo.assert_called_once_with('5.6.7.8', timeout=2.0)
 
+    def test_listen_port_is_tagged_on_bearstorage(self, enriched_handler):
+        """The handler's listen_port should be copied onto the BearStorage before reporting (issue #299)."""
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        enriched_handler.listen_port = 8080
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
+            enriched_handler.handle_request('', bot_ip='5.6.7.8')
+
+        assert mock_bs.listen_port == 8080
+
+    def test_listen_port_zero_is_not_tagged(self, enriched_handler):
+        """A handler with listen_port=0 must NOT overwrite a BearStorage port (issue #299)."""
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+        mock_bs.listen_port = 9999  # pre-existing value must be preserved
+
+        enriched_handler.listen_port = 0
+
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs):
+            enriched_handler.handle_request('', bot_ip='5.6.7.8')
+
+        assert mock_bs.listen_port == 9999
+
 
 class TestSSHEnrichment:
     """Tests for SSH probe DNS and geo enrichment."""

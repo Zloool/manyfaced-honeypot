@@ -63,6 +63,7 @@ class ServerHandler(BaseHandler):
                 continent=data.get('continent', ''),
                 login=data.get('login', ''),
                 bot_profile_data=data.get('bot_profile_data'),
+                listen_port=data.get('listen_port', 0) or 0,
             )
             Insert(bear)
             logger.info('Data saved for %s', data['ip'])
