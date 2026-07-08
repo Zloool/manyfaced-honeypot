@@ -1,9 +1,11 @@
 name: "CodeQL"
 
+# SAST. Runs on push-to-master and a weekly schedule only (issue #256) — it no
+# longer runs on pull_request, so it doesn't double-run against ci.yml. Merged
+# commits are still analyzed every push; PR authors get fast feedback from ci.yml
+# instead of waiting on the expensive CodeQL scan.
 on:
   push:
-    branches: [master]
-  pull_request:
     branches: [master]
   schedule:
     - cron: "27 4 * * 1"  # weekly, Mondays ~04:27 UTC

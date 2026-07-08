@@ -21,7 +21,7 @@ skills/prod-healthcheck/  # Fast read-only service health check (SSH)
 skills/prod-analysis/     # Data-pull + investigation + report generation workflow
 test/                   # pytest suite (~76% coverage target)
 systemd/                # manyfaced.service + logrotate config
-.github/workflows/      # CI (ruff lint, deploy only — no tests on master push), deploy (SSH rsync to droplet)
+.github/workflows/      # ci.yml (pre-merge validation gate, PR-only), deploy.yml (deploy only, push [master]), codeql.yml (push+schedule)
 ```
 
 ## Local development
@@ -52,7 +52,7 @@ Additional rules:
 - **Behavior change** → add or update a test that fails without the fix.
 - **Doc-affecting change** → re-run the docs-drift check (and update `docs/` if a referenced symbol/CLI changed).
 - **New CI job or required status check** → add it to branch protection's required
-  checks and to `deploy.yml`'s `needs:` so it actually blocks merges.
+  checks and to `ci.yml`'s `needs:` so it actually blocks merges.
 - Once #146 lands: also verify `docker compose config` for container-buildable changes.
 
 The PR template (`.github/pull_request_template.md`) links here; fill it out on
@@ -135,9 +135,9 @@ reproducible local dev, CI, and a future containerized deploy (#149).
   volume at `/opt/manyfaced/bots` (mirrors the droplet path).
 - Config is wired from `HONEY_*` env vars via `compose.yaml`'s `env_file` (an
   `.env` git-ignored file, seeded from `templates/honeypot.env.example`).
-- The **Build Image** workflow builds the image and smoke-tests
-  `manyfaced --generate-config` + `docker compose config` on every push/PR. It
-  is intentionally NOT a required status check, so it never blocks merges.
+- The **CI** workflow (`ci.yml`, pre-merge only) builds the image and smoke-tests
+  `manyfaced --generate-config` + `docker compose config` on every PR. It is
+  intentionally NOT a required status check, so it never blocks merges.
 - When adding a port/handler, update `compose.yaml` ports and the env example in
   lockstep so the container exposes what prod does.
 
