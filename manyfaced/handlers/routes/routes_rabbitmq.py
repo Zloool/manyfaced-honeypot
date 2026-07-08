@@ -1,4 +1,10 @@
-"""RabbitMQ routes (scaffold). TODO: refine to match real probe paths."""
+"""RabbitMQ (Management UI / HTTP API) routes — issue #285.
+
+Specific paths are registered before prefixes so the most-targeted probe
+paths win.  Percent-encoded segments in probe paths (%2e -> '.', %2f -> '/')
+are normalized by the handler before routing, so the matchers below use the
+decoded forms where relevant.
+"""
 
 from __future__ import annotations
 
@@ -14,12 +20,17 @@ def _rabbitmq() -> type:
 
 
 ROUTES: list[Route] = [
-    # ---- RabbitMQ (issue #298) ----
-    Route(PathExact('/api/overview'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_0'),
-    Route(PathPrefix('/api/overview/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_prefix_0'),
-    Route(PathExact('/api/queues'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_1'),
-    Route(PathPrefix('/api/queues/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_prefix_1'),
-    Route(PathExact('/api/exchanges'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_2'),
-    Route(PathPrefix('/api/exchanges/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_prefix_2'),
-    Route(PathExact('/rabbitmq'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_3'),
+    # ---- RabbitMQ Management UI / HTTP API (issue #285) -------------------
+    # Specific paths first.
+    Route(PathExact('/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_root'),
+    Route(PathExact('/api/overview'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_overview'),
+    Route(PathExact('/api/whoami'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_whoami'),
+    Route(PathExact('/api/queues'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_queues'),
+    Route(PathExact('/api/exchanges'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_exchanges'),
+    Route(PathExact('/api/connections'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_connections'),
+    Route(PathExact('/api/aliveness-test/%2f'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api_aliveness'),
+    # Prefixes last.
+    Route(PathPrefix('/api/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api'),
+    Route(PathPrefix('/cli/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_cli'),
+    Route(PathPrefix('/rabbitmq/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_env'),
 ]
