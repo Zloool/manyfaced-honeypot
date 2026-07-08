@@ -736,3 +736,143 @@ class TestRetentionArchiveDelete:
         remaining = {r[0] for r in main.execute('SELECT id FROM honeypot_bears')}
         main.close()
         assert remaining == {2}
+
+
+class TestListenPortColumn:
+    """Tests for the issue #299 listen_port column (insert, default, migration, aggregate)."""
+
+    def test_insert_round_trips_listen_port(self, tmp_path):
+        """A record with a non-zero listen_port is stored and read back (issue #299)."""
+        db_path = str(tmp_path / 'port_roundtrip.db')
+        storage = SQLiteStorage(db_path=db_path)
+
+        record = {
+            'ip': '10.0.0.1',
+            'hostname': 'test',
+            'timestamp': '2024-01-01 00:00:00',
+            'parsed_request': {},
+            'raw_request': 'GET / HTTP/1.1',
+            'is_detected': 1,
+            'listen_port': 8080,
+        }
+        storage.insert(record)
+        storage._conn.commit()
+
+        row = storage._conn.execute('SELECT listen_port FROM honeypot_bears').fetchone()
+        assert row[0] == 8080
+
+        # recent_records() should surface the new column.
+        recs = storage.recent_records(limit=1)
+        assert recs and recs[0]['listen_port'] == 8080
+        storage.close()
+
+    def test_insert_defaults_listen_port_to_zero(self, tmp_path):
+        """A record without listen_port stores 0 (unknown), not NULL/error (issue #299)."""
+        db_path = str(tmp_path / 'port_default.db')
+        storage = SQLiteStorage(db_path=db_path)
+
+        record = {
+            'ip': '10.0.0.2',
+            'hostname': 'test',
+            'timestamp': '2024-01-01 00:00:00',
+            'parsed_request': {},
+            'raw_request': 'GET / HTTP/1.1',
+            'is_detected': 0,
+        }
+        storage.insert(record)
+        storage._conn.commit()
+
+        row = storage._conn.execute('SELECT listen_port FROM honeypot_bears').fetchone()
+        assert row[0] == 0
+        storage.close()
+
+    def test_migration_adds_column_to_pre_299_db(self, tmp_path):
+        """A DB created WITHOUT listen_port gets the column added at startup (issue #299)."""
+        db_path = str(tmp_path / 'legacy.db')
+        # Build a pre-#299 schema manually (no listen_port column).
+        legacy_conn = sqlite3.connect(db_path)
+        legacy_conn.close()
+        os.remove(db_path)
+        legacy_conn = sqlite3.connect(db_path)
+        legacy_conn.execute(
+            """
+            CREATE TABLE honeypot_bears (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_ip TEXT NOT NULL,
+                hostname TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                request_path TEXT,
+                request_command TEXT,
+                request_version TEXT,
+                request_raw TEXT,
+                bot_user_agent TEXT,
+                bot_country TEXT,
+                bot_continent TEXT,
+                bot_tracert TEXT,
+                bot_dns_name TEXT,
+                detected_id INTEGER,
+                hive_id INTEGER,
+                login TEXT,
+                bot_profile_data TEXT,
+                UNIQUE(bot_ip, timestamp)
+            )
+            """
+        )
+        legacy_conn.commit()
+        legacy_conn.close()
+
+        # Opening with init_schema=True must migrate (add the column) BEFORE any
+        # insert, otherwise inserts referencing listen_port would fail.
+        storage = SQLiteStorage(db_path=db_path)  # noqa: F811
+        cols = {r[1] for r in storage._conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()}
+        assert 'listen_port' in cols
+
+        # And an insert referencing the new column must succeed post-migration.
+        storage.insert(
+            {
+                'ip': '10.0.0.3',
+                'hostname': 'test',
+                'timestamp': '2024-01-01 00:00:00',
+                'parsed_request': {},
+                'raw_request': 'GET / HTTP/1.1',
+                'is_detected': 0,
+                'listen_port': 443,
+            }
+        )
+        storage._conn.commit()
+        row = storage._conn.execute('SELECT listen_port FROM honeypot_bears').fetchone()
+        assert row[0] == 443
+        storage.close()
+
+    def test_aggregate_stats_by_port(self, tmp_path):
+        """aggregate_stats() returns a by_port breakdown grouped by listen_port (issue #299)."""
+        db_path = str(tmp_path / 'by_port.db')
+        storage = SQLiteStorage(db_path=db_path)
+
+        rows = [
+            ('10.0.0.1', '2024-01-01 00:00:01', 80),
+            ('10.0.0.2', '2024-01-01 00:00:02', 80),
+            ('10.0.0.3', '2024-01-01 00:00:03', 443),
+            ('10.0.0.4', '2024-01-01 00:00:04', 0),  # unknown port excluded
+        ]
+        for ip, ts, port in rows:
+            storage.insert(
+                {
+                    'ip': ip,
+                    'hostname': 'h',
+                    'timestamp': ts,
+                    'parsed_request': {},
+                    'raw_request': 'GET / HTTP/1.1',
+                    'is_detected': 1,
+                    'listen_port': port,
+                }
+            )
+        storage._conn.commit()
+
+        stats = storage.aggregate_stats(since='all')
+        by_port = {int(r['key']): r['count'] for r in stats['by_port']}
+        assert by_port.get(80) == 2
+        assert by_port.get(443) == 1
+        # listen_port = 0 (unknown) is excluded from the grouping.
+        assert by_port.get(0) is None
+        storage.close()
