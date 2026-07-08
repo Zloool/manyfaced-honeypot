@@ -279,6 +279,7 @@ def _resolve_backend() -> str:
 
 from manyfaced.db.sql_builder import (  # noqa: E402, F401
     CREATE_TABLE_SQL as _CREATE_TABLE_SQL,
+    CREATE_INDEXES_SQL as _CREATE_INDEXES_SQL,
     INSERT_SQL as _INSERT_SQL,
 )
 from manyfaced.db.sql_builder import extract_record_fields as _extract_record_fields  # noqa: E402
@@ -295,7 +296,9 @@ class SQLiteStorage(StorageBackend):
 
     CHECKPOINT_INTERVAL = 100  # Run PRAGMA wal_checkpoint(TRUNCATE) every N inserts
 
-    def __init__(self, db_path: str | None = None) -> None:
+    def __init__(
+        self, db_path: str | None = None, busy_timeout: int = 5000, integrity_check: bool = True
+    ) -> None:
         self._db_path = db_path or _resolve_db_path()
         # Ensure parent directories exist
         parent = os.path.dirname(self._db_path)
@@ -304,20 +307,33 @@ class SQLiteStorage(StorageBackend):
         self._conn: sqlite3.Connection | None = None
         self._lock = Lock()
         self._insert_count = 0
-        self._init_db()
+        self._init_db(busy_timeout=busy_timeout, integrity_check=integrity_check)
 
-    def _init_db(self) -> None:
-        """Open the connection, create the table if it does not exist, and run integrity check."""
+    def _init_db(self, busy_timeout: int = 5000, integrity_check: bool = True) -> None:
+        """Open the connection, create the table if it does not exist, and run integrity check.
+
+        ``busy_timeout`` makes concurrent reads (e.g. the dashboard) wait for a
+        brief WAL write lock instead of immediately raising "database is locked"
+        — important on a live honeypot where the writer is constantly inserting.
+        ``integrity_check`` is skipped for read-only callers (the dashboard) to
+        avoid a full-table scan on every connection open.
+        """
         try:
             self._conn = sqlite3.connect(self._db_path)
+            self._conn.execute(f'PRAGMA busy_timeout={busy_timeout}')
             self._conn.execute('PRAGMA journal_mode=WAL')
             self._conn.execute(_CREATE_TABLE_SQL)
+            # Idempotent performance indexes for the dashboard aggregates.
+            self._conn.executescript(_CREATE_INDEXES_SQL)
             self._conn.commit()
 
-            # Run startup integrity check and warn if corruption is detected
-            result = self._conn.execute('PRAGMA integrity_check').fetchone()
-            if result and result[0] != 'ok':
-                logger.warning('SQLite integrity check failed: %s — DB may be corrupted', result[0])
+            if integrity_check:
+                # Run startup integrity check and warn if corruption is detected
+                result = self._conn.execute('PRAGMA integrity_check').fetchone()
+                if result and result[0] != 'ok':
+                    logger.warning(
+                        'SQLite integrity check failed: %s — DB may be corrupted', result[0]
+                    )
 
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Failed to initialise SQLite database at %s', self._db_path)
@@ -841,17 +857,21 @@ class PostgreSQLStorage(StorageBackend):
 # ---------------------------------------------------------------------------
 
 
-def get_storage() -> StorageBackend:
+def get_storage(integrity_check: bool = True, busy_timeout: int = 5000) -> StorageBackend:
     """Factory to get the storage backend based on HONEY_DB_BACKEND env var.
 
     Returns a :class:`SQLiteStorage` or :class:`PostgreSQLStorage` depending on
     the value of the ``HONEY_DB_BACKEND`` environment variable (case-insensitive).
+
+    ``integrity_check`` / ``busy_timeout`` are forwarded to :class:`SQLiteStorage`
+    so read-only callers (the dashboard) can skip the startup full-table scan and
+    tolerate brief WAL write-lock contention without erroring.
     """
     backend = _resolve_backend()
     if backend == 'postgresql':
         return PostgreSQLStorage()
     # default to SQLite
-    return SQLiteStorage()
+    return SQLiteStorage(integrity_check=integrity_check, busy_timeout=busy_timeout)
 
 
 def backup_database(dest_dir: str | None = None) -> list[str]:

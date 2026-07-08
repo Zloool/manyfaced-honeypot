@@ -31,6 +31,17 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
 )
 """
 
+# Performance indexes for the read-heavy dashboard aggregates (issue #234/#149).
+# Created idempotently at startup so a fresh DB stays fast as it grows.
+CREATE_INDEXES_SQL = """\
+CREATE INDEX IF NOT EXISTS idx_bears_timestamp    ON honeypot_bears(timestamp);
+CREATE INDEX IF NOT EXISTS idx_bears_detected_id  ON honeypot_bears(detected_id);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_country  ON honeypot_bears(bot_country);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_continent ON honeypot_bears(bot_continent);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_ip       ON honeypot_bears(bot_ip);
+CREATE INDEX IF NOT EXISTS idx_bears_request_path ON honeypot_bears(request_path);
+"""
+
 INSERT_SQL = """\
 INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
