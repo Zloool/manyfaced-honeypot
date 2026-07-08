@@ -91,11 +91,62 @@ _SINCE_DELTAS: dict[str, timedelta] = {
 def _since_to_iso(since: str | None) -> str | None:
     if since in (None, 'all'):
         return None
+    # The dashboard passes a concrete ISO-8601 cutoff (from _parse_range), not a
+    # window token. Pass those through untouched so windowed aggregates actually
+    # filter — otherwise `delta = _SINCE_DELTAS.get(iso_string)` is None and we
+    # drop the WHERE clause, returning all-time totals for every range.
+    if isinstance(since, str):
+        for _fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S'):
+            try:
+                datetime.strptime(since, _fmt)
+                return since
+            except ValueError:
+                continue
     delta = _SINCE_DELTAS.get(since)
-    if delta is None:
-        return None
-    cutoff = datetime.now() - delta
-    return cutoff.strftime('%Y-%m-%d %H:%M:%S')
+    if delta is not None:
+        cutoff = datetime.now() - delta
+        return cutoff.strftime('%Y-%m-%d %H:%M:%S')
+    # Not a recognised shorthand token ('24h'/'7d'/'30d') AND not a valid
+    # ISO-8601 cutoff (the dashboard's _parse_range resolves those, caught by
+    # the strptime check above). Return None (no WHERE bound) rather than
+    # injecting an arbitrary string into the SQL `WHERE timestamp >= <since>`
+    # clause, which would be a malformed/unsafe query.
+    return None
+
+
+def _sqlite_bucket_expr(bucket: str) -> str:
+    """SQL expression bucketing the TEXT ``timestamp`` column for SQLite.
+
+    ``minute5`` rounds down to the nearest 5-minute mark via a Unix-epoch
+    round-trip (SQLite has no native 5-minute strftime format); ``hour``/
+    ``day`` format directly since those already align to calendar units.
+    """
+    if bucket == 'minute5':
+        return (
+            "strftime('%Y-%m-%d %H:%M:00', "
+            "datetime((CAST(strftime('%s', timestamp) AS INTEGER) / 300) * 300, 'unixepoch'))"
+        )
+    if bucket == 'day':
+        return "strftime('%Y-%m-%d', timestamp)"
+    return "strftime('%Y-%m-%d %H:00', timestamp)"
+
+
+def _pg_bucket_expr(bucket: str) -> str:
+    """SQL expression bucketing the TEXT ``timestamp`` column for PostgreSQL.
+
+    Mirrors :func:`_sqlite_bucket_expr`; the ``minute5`` case round-trips
+    through ``AT TIME ZONE 'UTC'`` so it stays self-consistent with the naive
+    (timezone-less) timestamps written by the collector, matching how
+    ``hour``/``day`` format the naive value directly with no TZ conversion.
+    """
+    if bucket == 'minute5':
+        return (
+            'to_char(to_timestamp(floor(extract(epoch from timestamp::timestamp) / 300) * 300) '
+            "AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:00')"
+        )
+    if bucket == 'day':
+        return "to_char(timestamp::timestamp, 'YYYY-MM-DD')"
+    return "to_char(timestamp::timestamp, 'YYYY-MM-DD HH24:00')"
 
 
 def _empty_stats() -> dict:
@@ -104,6 +155,7 @@ def _empty_stats() -> dict:
         'total': 0,
         'detected': 0,
         'undetected': 0,
+        'unique_ips': 0,
         'by_service': [],
         'by_country': [],
         'by_continent': [],
@@ -112,6 +164,12 @@ def _empty_stats() -> dict:
         'by_port': [],
         'volume': [],
     }
+
+
+# Dashboard volume-chart bucket granularities (issue #234 redesign): 5-minute
+# buckets for the 1H range, hour/day for wider ranges (matches the ranges
+# offered by the UI: 1H/24H/7D/30D).
+_VOLUME_BUCKETS = ('minute5', 'hour', 'day')
 
 
 # Process-wide lock serializing all SQLite writes. get_storage() returns a
@@ -182,12 +240,23 @@ class StorageBackend(ABC):
                 ``'hour'`` or ``'day'``.
 
         Returns:
-            Dict with keys: total, detected, undetected, by_service,
-            by_country, by_continent, by_ip, by_path, volume. Each ``by_*`` is
-            a list of ``{'key': ..., 'count': ...}``; ``volume`` is a list of
-            ``{'bucket': ..., 'count': ...}``.
+            Dict with keys: total, detected, undetected, unique_ips,
+            by_service, by_country, by_continent, by_ip, by_path, by_port,
+            volume. Each ``by_*`` is a list of ``{'key': ..., 'count': ...}``;
+            ``volume`` is a list of ``{'bucket': ..., 'count': ...}``.
         """
         raise NotImplementedError('aggregate_stats not implemented by this backend')
+
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        """Return a request-volume time series, optionally scoped to one port.
+
+        Used by the volume chart, which is filtered independently of the
+        (unfiltered) top-lists in :meth:`aggregate_stats`. ``bucket`` is one
+        of ``'minute5'`` (1H range), ``'hour'`` (24H) or ``'day'`` (7D/30D).
+        """
+        raise NotImplementedError('volume_series not implemented by this backend')
 
 
 # ---------------------------------------------------------------------------
@@ -754,11 +823,7 @@ class SQLiteStorage(StorageBackend):
             where = ''
             params = ()
             and_prefix = ' WHERE'
-        bucket_expr = (
-            "strftime('%Y-%m-%d', timestamp)"
-            if bucket == 'day'
-            else "strftime('%Y-%m-%d %H:00', timestamp)"
-        )
+        bucket_expr = _sqlite_bucket_expr(bucket)
         try:
             total = _scalar(conn, f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
             detected = _scalar(
@@ -767,6 +832,9 @@ class SQLiteStorage(StorageBackend):
                 (*params, _DETECTED_SERVICE_MAX),
             )
             undetected = total - detected
+            unique_ips = _scalar(
+                conn, f'SELECT COUNT(DISTINCT bot_ip) FROM honeypot_bears{where}', params
+            )
 
             def _group(col: str, top: int = 15) -> list[dict]:
                 q = (
@@ -809,6 +877,7 @@ class SQLiteStorage(StorageBackend):
                 'total': total,
                 'detected': detected,
                 'undetected': undetected,
+                'unique_ips': unique_ips,
                 'by_service': by_service,
                 'by_country': _group('bot_country'),
                 'by_continent': _group('bot_continent'),
@@ -820,6 +889,33 @@ class SQLiteStorage(StorageBackend):
         except (sqlite3.Error, sqlite3.OperationalError):
             logger.exception('Error aggregating stats from SQLite storage')
             return _empty_stats()
+
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        if self._conn is None:
+            return []
+        cutoff = _since_to_iso(since)
+        clauses: list[str] = []
+        params: list = []
+        if cutoff is not None:
+            clauses.append('timestamp >= ?')
+            params.append(cutoff)
+        if port is not None:
+            clauses.append('listen_port = ?')
+            params.append(port)
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        bucket_expr = _sqlite_bucket_expr(bucket)
+        try:
+            rows = self._conn.execute(
+                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY b ORDER BY b',
+                params,
+            ).fetchall()
+            return [{'bucket': r[0], 'count': r[1]} for r in rows]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading volume series from SQLite storage')
+            return []
 
     def __del__(self) -> None:
         self.close()
@@ -963,6 +1059,30 @@ class PostgreSQLStorage(StorageBackend):
             return False
         return self._conn is not None
 
+    def _reset_conn(self) -> None:
+        """Roll back any aborted transaction and drop the connection.
+
+        A failed query leaves the PostgreSQL session in
+        ``InFailedSqlTransaction`` — every subsequent query on this *shared*
+        connection then fails until a ``ROLLBACK``. Because the honeypot and
+        the dashboard reader use one ``PostgreSQLStorage`` instance, a single
+        bad write/read would otherwise poison recording and the dashboard
+        reader forever (issue #243). Roll back (clearing the aborted txn) and
+        close the connection so the next operation opens a fresh, clean one.
+        """
+        conn = self._conn
+        self._conn = None
+        if conn is None:
+            return
+        try:
+            conn.rollback()
+        except psycopg2.Error:  # noqa: BLE001 — best-effort
+            pass
+        try:
+            conn.close()
+        except psycopg2.Error:  # noqa: BLE001 — best-effort
+            pass
+
     # -- public API ----------------------------------------------------------
 
     def insert(self, record: dict) -> None:  # noqa: C901
@@ -984,11 +1104,13 @@ class PostgreSQLStorage(StorageBackend):
                 with self._conn.cursor() as cur:
                     cur.execute(_INSERT_PG_SQL, fields)
                 self._conn.commit()
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
-            # Connection dropped mid-insert — reconnect once and retry exactly
-            # once before giving up (avoids an infinite reconnect loop).
-            logger.warning('PostgreSQL insert failed on a dead connection; reconnecting once')
-            self._conn = None
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            # A dropped connection or an aborted transaction
+            # (InFailedSqlTransaction) poisons this shared connection. Reset
+            # it (rollback + close) and reconnect once before retrying, so a
+            # single failure can't permanently break recording (issue #243).
+            logger.warning('PostgreSQL insert error; rolling back and reconnecting once')
+            self._reset_conn()
             if not self._ensure_connected():
                 self._dump_insert_failure(record)
                 return
@@ -1000,9 +1122,6 @@ class PostgreSQLStorage(StorageBackend):
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error inserting record into PostgreSQL storage')
                 self._dump_insert_failure(record)
-        except psycopg2.Error:  # noqa: BLE001
-            logger.exception('Error inserting record into PostgreSQL storage')
-            self._dump_insert_failure(record)
 
     def _dump_insert_failure(self, record: dict) -> None:
         """Last-resort fallback: dump the record to JSONL so it is not lost.
@@ -1033,7 +1152,7 @@ class PostgreSQLStorage(StorageBackend):
     # -- read API (issue #234 dashboard) ------------------------------------
 
     def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
-        if self._conn is None:
+        if self._conn is None and not self._ensure_connected():
             return []
         sql = 'SELECT * FROM honeypot_bears'
         params: list = []
@@ -1046,9 +1165,21 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(sql, (*params, int(limit)))
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
-        except psycopg2.Error:  # noqa: BLE001
-            logger.exception('Error reading recent records from PostgreSQL storage')
-            return []
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            # Reset (rollback + close) the shared connection and retry once,
+            # so a transient failure can't poison later reads/writes.
+            logger.warning('PostgreSQL recent_records error; rolling back and reconnecting once')
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, (*params, int(limit)))
+                    cols = [d[0] for d in cur.description]
+                    return [dict(zip(cols, row)) for row in cur.fetchall()]
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading recent records from PostgreSQL storage')
+                return []
 
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         if self._conn is None:
@@ -1066,78 +1197,131 @@ class PostgreSQLStorage(StorageBackend):
             where = ''
             params = []
             and_prefix = ' WHERE'
-        bucket_expr = (
-            "to_char(timestamp::timestamp, 'YYYY-MM-DD')"
-            if bucket == 'day'
-            else "to_char(timestamp::timestamp, 'YYYY-MM-DD HH24:00')"
-        )
+        bucket_expr = _pg_bucket_expr(bucket)
+
+        def _run(cur) -> dict:
+            def _pg_scalar(q: str, p: list) -> int:
+                cur.execute(q, p)
+                row = cur.fetchone()
+                return int(row[0]) if row and row[0] is not None else 0
+
+            total = _pg_scalar(f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
+            detected = _pg_scalar(
+                f'SELECT COUNT(*) FROM honeypot_bears{where}{and_prefix} detected_id BETWEEN 1 AND %s',
+                [*params, _DETECTED_SERVICE_MAX],
+            )
+            undetected = total - detected
+            unique_ips = _pg_scalar(
+                f'SELECT COUNT(DISTINCT bot_ip) FROM honeypot_bears{where}', params
+            )
+
+            def _group(col: str, top: int = 15) -> list[dict]:
+                q = (
+                    f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                    f"{col} IS NOT NULL AND {col} != '' "
+                    f'GROUP BY {col} ORDER BY c DESC LIMIT %s'
+                )
+                cur.execute(q, [*params, top])
+                return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
+
+            # by_port groups by local honeypot port (issue #299). listen_port
+            # is INTEGER and 0 is the "unknown" sentinel; the generic _group's
+            # `!= ''` only excludes TEXT empties, so exclude 0 explicitly.
+            def _group_port(top: int = 15) -> list[dict]:
+                q = (
+                    f'SELECT listen_port, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
+                    'listen_port IS NOT NULL AND listen_port <> 0 '
+                    f'GROUP BY listen_port ORDER BY c DESC LIMIT %s'
+                )
+                cur.execute(q, [*params, top])
+                return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
+
+            cur.execute(
+                f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY detected_id ORDER BY c DESC',
+                params,
+            )
+            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in cur.fetchall()]
+
+            cur.execute(
+                f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                'GROUP BY b ORDER BY b',
+                params,
+            )
+            volume = [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
+
+            return {
+                'total': total,
+                'detected': detected,
+                'undetected': undetected,
+                'unique_ips': unique_ips,
+                'by_service': by_service,
+                'by_country': _group('bot_country'),
+                'by_continent': _group('bot_continent'),
+                'by_ip': _group('bot_ip'),
+                'by_path': _group('request_path'),
+                'by_port': _group_port(),
+                'volume': volume,
+            }
+
         try:
             with self._conn.cursor() as cur:
+                return _run(cur)
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            # Reset (rollback + close) the shared connection and retry once,
+            # so a transient failure can't poison later reads/writes.
+            logger.warning('PostgreSQL aggregate_stats error; rolling back and reconnecting once')
+            self._reset_conn()
+            if not self._ensure_connected():
+                return _empty_stats()
+            try:
+                with self._conn.cursor() as cur:
+                    return _run(cur)
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error aggregating stats from PostgreSQL storage')
+                return _empty_stats()
 
-                def _pg_scalar(q: str, p: list) -> int:
-                    cur.execute(q, p)
-                    row = cur.fetchone()
-                    return int(row[0]) if row and row[0] is not None else 0
-
-                total = _pg_scalar(f'SELECT COUNT(*) FROM honeypot_bears{where}', params)
-                detected = _pg_scalar(
-                    f'SELECT COUNT(*) FROM honeypot_bears{where}{and_prefix} detected_id BETWEEN 1 AND %s',
-                    [*params, _DETECTED_SERVICE_MAX],
-                )
-                undetected = total - detected
-
-                def _group(col: str, top: int = 15) -> list[dict]:
-                    q = (
-                        f'SELECT {col}, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
-                        f"{col} IS NOT NULL AND {col} != '' "
-                        f'GROUP BY {col} ORDER BY c DESC LIMIT %s'
-                    )
-                    cur.execute(q, [*params, top])
-                    return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
-
-                # by_port groups by local honeypot port (issue #299). listen_port
-                # is INTEGER and 0 is the "unknown" sentinel; the generic _group's
-                # `!= ''` only excludes TEXT empties, so exclude 0 explicitly.
-                def _group_port(top: int = 15) -> list[dict]:
-                    q = (
-                        f'SELECT listen_port, COUNT(*) AS c FROM honeypot_bears{where}{and_prefix} '
-                        'listen_port IS NOT NULL AND listen_port <> 0 '
-                        f'GROUP BY listen_port ORDER BY c DESC LIMIT %s'
-                    )
-                    cur.execute(q, [*params, top])
-                    return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
-
-                cur.execute(
-                    f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
-                    'GROUP BY detected_id ORDER BY c DESC',
-                    params,
-                )
-                by_service = [
-                    {'key': detected_id_name(r[0]), 'count': r[1]} for r in cur.fetchall()
-                ]
-
+    def volume_series(
+        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+    ) -> list[dict]:
+        if self._conn is None:
+            return []
+        clauses: list[str] = []
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        if port is not None:
+            clauses.append('listen_port = %s')
+            params.append(port)
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        bucket_expr = _pg_bucket_expr(bucket)
+        try:
+            with self._conn.cursor() as cur:
                 cur.execute(
                     f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                     'GROUP BY b ORDER BY b',
                     params,
                 )
-                volume = [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
-
-                return {
-                    'total': total,
-                    'detected': detected,
-                    'undetected': undetected,
-                    'by_service': by_service,
-                    'by_country': _group('bot_country'),
-                    'by_continent': _group('bot_continent'),
-                    'by_ip': _group('bot_ip'),
-                    'by_path': _group('request_path'),
-                    'by_port': _group_port(),
-                    'volume': volume,
-                }
-        except psycopg2.Error:  # noqa: BLE001
-            logger.exception('Error aggregating stats from PostgreSQL storage')
-            return _empty_stats()
+                return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            # Reset (rollback + close) the shared connection and retry once,
+            # so a transient failure can't poison later reads/writes.
+            logger.warning('PostgreSQL volume_series error; rolling back and reconnecting once')
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
+                        'GROUP BY b ORDER BY b',
+                        params,
+                    )
+                    return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading volume series from PostgreSQL storage')
+                return []
 
     # -- data lifecycle (issue #243 #4) --------------------------------------
 
@@ -1172,10 +1356,11 @@ class PostgreSQLStorage(StorageBackend):
                         logger.info('Deleted %d records older than %d days', count, days)
                     return int(count)
         except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
-            self._conn = None
+            self._reset_conn()
             logger.exception('Error deleting old records from PostgreSQL storage')
             return 0
         except psycopg2.Error:  # noqa: BLE001
+            self._reset_conn()
             logger.exception('Error deleting old records from PostgreSQL storage')
             return 0
 
@@ -1238,10 +1423,11 @@ class PostgreSQLStorage(StorageBackend):
                     )
             return dest_db
         except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
-            self._conn = None
+            self._reset_conn()
             logger.exception('Error archiving old records from PostgreSQL storage')
             return None
         except psycopg2.Error:  # noqa: BLE001
+            self._reset_conn()
             logger.exception('Error archiving old records from PostgreSQL storage')
             return None
         except OSError:  # noqa: BLE001 — file/IO errors (disk full, bad path)
