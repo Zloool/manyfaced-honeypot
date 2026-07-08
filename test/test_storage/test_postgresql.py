@@ -169,6 +169,36 @@ class TestPostgreSQLStorageInsert:
         storage.insert(record)
 
 
+class TestPostgreSQLStorageVolumeSeries:
+    """Tests for PostgreSQLStorage.volume_series() (issue #326 dashboard redesign)."""
+
+    def test_volume_series_includes_port_filter_in_query(self, mock_psycopg2):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [('2024-01-01 10:00', 3)]
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        with patch.dict(os.environ, {}, clear=True):
+            storage = PostgreSQLStorage()
+        storage._conn = mock_conn
+
+        result = storage.volume_series(since='2024-01-01 00:00:00', bucket='hour', port=80)
+
+        assert result == [{'bucket': '2024-01-01 10:00', 'count': 3}]
+        query, params = mock_cursor.execute.call_args[0]
+        assert 'listen_port = %s' in query
+        assert 'timestamp >= %s' in query
+        assert params == ['2024-01-01 00:00:00', 80]
+
+    def test_volume_series_no_connection_returns_empty(self, mock_psycopg2):
+        with patch.dict(os.environ, {}, clear=True):
+            storage = PostgreSQLStorage()
+        storage._conn = None
+        assert storage.volume_series() == []
+
+
 class TestPostgreSQLStorageClose:
     """Tests for PostgreSQLStorage.close()."""
 
