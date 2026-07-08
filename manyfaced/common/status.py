@@ -50,3 +50,6 @@ IOT_HTTP = 1030
 MCP_HTTP = 1031
 DOCKER_HTTP = 1032
 DBADMIN_HTTP = 1033
+# Env / config disclosure face (issue #272) — scaffold omitted this constant;
+# added here so the env_disc handler can import its detected-id per the task spec.
+ENV_DISC_HTTP = 1034
