@@ -22,6 +22,7 @@ def dump_file(data):
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
     except OSError:
+        # Directory already exists or parent is not creatable — best-effort.
         pass
     with open(path, 'a') as f:
         f.write(json.dumps(data, default=str) + '\n')
@@ -47,6 +48,8 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
                 # Timeout reached, return what we have
                 break
     except socket_error:
+        # Receive was interrupted by a non-timeout socket error; return what we
+        # have so far rather than raising into the caller.
         pass
     finally:
         the_socket.settimeout(None)  # Reset to blocking
