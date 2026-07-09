@@ -11,6 +11,8 @@ import pytest
 import manyfaced.common.config as config_mod
 import manyfaced.mfh as mfh
 
+pytest.importorskip('fcntl')  # lockfile tests are POSIX-only (fcntl)
+
 
 def _patch_settings(monkeypatch, lockfile):
     # `settings` is a frozen dataclass, so replace the module-level reference

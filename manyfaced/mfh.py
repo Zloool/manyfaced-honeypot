@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sys
 import time
 import logging
+
+# fcntl is POSIX-only (absent on Windows). The lockfile feature relies on it,
+# so import it defensively and degrade gracefully where it's unavailable.
+try:  # pragma: no cover - platform branch
+    import fcntl
+except ImportError:  # pragma: no cover - platform branch
+    fcntl = None  # type: ignore[assignment]
 from multiprocessing import Event, Process
 
 from manyfaced.common.logging_setup import setup_logging
@@ -37,6 +43,11 @@ def _acquire_lockfile():
     from manyfaced.common.config import settings
 
     global _lock_fd
+    if fcntl is None:
+        # Non-POSIX platform (e.g. Windows dev box): lockfile enforcement is
+        # unavailable. Skip multi-instance prevention rather than crashing.
+        logger.warning('Lockfile enforcement unavailable (fcntl missing on this platform)')
+        return
     try:
         os.makedirs(os.path.dirname(settings.LOCKFILE), exist_ok=True)
         _lock_fd = open(settings.LOCKFILE, 'w')
@@ -61,13 +72,14 @@ def _release_lockfile():
 
     global _lock_fd
     if _lock_fd is not None:
-        try:
-            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-            _lock_fd.close()
-            os.unlink(settings.LOCKFILE)
-            logger.info('Lockfile released')
-        except (IOError, OSError):
-            pass
+        if fcntl is not None:
+            try:
+                fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+                _lock_fd.close()
+                os.unlink(settings.LOCKFILE)
+                logger.info('Lockfile released')
+            except (IOError, OSError):
+                pass
         _lock_fd = None
 
 
