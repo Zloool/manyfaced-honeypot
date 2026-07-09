@@ -1020,6 +1020,7 @@ class SQLiteStorage(StorageBackend):
 
 from manyfaced.db.sql_builder import (  # noqa: E402, F401
     CREATE_TABLE_PG_SQL as _CREATE_TABLE_PG_SQL,
+    CREATE_INDEXES_PG_SQL as _CREATE_INDEXES_PG_SQL,
     INSERT_PG_SQL as _INSERT_PG_SQL,
 )
 
@@ -1124,6 +1125,14 @@ class PostgreSQLStorage(StorageBackend):
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN bot_org VARCHAR(255)')
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN classification VARCHAR(16)')
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN benign_source VARCHAR(64)')
+                # Issue #347: create the dashboard aggregate indexes (timestamp
+                # btree most importantly). Each is CREATE INDEX IF NOT EXISTS so
+                # a missing/skipped index cannot break startup and re-runs are
+                # cheap no-ops on an already-indexed DB.
+                try:
+                    cur.execute(_CREATE_INDEXES_PG_SQL)
+                except psycopg2.Error:  # noqa: BLE001
+                    logger.exception('Failed to create PostgreSQL dashboard indexes')
             self._conn.commit()
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Failed to initialise PostgreSQL storage')
