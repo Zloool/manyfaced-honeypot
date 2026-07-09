@@ -601,3 +601,40 @@ def test_build_payload_reports_hour_total(tmp_path, monkeypatch):
     assert 'Requests/min' not in cards
     storage.close()
     storage_mod.reset_storage_singleton()
+
+
+def test_build_payload_renders_benign_unknown_split(tmp_path, monkeypatch):
+    """The stat grid surfaces the benign/unknown classification split (issue #271)."""
+    from manyfaced.db import storage as storage_mod
+
+    db_path = str(tmp_path / 'cls.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    _seed(storage)
+    # Seed one known-benign + one explicit-unknown row directly so the split
+    # has both sides (the _seed() rows are classification NULL, so GROUP BY
+    # excludes them — exactly what the backfill script is for).
+    storage._conn.execute(
+        'INSERT INTO honeypot_bears '
+        '(bot_ip, hostname, timestamp, request_raw, detected_id, classification, benign_source) '
+        "VALUES ('9.9.9.9', 'h', datetime('now'), 'x', 1, 'benign', 'shodan')"
+    )
+    storage._conn.execute(
+        'INSERT INTO honeypot_bears '
+        '(bot_ip, hostname, timestamp, request_raw, detected_id, classification, benign_source) '
+        "VALUES ('8.8.8.8', 'h2', datetime('now'), 'y', 1, 'unknown', '')"
+    )
+    storage._conn.commit()
+
+    payload = _dash_mod._build_payload('24h', 'tok')
+    # split reaches the payload
+    cls = {r['key']: r['count'] for r in payload['by_classification']}
+    assert cls.get('benign', 0) >= 1
+    assert cls.get('unknown', 0) >= 1
+    # the card renders the benign/unknown counts
+    cards = _render._render_stat_cards(payload)
+    assert 'Benign / Unknown' in cards
+    assert 'stat-benign' in cards
+    storage.close()
+    storage_mod.reset_storage_singleton()
