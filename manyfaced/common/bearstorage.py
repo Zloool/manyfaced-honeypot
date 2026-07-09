@@ -33,6 +33,10 @@ class BearStorage:
         self.headers = ''  # type: ignore[assignment]
         self.country = ''
         self.continent = ''
+        self.asn = ''  # Autonomous system number, e.g. 'AS13335' (issue #271)
+        self.org = ''  # Network owner, e.g. 'Cloudflare, Inc.' (issue #271)
+        self.classification = ''  # benign|malicious|unknown (issue #271)
+        self.benign_source = ''  # matched allowlist name when benign (issue #271)
         self.timezone = ''
         self.dns_name = ''
         self.tracert = ''  # TODO
@@ -78,29 +82,33 @@ class BearStorage:
         finally:
             socket.setdefaulttimeout(None)
 
-    def resolve_geo(self, ip: str, timeout: float = 2.0) -> tuple[str, str]:
-        """Look up country and continent for *ip* via ip-api.com.
+    def resolve_geo(self, ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
+        """Look up country, continent, ASN and org for *ip* via ip-api.com.
 
-        Non-blocking: catches all exceptions and returns ("", "").
-        Results are cached internally to respect rate limits.
+        Non-blocking: catches all exceptions and returns ("", "", "", "").
+        Results are cached internally to respect rate limits. ASN/org are
+        captured here (decoupled from classification) so they land on every row
+        even when the benign-source allowlist is empty (issue #271, open Q3).
 
         Args:
             ip: IP address string.
             timeout: HTTP request timeout in seconds.
 
         Returns:
-            Tuple of (country_name, continent_code), e.g. ("United States", "NA").
+            Tuple of (country_name, continent_name, asn, org).
         """
         try:
             from manyfaced.common.geolocate import lookup_ip_geolocation
 
-            country, continent = lookup_ip_geolocation(ip, timeout=timeout)
+            country, continent, asn, org = lookup_ip_geolocation(ip, timeout=timeout)
             self.country = country
             self.continent = continent
-            return (country, continent)
+            self.asn = asn
+            self.org = org
+            return (country, continent, asn, org)
         except Exception as e:
             logger.warning('Geo resolution failed for %s: %s', ip, e)
-            return ('', '')
+            return ('', '', '', '')
 
     def __str__(self) -> str:
         if self.path != '':

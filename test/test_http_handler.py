@@ -11,6 +11,8 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
+_CRLF = chr(13) + chr(10)  # CRLF without backslash escapes (keeps tests ASCII-safe)
+
 import pytest
 
 # Ensure project root is importable
@@ -215,7 +217,16 @@ class TestHandlerRouting:
         args.verbose = False
         args.server = None
         update_event = MagicMock()
-        return HTTPHandler(args, update_event)
+        # These routing tests assert on response *content*, not geo enrichment.
+        # resolve_geo() hits the real ip-api rate limiter (time.sleep(1.1) per
+        # call) and each test fires it 5-7x in a tight loop, adding ~90s of
+        # wall-clock to the suite for zero extra coverage. Stub it so routing
+        # tests stay fast and CI stays under machine-time limits.
+        with patch('manyfaced.handlers.http_handler.BearStorage') as MockBS:
+            instance = MockBS.return_value
+            instance.resolve_geo.return_value = ('', '', '', '')
+            instance.resolve_dns_name.return_value = ''
+            yield HTTPHandler(args, update_event)
 
     def test_wordpress_paths(self, handler):
         paths = [
@@ -226,10 +237,8 @@ class TestHandlerRouting:
             '/xmlrpc.php',
         ]
         for path in paths:
-            output = handler.handle_request(
-                f'GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n',
-                bot_ip='1.2.3.4',
-            )
+            req = 'GET ' + path + ' HTTP/1.1' + _CRLF + 'Host: example.com' + _CRLF + _CRLF
+            output = handler.handle_request(req, bot_ip='1.2.3.4')
             assert b'WordPress' in output, f'Failed for path: {path}'
 
     def test_phpmyadmin_paths(self, handler):
@@ -240,10 +249,8 @@ class TestHandlerRouting:
             '/db/',
         ]
         for path in paths:
-            output = handler.handle_request(
-                f'GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n',
-                bot_ip='1.2.3.4',
-            )
+            req = 'GET ' + path + ' HTTP/1.1' + _CRLF + 'Host: example.com' + _CRLF + _CRLF
+            output = handler.handle_request(req, bot_ip='1.2.3.4')
             assert b'phpMyAdmin' in output, f'Failed for path: {path}'
 
     def test_bitrix_paths(self, handler):
@@ -254,10 +261,8 @@ class TestHandlerRouting:
             '/bitrix/',
         ]
         for path in paths:
-            output = handler.handle_request(
-                f'GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n',
-                bot_ip='1.2.3.4',
-            )
+            req = 'GET ' + path + ' HTTP/1.1' + _CRLF + 'Host: example.com' + _CRLF + _CRLF
+            output = handler.handle_request(req, bot_ip='1.2.3.4')
             assert b'Bitrix' in output, f'Failed for path: {path}'
 
     def test_response_is_bytes(self, handler):
@@ -272,10 +277,8 @@ class TestHandlerRouting:
             '/random-path',
         ]
         for path in paths:
-            output = handler.handle_request(
-                f'GET {path} HTTP/1.1\r\nHost: example.com\r\n\r\n',
-                bot_ip='1.2.3.4',
-            )
+            req = 'GET ' + path + ' HTTP/1.1' + _CRLF + 'Host: example.com' + _CRLF + _CRLF
+            output = handler.handle_request(req, bot_ip='1.2.3.4')
             assert isinstance(output, bytes), f'Failed for path: {path}'
             assert len(output) > 0, f'Empty response for path: {path}'
 

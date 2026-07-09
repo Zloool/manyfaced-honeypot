@@ -33,6 +33,7 @@ include = ["manyfaced*"]
 manyfaced = [
     "settings.toml.example",
     "*.py",
+    "data/*.toml",
 ]
 
 [tool.ruff]

@@ -29,8 +29,8 @@ _last_geo_lookup_time: float = 0
 # seconds and the dict is capped at _GEO_CACHE_MAX_SIZE entries (LRU eviction).
 _GEO_CACHE_TTL = 24 * 60 * 60  # 24h
 _GEO_CACHE_MAX_SIZE = 10_000
-# value -> (country, continent, expires_at)
-_geo_cache: dict[str, tuple[str, str, float]] = {}
+# value -> (country, continent, asn, org, expires_at)
+_geo_cache: dict[str, tuple[str, str, str, str, float]] = {}
 _geo_cache_lock = threading.Lock()
 
 # Background worker for async geo lookups
@@ -42,53 +42,58 @@ _geo_worker_thread: threading.Thread | None = None
 _geo_state_lock = threading.Lock()
 
 
-def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str]:
-    """Look up country and continent for an IP address.
+def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
+    """Look up geo + network attributes for an IP address.
 
-    Uses ip-api.com free tier (no API key needed).
+    Uses ip-api.com free tier (no API key needed). The free tier returns
+    ``country``, ``continent``, ``as`` (ASN, e.g. ``AS13335``) and ``org``
+    (organisation, e.g. ``Cloudflare, Inc.``) in the *same* request — adding
+    ``as``/``org`` costs no extra request or rate-limit budget.
+
     Results are cached to avoid repeated lookups for the same IP.
     Rate-limited to stay within ip-api.com's 45 req/min limit.
 
-    **Hot-path safe:** if the IP is not yet cached, returns ("", "") immediately
-    and schedules a background lookup via start_geo_worker(). The actual geo data
-    will be available on subsequent requests after the worker completes.
+    **Hot-path safe:** if the IP is not yet cached, returns empty strings
+    immediately and schedules a background lookup via start_geo_worker(). The
+    actual geo data will be available on subsequent requests after the worker
+    completes.
 
     Args:
         ip: IP address string.
         timeout: HTTP request timeout in seconds (used only for background lookups).
 
     Returns:
-        Tuple of (country_name, continent_name), e.g. ("United States", "North America").
-        Returns ("", "") on any failure or if not yet cached.
+        Tuple of (country_name, continent_name, asn, org). Returns
+        (``, ``, ``, ``) on any failure or if not yet cached.
     """
     global _last_geo_lookup_time
 
     # Skip loopback/private IPs — they won't have meaningful geo data
     if ip in ('127.0.0.1', '::1') or ip.startswith(('10.', '192.168.', '172.')):
-        return ('', '')
+        return ('', '', '', '')
 
     # Check cache first (thread-safe); entries past their TTL are treated as
     # a miss so stale geo data is eventually refreshed and memory is reclaimed.
     now = time.monotonic()
     with _geo_cache_lock:
         entry = _geo_cache.get(ip)
-        if entry is not None and entry[2] > now:
+        if entry is not None and entry[4] > now:
             # Move to the end to mark as most-recently-used (LRU).
             del _geo_cache[ip]
             _geo_cache[ip] = entry
-            return entry[0], entry[1]
+            return entry[0], entry[1], entry[2], entry[3]
 
     # Not cached — schedule background lookup and return empty immediately.
     # Capture the queue under the state lock so a concurrent stop_geo_worker()
     # can't leave us holding a stale/None reference (issue #214).
     queue = start_geo_worker()
     if queue is None:  # Worker failed to start; don't block the hot path
-        return ('', '')
+        return ('', '', '', '')
     queue.put((ip, timeout))  # noqa: SLF001
-    return ('', '')
+    return ('', '', '', '')
 
 
-def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str]:
+def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
     """Perform the actual HTTP geolocation lookup (called by worker thread)."""
     global _last_geo_lookup_time
 
@@ -101,18 +106,22 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str]:
         time.sleep(wait_time)
 
     try:
-        url = f'http://ip-api.com/json/{ip}?fields=country,continent'
+        # Request country/continent/as/org in one free-tier call — ip-api.com
+        # returns all four without extra rate-limit cost (issue #271).
+        url = f'http://ip-api.com/json/{ip}?fields=country,continent,as,org'
         req = urllib.request.Request(url, headers={'User-Agent': 'manyfaced-honeypot'})
         with urllib.request.urlopen(req, timeout=timeout) as response:
             data = json.loads(response.read().decode())
 
         if data.get('status') == 'fail':
             logger.warning('Geo lookup returned failure for %s: %s', ip, data.get('message', ''))
-            result = ('', '')
+            result = ('', '', '', '')
         else:
             country = data.get('country', '')
             continent = data.get('continent', '')
-            result = (country, continent)
+            asn = data.get('as', '') or ''
+            org = data.get('org', '') or ''
+            result = (country, continent, asn, org)
 
         # Update cache and rate-limit timestamp
         _store_geo(ip, result)
@@ -126,11 +135,11 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str]:
 
         incr('geo_lookup_failure')
         # On failure, cache empty result to avoid repeated lookups
-        _store_geo(ip, ('', ''))
-        return ('', '')
+        _store_geo(ip, ('', '', '', ''))
+        return ('', '', '', '')
 
 
-def _store_geo(ip: str, result: tuple[str, str]) -> None:
+def _store_geo(ip: str, result: tuple[str, str, str, str]) -> None:
     """Store a geo result in the bounded, TTL-scoped cache.
 
     Marks the entry as most-recently-used and evicts the oldest entries when
@@ -146,7 +155,7 @@ def _store_geo(ip: str, result: tuple[str, str]) -> None:
             evict_count = len(_geo_cache) - _GEO_CACHE_MAX_SIZE + 1
             for stale_ip in list(_geo_cache)[:evict_count]:
                 _geo_cache.pop(stale_ip, None)
-        _geo_cache[ip] = (result[0], result[1], expires_at)
+        _geo_cache[ip] = (result[0], result[1], result[2], result[3], expires_at)
 
 
 def start_geo_worker() -> Queue[tuple[str, float] | None] | None:
@@ -214,7 +223,9 @@ def stop_geo_worker() -> None:
         _geo_worker_thread = None
 
 
-def batch_lookup_geolocation(ips: list[str], max_concurrent: int = 5) -> dict[str, tuple[str, str]]:
+def batch_lookup_geolocation(
+    ips: list[str], max_concurrent: int = 5
+) -> dict[str, tuple[str, str, str, str]]:
     """Look up geolocation for multiple IPs.
 
     Useful for post-processing or analysis scripts.
@@ -224,12 +235,12 @@ def batch_lookup_geolocation(ips: list[str], max_concurrent: int = 5) -> dict[st
         max_concurrent: Max concurrent requests (ip-api.com doesn't support batch).
 
     Returns:
-        Dict mapping IP -> (country, continent) tuples.
+        Dict mapping IP -> (country, continent, asn, org) tuples.
     """
     results = {}
     for ip in ips:
-        country, continent = lookup_ip_geolocation(ip)
-        results[ip] = (country, continent)
+        country, continent, asn, org = lookup_ip_geolocation(ip)
+        results[ip] = (country, continent, asn, org)
     return results
 
 
