@@ -50,6 +50,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from manyfaced.common import config as _config
+from manyfaced.common import ports as _ports
 from manyfaced.db import storage as _storage
 from manyfaced.web import dashboard_data as _data
 from manyfaced.web import dashboard_render as _render
@@ -191,8 +192,11 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         day_since, _b = _parse_window('24h')
         day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
 
-        recent_since = (datetime.now() - timedelta(seconds=60)).strftime('%Y-%m-%d %H:%M:%S.%f')
-        recent_total = store.aggregate_stats(since=recent_since, bucket='hour')['total']
+        # Real per-hour request rate: raw capture count over the last 60
+        # minutes (issue #328). A stable, readable number that reconciles with
+        # Captures/24h ÷ 24, replacing the dead-looking per-60s "Requests/min".
+        hour_since = (datetime.now() - timedelta(seconds=3600)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        hour_total = store.aggregate_stats(since=hour_since, bucket='hour')['total']
 
         vol_since = _volume_window(range_str)
         volume_raw = store.volume_series(
@@ -247,7 +251,7 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
             'total': all_time_total,
             'day': day_total,
             'unique_ips': overview['unique_ips'],
-            'recent_rate': recent_total / 60.0,
+            'hour_total': hour_total,
         },
         'by_port': overview['by_port'],
         'by_country': overview['by_country'],
@@ -256,20 +260,24 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         'volume_bars': volume_bars,
         'log_rows': log_rows,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
-        # recent_total is the raw last-60s hit count, surfaced as "Requests/min"
-        # (issue #313): a sub-1 decimal requests/s is unreadable at real honeypot
-        # traffic, a whole-per-minute number is.
-        'recent_total': recent_total,
     }
 
 
 def _payload_with_port(payload: dict, port_filter: int) -> dict:
-    """Cheap on-request override: recompute just the volume bars for one port."""
+    """Cheap on-request override: recompute just the volume bars for one port.
+
+    ``port_filter`` is the EXTERNAL port a user clicked (from the volume chip's
+    ``data-port``). Resolve it through :func:`internal_ports` so redirected
+    privileged ports also count the traffic stored under their bound high port
+    (issue #330).
+    """
     store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
     try:
         vol_since = _volume_window(payload['range'])
         volume_raw = store.volume_series(
-            since=vol_since, bucket=_VOLUME_BUCKETS[payload['range']], port=port_filter
+            since=vol_since,
+            bucket=_VOLUME_BUCKETS[payload['range']],
+            port=_ports.internal_ports(port_filter),
         )
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by
