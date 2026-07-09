@@ -209,6 +209,7 @@ def backfill(
 
         print(f'[enrich] {total} row(s) pending classification{" (dry-run)" if dry_run else ""}.')
         asn_cache: dict[str, tuple[str, str]] = {}
+        _seen_ids: set[int] = set()
         counts = {'benign': 0, 'unknown': 0, 'malicious': 0}
         processed = 0
 
@@ -224,9 +225,17 @@ def backfill(
             if not rows:
                 break
 
-            for r in rows:
+            # In dry-run mode rows are never written, so they remain in the
+            # NULL set and would otherwise be re-selected forever. Only process
+            # rows we have not seen this run; if a whole batch is already seen,
+            # there is no new work and we terminate (avoids an infinite loop).
+            new_rows = [r for r in rows if r['id'] not in _seen_ids]
+            if not new_rows:
+                break
+            for r in new_rows:
                 if limit is not None and processed >= limit:
                     break
+                _seen_ids.add(r['id'])
                 asn, org, classification, benign_source = _classify_row(
                     {
                         k: r[k]

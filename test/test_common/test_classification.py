@@ -51,22 +51,25 @@ def test_censys_reverse_dns():
     assert src == 'censys'
 
 
-def test_cloudflare_org():
-    cls, src = classify(org='Cloudflare, Inc.')
-    assert cls == BENIGN
-    assert src == 'cloudflare-cdn'
-
-
-def test_cloudflare_asn():
-    cls, src = classify(asn='AS13335')
-    assert cls == BENIGN
-    assert src == 'cloudflare-cdn'
-
-
 def test_googlebot_reverse_dns():
     cls, src = classify(reverse_dns='crawl-123.googlebot.com')
     assert cls == BENIGN
-    assert src == 'google'
+    assert src == 'googlebot'
+
+
+def test_cloudflare_org_not_benign():
+    # Cloudflare/Akamai/Fastly/AWS/Azure are deliberately EXCLUDED from the
+    # allowlist: their ASNs and orgs also describe the majority of abused
+    # attacker infrastructure, so a hit on them must stay UNKNOWN, not benign.
+    cls, src = classify(org='Cloudflare, Inc.')
+    assert cls == UNKNOWN
+    assert src == ''
+
+
+def test_aws_asn_not_benign():
+    cls, src = classify(asn='AS16509')
+    assert cls == UNKNOWN
+    assert src == ''
 
 
 def test_shodan_user_agent():
@@ -110,8 +113,11 @@ def test_allowlist_loaded():
     sources = load_allowlist()
     names = {s.name for s in sources}
     assert 'shodan' in names
-    assert 'cloudflare-cdn' in names
-    assert 'google' in names
+    assert 'censys' in names
+    assert 'googlebot' in names
+    # Generic cloud/CDN providers must NOT be present (they host attackers too).
+    assert 'cloudflare-cdn' not in names
+    assert 'amazon-aws' not in names
 
 
 def test_loader_rejects_ua_only_entry(tmp_path):

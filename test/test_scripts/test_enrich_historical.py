@@ -24,6 +24,15 @@ sys.path.insert(0, os.path.dirname(SCRIPT))
 import enrich_historical as eh  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _stub_geo():
+    """Never hit ip-api.com in tests — geo lookups are real network calls that
+    hang CI on sandboxed runners with no egress. The backfill only resolves ASN/
+    org when a row has neither, so stub it globally to keep runs fast + hermetic."""
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        yield
+
+
 def _make_db(path: str) -> None:
     conn = sqlite3.connect(path)
     conn.execute(
@@ -67,7 +76,7 @@ def test_backfill_classifies_from_row_signals(tmp_path):
         conn,
         [
             ('1.2.3.4', 'census.shodan.io', '', '', ''),
-            ('5.6.7.8', '', '', 'AS13335', 'Cloudflare, Inc.'),
+            ('5.6.7.8', '', '', 'AS398324', 'Censys, Inc.'),
             ('9.9.9.9', 'my-router.isp.net', 'curl/8.0', 'AS12345', 'My ISP'),
         ],
     )
@@ -84,7 +93,7 @@ def test_backfill_classifies_from_row_signals(tmp_path):
     conn.close()
     by_ip = {ip: (c, b) for ip, c, b in rows}
     assert by_ip['1.2.3.4'] == ('benign', 'shodan')
-    assert by_ip['5.6.7.8'] == ('benign', 'cloudflare-cdn')
+    assert by_ip['5.6.7.8'] == ('benign', 'censys')
     assert by_ip['9.9.9.9'] == ('unknown', '')
 
 

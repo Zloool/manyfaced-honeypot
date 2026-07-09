@@ -1,14 +1,24 @@
 # Benign-source allowlist (the "RIOT" analogue for issue #271).
 #
 # Each [[source]] entry is one known-benign class of internet-wide scanner /
-# crawler / CDN health-checker. A capture is tagged `benign` if ANY of its
-# signals match ANY entry; the matching `name` is recorded in `benign_source`.
+# crawler whose SOLE purpose is benign measurement. A capture is tagged
+# `benign` if ANY of its signals match ANY entry; the matching `name` is
+# recorded in `benign_source`.
 #
-# Matching precedence (strongest → weakest signal):
+# Matching precedence (strongest -> weakest signal):
 #   1. reverse_dns suffix  (hardest to spoof for real scanners)
 #   2. asn                 (network-verifiable)
 #   3. org substring       (network-verifiable)
-#   4. user_agent substring (WEAK — trivially spoofed; never the sole basis)
+#   4. user_agent substring (WEAK - trivially spoofed; never the sole basis)
+#
+# DELIBERATELY EXCLUDED: generic cloud / CDN providers (AWS, Azure, GCP,
+# Cloudflare, Fastly, Akamai, ...). Their ASNs and org strings describe the
+# majority of abused attacker infrastructure too - stolen credentials, malware
+# C2, and phishing fronts are overwhelmingly hosted on those clouds. Whitelisting
+# them by ASN/org would flip real attacker traffic to `benign` and defeat the
+# entire purpose of this feature. Search-engine crawlers are included ONLY by
+# verified reverse-DNS (PTR) suffix, never by their cloud ASN/org, because a bot
+# claiming "Google" from an AWS IP must stay `unknown`.
 #
 # Keep this list SMALL and HIGH-CONFIDENCE. A false-benign (calling a real
 # attacker "benign") is worse than a false-unknown, so err toward unknown.
@@ -33,7 +43,6 @@ asn = ["AS398324"]
 name = "binaryedge"
 category = "scanner"
 reverse_dns = ["*.binaryedge.io"]
-asn = ["AS14618", "AS16509"]
 
 [[source]]
 name = "rapid7-sonar"
@@ -48,42 +57,18 @@ reverse_dns = ["*.shadowserver.org"]
 asn = ["AS11238", "AS400482"]
 
 [[source]]
-name = "cloudflare-cdn"
-category = "cdn"
-reverse_dns = ["*.cloudflare.com"]
-org = ["Cloudflare"]
-asn = ["AS13335"]
+name = "googlebot"
+category = "crawler"
+# Verified Google crawler PTR only. Google's crawler IPs reverse-resolve to
+# *.googlebot.com / *.google.com; we do NOT match by ASN/org because Google's
+# cloud (GCP) also hosts attackers and would otherwise be whitelisted.
+reverse_dns = ["*.googlebot.com", "*.google.com"]
 
 [[source]]
-name = "fastly-cdn"
-category = "cdn"
-org = ["Fastly"]
-asn = ["AS54113"]
-
-[[source]]
-name = "akamai-cdn"
-category = "cdn"
-org = ["Akamai"]
-asn = ["AS20940", "AS16625"]
-
-[[source]]
-name = "google"
-category = "cloud-and-crawler"
-reverse_dns = ["*.googlebot.com", "*.google.com", "*.googleusercontent.com"]
-org = ["Google"]
-asn = ["AS15169", "AS396982"]
-
-[[source]]
-name = "amazon-aws"
-category = "cloud"
-org = ["Amazon.com", "Amazon Web Services"]
-asn = ["AS16509", "AS14618"]
-
-[[source]]
-name = "microsoft-azure"
-category = "cloud"
-org = ["Microsoft"]
-asn = ["AS8075"]
+name = "bingbot"
+category = "crawler"
+# Verified Bing crawler PTR only (never by ASN/org for the same reason).
+reverse_dns = ["*.search.msn.com", "*.msn.com"]
 
 [[source]]
 name = "university-research"
