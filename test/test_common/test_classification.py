@@ -72,6 +72,38 @@ def test_aws_asn_not_benign():
     assert src == ''
 
 
+def test_digitalocean_org_no_ptr_not_benign():
+    # Regression test for issue #352: an org string matching a known cloud
+    # provider (DigitalOcean, LLC) but with NO matching reverse-DNS PTR and NO
+    # matching ASN must NOT be classified benign. The org-substring match was
+    # spoofable and hid cloud-hosted attackers behind a benign label.
+    cls, src = classify(org='DigitalOcean, LLC')
+    assert cls == UNKNOWN
+    assert src == ''
+
+
+def test_cloud_org_with_attacker_ptr_not_benign():
+    # An attacker controlling an AWS/DO IP with a non-allowlist PTR must stay
+    # UNKNOWN even though the org string names a cloud provider.
+    cls, src = classify(reverse_dns='evil-attacker.example.net', org='Amazon.com, Inc.')
+    assert cls == UNKNOWN
+    assert src == ''
+
+
+def test_censys_reverse_dns_full_host():
+    # Genuine Censys scanner PTR (full host, wildcard-suffixed in allowlist).
+    cls, src = classify(reverse_dns='49.146.94.167.censys-scanner.com')
+    assert cls == BENIGN
+    assert src == 'censys'
+
+
+def test_visionheight_reverse_dns_exact_host():
+    # Genuine researcher scanner with an exact-host PTR (no wildcard suffix).
+    cls, src = classify(reverse_dns='scan.visionheight.com')
+    assert cls == BENIGN
+    assert src == 'visionheight'
+
+
 def test_shodan_user_agent():
     # UA matches but every entry carrying a UA also carries a network signal;
     # Shodan's entry has reverse_dns + asn, so UA alone is NOT sufficient here.

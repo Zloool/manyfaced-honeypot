@@ -12,18 +12,27 @@ returns a ``(classification, benign_source)`` tuple, so it is trivially
 unit-testable and reused by both the live-capture path and the historical
 backfill script.
 
-Matching precedence (strongest → weakest signal):
+Matching precedence (strongest → weakest *verifiable* signal):
 
-1. ``reverse_dns`` suffix match — hardest to spoof for real scanners.
+1. ``reverse_dns`` suffix / exact-host match — hardest to spoof for real
+   scanners. The recorded PTR is a network-verifiable fact.
 2. ``asn`` exact match — network-verifiable.
-3. ``org`` substring match — network-verifiable.
-4. ``user_agent`` substring match — WEAK, trivially spoofed.
+
+**``org`` substring matching is intentionally NOT used for benign.** An org
+string is spoofable (an attacker can register an org containing ``AWS``/``Azure``
+etc.) and, critically, cloud-hosted attacker infrastructure overwhelmingly
+*shares* the org/ASN of legitimate providers — so an org-substring allowlist
+would flip real attacks to ``benign``. Only the reverse-DNS PTR (or an exact,
+curated ASN) is trusted.
+
+``user_agent`` substring match is WEAK and trivially spoofed, so it is
+**never** a deciding factor for ``benign``.
 
 A row is ``benign`` only if it matches an allowlist entry on a
-*network-verifiable* signal (reverse_dns / asn / org). UA is never the sole
-basis for ``benign``: an entry that lists a UA but no network-verifiable signal
-would be unsafe, so the loader rejects such entries (defence in depth against a
-bad allowlist edit).
+*network-verifiable, non-spoofable* signal — reverse-DNS PTR suffix/exact-host
+or an exact curated ASN. UA is never the sole basis for ``benign``: an entry
+that lists a UA but no network-verifiable signal would be unsafe, so the loader
+rejects such entries (defence in depth against a bad allowlist edit).
 
 Everything not matched is ``unknown`` (the default). ``malicious`` is reserved
 for a future follow-up issue that promotes ``unknown → malicious`` on strong
@@ -66,8 +75,13 @@ class _Source:
     user_agent: tuple[str, ...]
 
 
-# Signals that are network-verifiable (an attacker cannot trivially forge them).
-_NETWORK_SIGNALS = ('reverse_dns', 'asn', 'org')
+# Signals that are network-verifiable and NON-SPOOFABLE (an attacker cannot
+# trivially forge them). NOTE: ``org`` is deliberately EXCLUDED — an org string
+# is spoofable (an attacker can register an org containing 'AWS'/'Azure' etc.)
+# and cloud-hosted attacker infra shares the org/ASN of legit providers, so an
+# org-substring allowlist would flip real attacks to benign (issue #352). Benign
+# therefore requires a reverse-DNS PTR match or an exact, curated ASN.
+_NETWORK_SIGNALS = ('reverse_dns', 'asn')
 
 
 class ClassificationError(ValueError):
@@ -135,12 +149,27 @@ def _get_sources() -> list[_Source]:
 
 
 def _dns_matches(hostname: str, patterns: Iterable[str]) -> bool:
-    """Case-insensitive suffix match of *hostname* against glob patterns."""
+    """Case-insensitive match of *hostname* against glob PTR patterns.
+
+    Two match styles are supported so the allowlist can describe both:
+
+    * **Suffix match** via glob patterns that contain a ``*`` or ``?``
+      (e.g. ``*.censys-scanner.com`` matches ``49.146.94.167.censys-scanner.com``).
+    * **Exact-host match** for patterns without glob metacharacters
+      (e.g. ``scan.visionheight.com`` matches only that precise PTR).
+
+    A recorded reverse-DNS PTR is a network-verifiable fact, so either style is
+    a trustworthy benign signal.
+    """
     if not hostname:
         return False
     host = hostname.lower()
     for pat in patterns:
-        if fnmatch.fnmatch(host, pat.lower()):
+        pat_l = pat.lower()
+        if '*' in pat_l or '?' in pat_l:
+            if fnmatch.fnmatch(host, pat_l):
+                return True
+        elif host == pat_l:
             return True
     return False
 
@@ -155,18 +184,34 @@ def classify(
 
     Pure function — no I/O, no side effects.
 
-    **Benign requires a network-verifiable signal.** A row is ``benign`` only
-    if it matches an allowlist entry on reverse-DNS, ASN or org — signals an
-    attacker cannot trivially forge. ``user_agent`` is deliberately NOT a
-    deciding factor: it is spoofable, so a UA claiming ``Shodan`` from a
-    non-Shodan network must stay ``unknown`` (open Q in issue #271: "UA is
-    never sole basis for benign"). The ``user_agent`` field in the allowlist is
-    therefore documentation only; entries that carry *only* a UA are rejected
-    at load time by :func:`_load_sources`.
+    **Benign requires a network-verifiable, NON-SPOOFABLE signal.** A row is
+    ``benign`` only if it matches an allowlist entry on reverse-DNS PTR or exact
+    ASN — signals an attacker cannot trivially forge:
+
+    1. ``reverse_dns`` — a recorded PTR suffix (glob, e.g. ``*.shodan.io``) or an
+       exact PTR host (e.g. ``scan.visionheight.com``). The PTR is a
+       network-verifiable fact, so it is the strongest benign signal.
+    2. ``asn`` — an exact, curated ASN (e.g. ``AS398324``).
+
+    **``org`` is intentionally NOT used to decide benign (issue #352).** An org
+    string is spoofable (an attacker can register an org containing ``AWS`` /
+    ``Azure`` etc.) and, critically, cloud-hosted attacker infrastructure
+    overwhelmingly shares the org/ASN of legitimate providers — so an
+    org-substring allowlist would flip real attacks to ``benign``. A row tagged
+    ``DigitalOcean, LLC`` / ``AWS EC2`` / ``Google LLC`` / ``Microsoft Azure`` in
+    prod with an EMPTY PTR must therefore stay ``unknown`` unless its PTR or ASN
+    independently matches the curated allowlist.
+
+    ``user_agent`` is deliberately NOT a deciding factor: it is spoofable, so a
+    UA claiming ``Shodan`` from a non-Shodan network must stay ``unknown``. The
+    ``user_agent`` field in the allowlist is therefore documentation only;
+    entries that carry *only* a UA are rejected at load time by
+    :func:`_load_sources`.
 
     Args:
-        reverse_dns: Reverse-DNS hostname of the source IP.
-        org: Network owner string (e.g. ``Cloudflare, Inc.``).
+        reverse_dns: Reverse-DNS hostname (PTR) of the source IP.
+        org: Network owner string (e.g. ``Cloudflare, Inc.``) — NOT used to
+            decide benign (see above).
         asn: Autonomous system number, normalised upper-case (e.g. ``AS13335``).
         user_agent: Bot user-agent string (not used to decide benign).
 
@@ -176,7 +221,9 @@ def classify(
         when not benign).
     """
     rdns = (reverse_dns or '').strip()
-    org_s = (org or '').strip()
+    # org is intentionally NOT consulted for the benign decision (issue #352):
+    # it is spoofable and cloud-hosted attacker infra shares provider orgs.
+    _ = org
     asn_s = (asn or '').strip().upper()
     # user_agent is intentionally ignored for the benign decision (see docstring).
     _ = user_agent
@@ -185,8 +232,6 @@ def classify(
         if _dns_matches(rdns, src.reverse_dns):
             return BENIGN, src.name
         if asn_s and asn_s in src.asn:
-            return BENIGN, src.name
-        if org_s and any(o and o.lower() in org_s.lower() for o in src.org):
             return BENIGN, src.name
 
     return UNKNOWN, ''
