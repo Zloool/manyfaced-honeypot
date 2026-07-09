@@ -80,6 +80,10 @@ _REFRESHER_STOP = threading.Event()
 
 _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 
+# Capture-log page size (issue #316) — one page is rendered server-side per
+# request; older rows are reached via the paginator (offset-based).
+_LOG_PAGE_SIZE = 50
+
 
 def _token_valid(token: str | None) -> bool:
     """Constant-time compare of the request token against the configured secret."""
@@ -159,7 +163,7 @@ def _shape_volume_bars(volume_raw: list[dict], range_str: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _build_payload(range_str: str, token: str) -> dict:
+def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
     ``range_str`` scopes the volume chart + capture log candidate set. The
@@ -167,8 +171,11 @@ def _build_payload(range_str: str, token: str) -> dict:
     fixed window (``DASHBOARD_TIME_RANGE``) — they're a standing overview,
     not tied to the volume section's local picker (matches the original
     prototype's always-accumulating aggregate).
+
+    ``page`` is the 1-based capture-log page (issue #316).
     """
     range_str = range_str if range_str in _VOLUME_RANGES else '24h'
+    page = max(1, int(page or 1))
     store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
     try:
         overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
@@ -193,7 +200,13 @@ def _build_payload(range_str: str, token: str) -> dict:
         )
         volume_bars = _shape_volume_bars(volume_raw, range_str)
 
-        raw_recent = store.recent_records(limit=250, since=vol_since)
+        # Capture-log pagination (issue #316): the full time-range window can
+        # hold far more than one rendered page. We count the whole window once
+        # (cheap, index-bound) and page the raw rows by offset so older
+        # captures stay reachable.
+        window_total = store.count_recent(since=vol_since)
+        log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
+        raw_recent = store.recent_records(limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset)
         log_rows = _data.group_log_rows(raw_recent)
 
         configured_ports = _config.settings.resolve_ports()
@@ -212,6 +225,9 @@ def _build_payload(range_str: str, token: str) -> dict:
     return {
         'token': token,
         'range': range_str,
+        'page': page,
+        'log_page_size': _LOG_PAGE_SIZE,
+        'log_window_total': window_total,
         'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'hostname': socket.gethostname(),
         'mult': _TRAFFIC_MULTIPLIER,
@@ -229,7 +245,11 @@ def _build_payload(range_str: str, token: str) -> dict:
         'by_ip': overview['by_ip'],
         'volume_bars': volume_bars,
         'log_rows': log_rows,
-        'log_summary': f'{len(raw_recent)} captures in this window · {len(log_rows)} rows shown',
+        'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
+        # recent_total is the raw last-60s hit count, surfaced as "Requests/min"
+        # (issue #313): a sub-1 decimal requests/s is unreadable at real honeypot
+        # traffic, a whole-per-minute number is.
+        'recent_total': recent_total,
     }
 
 
@@ -258,10 +278,14 @@ def _payload_with_port(payload: dict, port_filter: int) -> dict:
 
 
 def _refresh_cache(token: str) -> None:
-    """Refresh the cached payload + full page for every supported range."""
+    """Refresh the cached payload + full page for every supported range.
+
+    Only page 1 is pre-cached in the background refresher; deeper pages are
+    built on-demand from ``?page=`` requests (issue #316).
+    """
     for r in _VOLUME_RANGES:
         try:
-            payload = _build_payload(r, token)
+            payload = _build_payload(r, token, page=1)
             html_bytes = _render.render_page(payload).encode('utf-8')
         except Exception:  # noqa: BLE001 — keep serving stale copies on failure
             logger.exception('Dashboard cache refresh failed for range %s', r)
@@ -270,6 +294,10 @@ def _refresh_cache(token: str) -> None:
         with _CACHE_LOCK:
             _PAYLOAD_CACHE[r] = (now, payload)
             _HTML_CACHE[r] = (now, html_bytes)
+
+
+def _cache_key(range_str: str, page: int) -> str:
+    return f'{range_str}#p{page}'
 
 
 def _start_refresher(token: str) -> None:
@@ -339,21 +367,33 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         fmt = (qs.get('format') or [''])[0]
         port_raw = (qs.get('port') or [''])[0]
         port_filter = int(port_raw) if port_raw.isdigit() else None
+        page_raw = (qs.get('page') or [''])[0]
+        page = int(page_raw) if page_raw.isdigit() and int(page_raw) >= 1 else 1
 
         try:
             if fmt == 'fragment':
-                payload = _get_cached(_PAYLOAD_CACHE, range_str) or _build_payload(
-                    range_str, token or ''
-                )
+                key = _cache_key(range_str, page)
+                cached = _get_cached(_PAYLOAD_CACHE, key)
+                payload = cached or _build_payload(range_str, token or '', page=page)
+                if not cached:
+                    with _CACHE_LOCK:
+                        _PAYLOAD_CACHE[key] = (time.time(), payload)
                 if port_filter is not None:
                     payload = _payload_with_port(payload, port_filter)
                 body = _render.render_fragment(payload)
                 self._send(body, 'text/plain; charset=utf-8')
                 return
 
+            if page > 1:
+                # Deeper pages aren't pre-cached; build on demand.
+                payload = _build_payload(range_str, token or '', page=page)
+                body = _render.render_page(payload).encode('utf-8')
+                self._send(body, 'text/html; charset=utf-8')
+                return
+
             body = _get_cached(_HTML_CACHE, range_str)
             if body is None:
-                payload = _build_payload(range_str, token or '')
+                payload = _build_payload(range_str, token or '', page=1)
                 body = _render.render_page(payload).encode('utf-8')
                 with _CACHE_LOCK:
                     _HTML_CACHE[range_str] = (time.time(), body)

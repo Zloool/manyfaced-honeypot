@@ -3,6 +3,7 @@
 import secrets
 import threading
 import time
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +14,29 @@ from manyfaced.common import config as config_mod
 from manyfaced.common import status as status_mod
 from manyfaced.common.config import Config
 from manyfaced.db import storage as storage_mod
-from manyfaced.db.storage import SQLiteStorage, detected_id_name, is_detected
+from manyfaced.db.storage import (
+    SQLiteStorage,
+    detected_id_name,
+    is_detected,
+    reset_storage_singleton,
+)
+from manyfaced.web import dashboard as _dash_mod
+
+
+# Guarantee dashboard-test isolation across tests. The dashboard caches
+# rendered payloads/page bytes in module-level globals (_PAYLOAD_CACHE /
+# _HTML_CACHE) and reuses a process-wide storage singleton; a prior test that
+# spun up run_dashboard can otherwise leak its (different) seeded DB into the
+# next test's served payload (issue #234 test isolation).
+@pytest.fixture(autouse=True)
+def _reset_dashboard_state():
+    reset_storage_singleton()
+    _dash_mod._PAYLOAD_CACHE.clear()
+    _dash_mod._HTML_CACHE.clear()
+    yield
+    reset_storage_singleton()
+    _dash_mod._PAYLOAD_CACHE.clear()
+    _dash_mod._HTML_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -51,10 +74,19 @@ def test_is_detected():
 
 
 def _seed(storage: SQLiteStorage):
+    # Timestamps are relative to "now" so the seeded rows always fall inside the
+    # dashboard's rolling 24h capture-log window (recent_records filters by
+    # vol_since = now-24h). Hardcoded fixed dates silently age out of the
+    # window and make the rendering tests flaky depending on the run date.
+    now = datetime.now()
+
+    def ts(hours_ago: int) -> str:
+        return (now - timedelta(hours=hours_ago)).strftime('%Y-%m-%d %H:%M:%S.%f')
+
     base = {
         'ip': '1.2.3.4',
         'hostname': 'h',
-        'timestamp': '2026-07-08 10:00:00.000',
+        'timestamp': ts(10),
         'parsed_request': {},
         'raw_request': 'RAW wp',
         'ua': 'uawp',
@@ -68,7 +100,7 @@ def _seed(storage: SQLiteStorage):
     storage.insert(
         dict(
             base,
-            timestamp='2026-07-08 10:00:00.000',
+            timestamp=ts(10),
             parsed_request={'path': '/wp-admin', 'command': 'GET', 'version': 'HTTP/1.1'},
             raw_request='RAW wp',
             country='US',
@@ -81,7 +113,7 @@ def _seed(storage: SQLiteStorage):
     storage.insert(
         dict(
             base,
-            timestamp='2026-07-08 11:00:00.000',
+            timestamp=ts(8),
             parsed_request={'path': '/phpmyadmin', 'command': 'GET', 'version': 'HTTP/1.1'},
             raw_request='RAW pm',
             country='US',
@@ -94,7 +126,7 @@ def _seed(storage: SQLiteStorage):
     storage.insert(
         dict(
             base,
-            timestamp='2026-07-08 12:00:00.000',
+            timestamp=ts(6),
             ip='9.9.9.9',
             parsed_request={},
             raw_request='RAW ssh',
@@ -112,9 +144,10 @@ def test_recent_records_returns_newest_first(tmp_path):
     _seed(storage)
     recs = storage.recent_records(limit=10)
     assert len(recs) == 3
-    # newest first
-    assert recs[0]['timestamp'] == '2026-07-08 12:00:00.000'
+    # newest first (the SSH row is seeded last / most recent)
     assert recs[0]['bot_ip'] == '9.9.9.9'
+    # timestamps are ordered descending
+    assert recs[0]['timestamp'] >= recs[1]['timestamp'] >= recs[2]['timestamp']
 
 
 def test_recent_records_limit(tmp_path):
@@ -126,9 +159,15 @@ def test_recent_records_limit(tmp_path):
 def test_recent_records_since_filter(tmp_path):
     storage = SQLiteStorage(db_path=str(tmp_path / 'r3.db'))
     _seed(storage)
-    recs = storage.recent_records(since='2026-07-08 11:30:00.000')
+    # The most-recent seed row is ~6h old. A cutoff 7h ago (older than the 6h
+    # row but newer than the 8h row) includes only it; a 5h-ago cutoff (newer
+    # than every seeded row) excludes everything.
+    cutoff_recent = (datetime.now() - timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S.%f')
+    cutoff_old = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S.%f')
+    recs = storage.recent_records(since=cutoff_recent)
     assert len(recs) == 1
     assert recs[0]['bot_ip'] == '9.9.9.9'
+    assert len(storage.recent_records(since=cutoff_old)) == 0
 
 
 def test_aggregate_stats(tmp_path):
@@ -249,6 +288,9 @@ def dashboard_server(tmp_path):
     storage.close()
 
     cfg = _build_dashboard_config(secret, port)
+    # Drop any cached storage singleton / rendered payloads so the get_storage
+    # mock below is actually exercised (issue #234 test isolation).
+    reset_storage_singleton()
     with patch.object(config_mod, 'settings', cfg):
         with patch.object(
             storage_mod, 'get_storage', lambda **kw: SQLiteStorage(db_path=str(db), **kw)
@@ -345,6 +387,10 @@ def test_dashboard_escapes_raw_capture(tmp_path):
     secret = secrets.token_urlsafe(32)
     port = 18512  # distinct from the fixture's port (18511) to avoid TIME_WAIT reuse on Windows
     db = tmp_path / 'dash_inject.sqlite'
+    # The basetemp dir is reused across runs, so a leftover db from a prior run
+    # would otherwise leak rows into this test. Start from a clean file.
+    if db.exists():
+        db.unlink()
     # Seed with an HTML-injection payload BEFORE the server starts (no concurrent
     # writer, which would block on the WAL DB under load).
     storage = SQLiteStorage(db_path=str(db))
@@ -352,7 +398,7 @@ def test_dashboard_escapes_raw_capture(tmp_path):
         {
             'ip': '1.1.1.1',
             'hostname': 'h',
-            'timestamp': '2026-07-08 23:00:00.000',
+            'timestamp': (datetime.now() - timedelta(hours=2)).strftime('%Y-%m-%d %H:%M:%S.%f'),
             'parsed_request': {'path': '/x', 'command': 'GET', 'version': 'HTTP/1.1'},
             'raw_request': '<script>alert(1)</script>',
             'ua': 'ua',
@@ -367,6 +413,9 @@ def test_dashboard_escapes_raw_capture(tmp_path):
     storage.close()
 
     cfg = _build_dashboard_config(secret, port)
+    # Drop any cached storage singleton / rendered payloads so the get_storage
+    # mock below is actually exercised (issue #234 test isolation).
+    reset_storage_singleton()
     with patch.object(config_mod, 'settings', cfg):
         with patch.object(
             storage_mod, 'get_storage', lambda **kw: SQLiteStorage(db_path=str(db), **kw)
