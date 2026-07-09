@@ -59,6 +59,47 @@ The PR template (`.github/pull_request_template.md`) links here; fill it out on
 every PR. Pairs with #152 (these same gates wired as pre-commit hooks for a
 tighter agent loop).
 
+## AI commit attribution (co-author convention)
+
+Every commit made by an AI agent MUST carry a `Co-authored-by:` trailer that
+identifies **both the agent and the model** that produced the change. This is the
+single source of truth for attribution and was adopted to stop silent /
+mis-attributed AI commits (see issue #205).
+
+**Format — include one trailer per agent that authored the commit:**
+
+```
+Co-authored-by: <Agent>/<Model> <noreply@nousresearch.com>
+```
+
+Concrete examples (the model segment is the live model id, e.g. `Hy3`):
+
+```
+Co-authored-by: Hermes/Hy3 <noreply@nousresearch.com>
+```
+
+When a human is also an author of the commit, keep their trailer too — the
+repo owner's canonical handle is **`Zloool`** (double-o), never `Zlooo`:
+
+```
+Co-authored-by: Zloool <zloool@users.noreply.github.com>
+```
+
+Rules:
+
+- The trailer goes in the commit **message body** (after a blank line, following
+  the standard Git trailer convention). A bare `Co-authored-by: Hermes` without
+  the `/<Model>` segment is not sufficient.
+- A commit authored entirely by an AI still needs the human owner's trailer when
+  the human reviewed/approved it; if the human did not, the agent trailer alone
+  is fine.
+- This is documented rather than hard-enforced in CI: commit trailers are lost
+  on squash-merge, so enforcement lives in the agent loop (this doc + the
+  commit tooling), not in a post-merge check. The acceptance gate for #205 is
+  "no commit in history lacks attribution" — verify before pushing.
+- If you ever see `Co-authored-by: Zlooo` (single-o typo), it is wrong and must
+  be rewritten to `Zloool` (see #205 for the history-rewrite procedure).
+
 ## Deployment
 
 Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). For a quick health check, use the **prod-healthcheck** skill; for the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis** skill.
@@ -144,6 +185,9 @@ reproducible local dev, CI, and a future containerized deploy (#149).
 ## Guardrails
 
 - **Never push to `master`** — always work on a feature branch and open a PR
+- **AI-authored commits must carry a `Co-authored-by: <Agent>/<Model>` trailer**
+  (see [AI commit attribution](#ai-commit-attribution-co-author-convention));
+  the human owner is `Zloool` (double-o), never `Zlooo`
 - **Never commit analysis output**, DB files (`*.sqlite`, `*.db`), or logs (`*.log`)
 - **Never modify `.deploy_config` in the repo** — it's gitignored for a reason
 - **Don't run destructive SSH commands** (e.g., `rm -rf /opt/manyfaced`) without explicit confirmation
