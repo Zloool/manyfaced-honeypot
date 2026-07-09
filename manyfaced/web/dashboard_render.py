@@ -55,6 +55,9 @@ def fmt_k(n: float) -> str:
 
 def _render_stat_cards(payload: dict) -> str:
     s = payload['stats']
+    # by_classification is a list of {key, count} (same shape as by_country);
+    # fold it into a {classification: count} map for the split card.
+    cls = {row['key']: row['count'] for row in payload.get('by_classification', []) if 'key' in row}
     cards = [
         ('stat-total', 'Total Captures', fmt_k(s['total']), 'all-time reports', '#d3ffe4'),
         ('stat-day', 'Captures / 24h', fmt(s['day']), 'rolling window', '#83f5ae'),
@@ -72,6 +75,13 @@ def _render_stat_cards(payload: dict) -> str:
             f'{s.get("hour_total", 0)}',
             'last 60m, real',
             '#3dff88',
+        ),
+        (
+            'stat-benign',
+            'Benign / Unknown',
+            f'{cls.get("benign", 0)} / {cls.get("unknown", 0)}',
+            'known-benign vs unidentified (issue #271)',
+            '#5cc8ff',
         ),
     ]
     out = []
