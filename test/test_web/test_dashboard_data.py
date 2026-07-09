@@ -45,7 +45,59 @@ class TestRedirectedPortServiceName:
         assert dd.port_service_name(12345) == 'TCP'
 
 
-class TestResolveDisplayPorts:
+class TestDisplayPortExternalResolution:
+    """Dashboard must show the EXTERNAL (attacker-visible) port, not the
+    container bind port the honeypot records (issue #320)."""
+
+    def test_redirected_high_port_resolves_to_external(self):
+        # Bound high port 10022 (SSH redirect target) -> external 22.
+        assert dd.display_port(10022) == 22
+        assert dd.display_port(10021) == 21  # FTP
+        assert dd.display_port(10445) == 445  # SMB
+
+    def test_non_redirected_port_passes_through(self):
+        # Directly-bound, non-redirected ports are shown as-is.
+        assert dd.display_port(3306) == 3306
+        # 8080/8443 are redirect TARGETS (80->8080, 443->8443), so they resolve
+        # to their external privileged identity — which is exactly the
+        # attacker-visible port we want to show.
+        assert dd.display_port(8080) == 80
+        assert dd.display_port(8443) == 443
+
+    def test_zero_and_none(self):
+        assert dd.display_port(0) == 0
+        assert dd.display_port(None) == 0
+
+    def test_annotate_exposes_display_port(self):
+        rec = _rec('1.2.3.4', '2024-01-01 00:00:00.000', 10022)
+        annotated = dd.annotate(rec)
+        assert annotated['display_port'] == 22
+        assert annotated['svc'] == 'SSH'
+
+
+class TestRedirectMapSingleSource:
+    """The redirect mapping must have exactly ONE definition (issue #320):
+    manyfaced/common/ports.py. dashboard_data re-exports it; the iptables
+    script derives from it. Guard against silent drift."""
+
+    def test_dashboard_data_uses_canonical_map(self):
+        from manyfaced.common import ports as ports_mod
+
+        # dashboard_data._PORT_REDIRECT_PRIV_TO_HIGH must be the canonical map.
+        assert dd._PORT_REDIRECT_PRIV_TO_HIGH is ports_mod.PRIVILEGED_PORT_REDIRECTS
+
+    def test_canonical_map_invertible_and_complete(self):
+        from manyfaced.common import ports as ports_mod
+
+        # Every privileged port maps to a distinct high port.
+        highs = list(ports_mod.PRIVILEGED_PORT_REDIRECTS.values())
+        assert len(highs) == len(set(highs)), 'duplicate high-port targets'
+        # Inverse resolves back exactly.
+        for priv, high in ports_mod.PRIVILEGED_PORT_REDIRECTS.items():
+            assert ports_mod.external_port(high) == priv
+        # Non-redirect ports pass through.
+        assert ports_mod.external_port(3306) == 3306
+
     def test_small_set_returned_as_is(self):
         ports = dd.resolve_display_ports([22, 80, 443], by_port=[])
         assert ports == [22, 80, 443]

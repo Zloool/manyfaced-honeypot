@@ -58,3 +58,58 @@ DEFAULT_TOP_PORTS = [
 ]
 
 PORT_MODES = ('single', 'top', 'all')
+
+
+# ── iptables PREROUTING REDIRECT mapping (issue #320) ───────────────────────
+# The honeypot runs as a non-root user, so it cannot bind privileged ports
+# (<1024). On the droplet, iptables PREROUTING REDIRECT rules map each
+# privileged "external" port an attacker hits to a high "bound" port the
+# honeypot actually listens on. Example: traffic to 22 (SSH) is redirected to
+# 10022, which is what the honeypot binds and what gets recorded as
+# ``listen_port`` in every capture.
+#
+# THIS IS THE SINGLE SOURCE OF TRUTH for that mapping. The dashboard resolves a
+# bound port back to the external port so it displays what attackers actually
+# targeted (the useful info), and templates/setup-iptables-privileged-ports.sh
+# DERIVES its rules from this same table. Do not duplicate the mapping
+# elsewhere.
+PRIVILEGED_PORT_REDIRECTS: dict[int, int] = {
+    80: 8080,  # HTTP
+    443: 8443,  # HTTPS
+    21: 10021,  # FTP
+    22: 10022,  # SSH
+    23: 10023,  # Telnet
+    25: 10025,  # SMTP
+    53: 10053,  # DNS
+    110: 10110,  # POP3
+    135: 10135,  # MSRPC
+    139: 10139,  # NetBIOS
+    143: 10143,  # IMAP
+    445: 10445,  # SMB
+    993: 10993,  # IMAPS
+    995: 10995,  # POP3S
+}
+
+# high (bound) -> priv (external). Generated inverse; used for display.
+HIGH_TO_PRIV: dict[int, int] = {high: priv for priv, high in PRIVILEGED_PORT_REDIRECTS.items()}
+
+
+def external_port(port: int | None) -> int:
+    """Map a bound (high) port back to the external privileged port it was
+    redirected from.
+
+    Returns ``port`` unchanged when it is not a known redirect target (i.e. the
+    honeypot bound and was hit on that port directly, e.g. 3306/MySQL).
+    """
+    if not port:
+        return 0
+    return HIGH_TO_PRIV.get(int(port), int(port))
+
+
+def is_redirected(port: int | None) -> bool:
+    """True if ``port`` is a honeypot-bound high port that is the target of an
+    iptables redirect (i.e. its external identity differs from the bound one).
+    """
+    if not port:
+        return False
+    return int(port) in HIGH_TO_PRIV
