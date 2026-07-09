@@ -23,6 +23,7 @@ from manyfaced.handlers.router import (  # noqa: F401
     Route,
     Router,
 )
+from manyfaced.common import status as _status
 
 # Handler classes (imported lazily to avoid circular imports)
 
@@ -80,8 +81,9 @@ from manyfaced.handlers.routes.routes_laravel import ROUTES as _laravel_routes  
 from manyfaced.handlers.routes.routes_thinkphp import ROUTES as _thinkphp_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_elastic import ROUTES as _elastic_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_env_disc import ROUTES as _env_disc_routes  # noqa: E402
-from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes  # noqa: E402
-from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes
+from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes
+from manyfaced.handlers.fingerprint import HighEntropyPath, NotFoundHandler  # noqa: E402
 
 # Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
 # Drupal → cPanel → Bitrix → WebDAV → ConfigDisclosure → catch-all
@@ -123,6 +125,11 @@ ROUTES: list[Route] = (
     + list(_env_disc_routes)
     + list(_nginx_routes)
     + list(_phpunit_routes)
+    # Fingerprint-deflection layer (issue #324): high-entropy random paths and
+    # a missing /favicon.ico get a realistic Apache 404 *before* the monster-page
+    # catch-all, so we don't answer-everything-with-200 (a classic honeypot tell).
+    + [Route(HighEntropyPath(), NotFoundHandler, _status.FINGERPRINT_PROBE, 'fingerprint_404')]
+    + [Route(PathExact('/favicon.ico'), NotFoundHandler, _status.FINGERPRINT_PROBE, 'favicon_404')]
     + [Route(Any(), _generic(), 4294967294, 'catchall_monster_page')]
 )
 
