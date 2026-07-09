@@ -140,6 +140,10 @@ class TestBearRequestsDataclassRepr:
             'login',
             'bot_profile_data',
             'listen_port',
+            'asn',
+            'org',
+            'classification',
+            'benign_source',
         ]
 
     def test_dataclass_repr(self):
@@ -388,6 +392,10 @@ class TestInsertFunction:
             'continent',
             'login',
             'listen_port',
+            'bot_asn',
+            'bot_org',
+            'classification',
+            'benign_source',
         }
         assert set(record.keys()) == expected_keys
 

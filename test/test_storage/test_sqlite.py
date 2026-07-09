@@ -844,6 +844,75 @@ class TestListenPortColumn:
         assert row[0] == 443
         storage.close()
 
+    def test_migration_adds_classification_columns_to_pre_271_db(self, tmp_path):
+        """A DB created WITHOUT the #271 columns gets them added at startup, and
+        an insert carrying classification/bot_asn/bot_org/benign_source succeeds
+        post-migration (issue #271)."""
+        db_path = str(tmp_path / 'legacy271.db')
+        legacy_conn = sqlite3.connect(db_path)
+        legacy_conn.execute(
+            """
+            CREATE TABLE honeypot_bears (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_ip TEXT NOT NULL,
+                hostname TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                request_path TEXT,
+                request_command TEXT,
+                request_version TEXT,
+                request_raw TEXT,
+                bot_user_agent TEXT,
+                bot_country TEXT,
+                bot_continent TEXT,
+                bot_tracert TEXT,
+                bot_dns_name TEXT,
+                detected_id INTEGER,
+                hive_id INTEGER,
+                login TEXT,
+                bot_profile_data TEXT,
+                listen_port INTEGER,
+                UNIQUE(bot_ip, timestamp)
+            )
+            """
+        )
+        legacy_conn.commit()
+        legacy_conn.close()
+
+        storage = SQLiteStorage(db_path=db_path)
+        cols = {r[1] for r in storage._conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()}
+        for new_col in ('bot_asn', 'bot_org', 'classification', 'benign_source'):
+            assert new_col in cols, f'missing migrated column {new_col}'
+
+        storage.insert(
+            {
+                'ip': '10.0.0.7',
+                'hostname': 'test',
+                'timestamp': '2024-01-01 00:00:00',
+                'parsed_request': {},
+                'raw_request': 'GET / HTTP/1.1',
+                'is_detected': 0,
+                'listen_port': 443,
+                'bot_asn': 'AS13335',
+                'bot_org': 'Cloudflare, Inc.',
+                'classification': 'benign',
+                'benign_source': 'cloudflare-cdn',
+            }
+        )
+        storage._conn.commit()
+        row = storage._conn.execute(
+            'SELECT bot_asn, bot_org, classification, benign_source FROM honeypot_bears'
+        ).fetchone()
+        assert row == ('AS13335', 'Cloudflare, Inc.', 'benign', 'cloudflare-cdn')
+        # The classification index must exist (idempotent CREATE INDEX).
+        indexes = {
+            r[0]
+            for r in storage._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        }
+        assert 'idx_bears_classification' in indexes
+        storage.close()
+
     def test_aggregate_stats_by_port(self, tmp_path):
         """aggregate_stats() returns a by_port breakdown grouped by listen_port (issue #299)."""
         db_path = str(tmp_path / 'by_port.db')

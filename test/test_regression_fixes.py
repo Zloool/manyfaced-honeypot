@@ -263,7 +263,7 @@ class TestCapturePipelineEndToEnd:
         }
 
         fields = extract_record_fields(record)
-        assert len(fields) == 17, f'Expected 17 DB columns, got {len(fields)}'
+        assert len(fields) == 21, f'Expected 21 DB columns, got {len(fields)}'
 
         # Verify key fields are populated correctly
         assert fields[0] == '192.168.1.100', 'bot_ip should match'
@@ -299,7 +299,7 @@ class TestCapturePipelineEndToEnd:
         }
 
         fields = extract_record_fields(record)
-        assert len(fields) == 17
+        assert len(fields) == 21
         assert fields[12] == SSH_CLIENT, (
             f'detected_id at index 12 should be {SSH_CLIENT}, got {fields[12]}'
         )
@@ -330,7 +330,7 @@ class TestCapturePipelineEndToEnd:
         }
 
         fields = extract_record_fields(record)
-        assert len(fields) == 17
+        assert len(fields) == 21
         # login is at index 14
         assert fields[14] == 'admin', f"login at index 14 should be 'admin', got {fields[14]}"
 
@@ -371,7 +371,7 @@ class TestDataQualityRawRequest:
         }
 
         fields = extract_record_fields(record)
-        assert len(fields) == 17
+        assert len(fields) == 21
         # raw_request is at index 6 (request_raw column)
         assert fields[6] != '' and 'GET' in str(fields[6]), (
             f'raw_request should be non-empty, got: {fields[6]}'

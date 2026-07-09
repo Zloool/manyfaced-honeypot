@@ -526,6 +526,12 @@ class SQLiteStorage(StorageBackend):
                 # with "no such column". Guarded by PRAGMA table_info so it is a
                 # safe no-op on a fresh DB.
                 self._add_listen_port_column()
+                # Issue #271: add the benign-source classification columns to a
+                # pre-#271 DB. As with listen_port, CREATE TABLE IF NOT EXISTS
+                # won't alter an existing table, so we migrate explicitly and
+                # guard with PRAGMA table_info so repeated writer startups are
+                # cheap no-ops (and a redundant ALTER is swallowed if present).
+                self._add_classification_columns()
                 # Idempotent performance indexes for the dashboard aggregates.
                 # Created once at writer startup, NOT on every read connection.
                 self._conn.executescript(_CREATE_INDEXES_SQL)
@@ -562,6 +568,35 @@ class SQLiteStorage(StorageBackend):
             self._conn.execute('ALTER TABLE honeypot_bears ADD COLUMN listen_port INTEGER')
         except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
             logger.exception('Failed to add listen_port column to honeypot_bears')
+
+    def _add_classification_columns(self) -> None:
+        """Add the issue #271 benign-source columns to a pre-#271 DB.
+
+        Mirrors :meth:`_add_listen_port_column`: SQLite can't add columns via
+        CREATE TABLE IF NOT EXISTS on an existing table, so we ALTER explicitly.
+        Guarded by PRAGMA table_info so every writer startup is a cheap no-op,
+        and a redundant ALTER is swallowed if a column is already present. The
+        index on ``classification`` is created separately by
+        ``CREATE_INDEXES_SQL`` (also idempotent), so we only add the columns
+        here.
+        """
+        _CLASSIFICATION_COLUMNS = (
+            'bot_asn TEXT',
+            'bot_org TEXT',
+            'classification TEXT',
+            'benign_source TEXT',
+        )
+        try:
+            existing = {
+                r[1] for r in self._conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()
+            }
+            for col_sql in _CLASSIFICATION_COLUMNS:
+                name = col_sql.split()[0]
+                if name in existing:
+                    continue
+                self._conn.execute(f'ALTER TABLE honeypot_bears ADD COLUMN {col_sql}')
+        except (sqlite3.Error, sqlite3.OperationalError, sqlite3.DatabaseError):
+            logger.exception('Failed to add classification columns to honeypot_bears')
 
     def insert(self, record: dict) -> None:  # noqa: C901
         """Insert a single bear record.
@@ -917,6 +952,7 @@ class SQLiteStorage(StorageBackend):
                 'by_ip': _group('bot_ip'),
                 'by_path': _group('request_path'),
                 'by_port': _group_port(),
+                'by_classification': _group('classification'),
                 'volume': volume,
             }
         except (sqlite3.Error, sqlite3.OperationalError):
@@ -1058,6 +1094,18 @@ class PostgreSQLStorage(StorageBackend):
                 )
                 if cur.fetchone() is None:
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN listen_port INTEGER')
+                # Issue #271: add the benign-source classification columns to a
+                # pre-#271 DB. Online/safe for Postgres; guarded by
+                # information_schema so it is a cheap no-op on a fresh DB.
+                cur.execute(
+                    'SELECT 1 FROM information_schema.columns '
+                    "WHERE table_name = 'honeypot_bears' AND column_name = 'classification'"
+                )
+                if cur.fetchone() is None:
+                    cur.execute('ALTER TABLE honeypot_bears ADD COLUMN bot_asn VARCHAR(32)')
+                    cur.execute('ALTER TABLE honeypot_bears ADD COLUMN bot_org VARCHAR(255)')
+                    cur.execute('ALTER TABLE honeypot_bears ADD COLUMN classification VARCHAR(16)')
+                    cur.execute('ALTER TABLE honeypot_bears ADD COLUMN benign_source VARCHAR(64)')
             self._conn.commit()
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Failed to initialise PostgreSQL storage')
@@ -1325,6 +1373,7 @@ class PostgreSQLStorage(StorageBackend):
                 'by_ip': _group('bot_ip'),
                 'by_path': _group('request_path'),
                 'by_port': _group_port(),
+                'by_classification': _group('classification'),
                 'volume': volume,
             }
 
