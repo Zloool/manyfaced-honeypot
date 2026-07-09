@@ -164,3 +164,73 @@ def test_backfill_dry_run_does_not_write(tmp_path):
     ).fetchone()[0]
     conn.close()
     assert n == 0
+
+
+def test_backfill_classifies_all_null_rows(tmp_path):
+    """Issue #349: every NULL row across the whole table is classified — no gap
+    left behind after a single backfill run (regression for the 1,580-NULL gap).
+    """
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    # A large mixed set spanning many commit-sized batches (batch default 5000).
+    rows = []
+    for i in range(12000):
+        if i % 2 == 0:
+            rows.append((f'10.0.{i % 250}.{i % 255}', 'census.shodan.io', '', '', ''))
+        else:
+            rows.append((f'10.1.{i % 250}.{i % 255}', 'host.example.net', 'curl/8', 'AS7', 'x'))
+    _insert(conn, rows)
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        # Small batch size to exercise the multi-batch drain loop.
+        assert eh.backfill(str(db), batch_size=500, dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    null_left = conn.execute(
+        'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL'
+    ).fetchone()[0]
+    total = conn.execute('SELECT COUNT(*) FROM honeypot_bears').fetchone()[0]
+    benign = conn.execute(
+        "SELECT COUNT(*) FROM honeypot_bears WHERE classification='benign'"
+    ).fetchone()[0]
+    conn.close()
+    assert total == 12000
+    assert null_left == 0  # complete: no unclassified rows remain
+    assert benign == 6000  # every shodan row classified benign
+
+
+def test_backfill_twice_is_noop_does_not_recompute(tmp_path):
+    """Issue #349: running the backfill a second time must not touch or change
+    already-classified rows (idempotent). We prove no rewrite by mutating a
+    classified row's value and asserting the second run leaves it untouched.
+    """
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    _insert(conn, [('1.2.3.4', 'census.shodan.io', '', '', '')])
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    # Tamper with the already-classified row: give benign_source a sentinel that
+    # classify() would never produce. A second run must NOT overwrite it, since
+    # the row is no longer NULL and idempotent backfill only touches NULL rows.
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE honeypot_bears SET benign_source='SENTINEL' WHERE bot_ip='1.2.3.4'")
+    conn.commit()
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    src = conn.execute(
+        "SELECT benign_source FROM honeypot_bears WHERE bot_ip='1.2.3.4'"
+    ).fetchone()[0]
+    conn.close()
+    assert src == 'SENTINEL'  # untouched — no recompute/rewrite on second run
