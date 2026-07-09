@@ -333,7 +333,7 @@ def _single_row(rec: dict, *, child: bool = False) -> str:
     method_label, method_cls = _method_badge(rec.get('request_command') or '')
     service = detected_id_name(rec.get('detected_id'))
     sev_color = _SEV_COLOR.get(rec['sev'], '#3dff88')
-    port = rec.get('listen_port') or 0
+    port = rec.get('display_port') or rec.get('listen_port') or 0
     row_cls = 'log-child-row' if child else 'log-row-main'
     body = (
         f'<div class="{row_cls}" style="border-left-color:{sev_color}">'
@@ -366,7 +366,7 @@ _BADGE_CLASS = {'SCAN': 'scan', 'REPEAT': 'repeat', 'BURST': 'burst'}
 
 def _group_summary(members: list[dict], badge: str) -> str:
     if badge == 'SCAN':
-        ports = sorted({m.get('listen_port') or 0 for m in members})
+        ports = sorted({m.get('display_port') or m.get('listen_port') or 0 for m in members})
         shown = ', '.join(str(p) for p in ports[:6])
         more = f', +{len(ports) - 6}' if len(ports) > 6 else ''
         return f'{len(ports)} ports &middot; {shown}{more}'
@@ -374,7 +374,7 @@ def _group_summary(members: list[dict], badge: str) -> str:
         m0 = members[0]
         label, _cls = _method_badge(m0.get('request_command') or '')
         return f'{label} {m0.get("target")}'
-    ports = {m.get('listen_port') or 0 for m in members}
+    ports = {m.get('display_port') or m.get('listen_port') or 0 for m in members}
     return f'{len(members)} requests &middot; {len(ports)} ports'
 
 
@@ -384,7 +384,7 @@ def _group_row(group: dict) -> str:
     badge_cls = _BADGE_CLASS[badge]
     sev_color = _SEV_COLOR.get(group['sev'], '#3dff88')
     m0 = members[0]
-    ports_csv = ','.join(str(m.get('listen_port') or 0) for m in members)
+    ports_csv = ','.join(str(m.get('display_port') or m.get('listen_port') or 0) for m in members)
     methods = {(_method_badge(m.get('request_command') or '')[0]) for m in members}
     method_filter = (
         next(iter(methods))
@@ -394,7 +394,7 @@ def _group_row(group: dict) -> str:
     service = detected_id_name(m0.get('detected_id'))
     search = _esc(' '.join(_search_blob(m) for m in members))
     ts = int(group['ts'])
-    min_port = min((m.get('listen_port') or 0) for m in members)
+    min_port = min((m.get('display_port') or m.get('listen_port') or 0) for m in members)
     header = (
         f'<div class="log-row-main log-group-main" style="border-left-color:{sev_color}">'
         f'<div class="log-time">{_esc(m0.get("_time"))}</div>'

@@ -213,8 +213,13 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         weight_by_port = {
             int(r['key']): r['count'] for r in overview['by_port'] if r.get('key') is not None
         }
-        display_port_list = _data.resolve_display_ports(configured_ports, overview['by_port'])
-        display_ports = [(p, max(1, weight_by_port.get(p, 0))) for p in display_port_list]
+        # Show EXTERNAL (attacker-visible) ports, not the container bind ports
+        # (issue #320). The honeypot records the bound high port; resolve back.
+        # weight_by_port is keyed by the bound port, so keep that alongside.
+        _bound_display = _data.resolve_display_ports(configured_ports, overview['by_port'])
+        display_ports = [
+            (_data.display_port(p), max(1, weight_by_port.get(p, 0))) for p in _bound_display
+        ]
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by
         # the capture writer. Closing it here drops the writer's connection and

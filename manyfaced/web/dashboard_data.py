@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from manyfaced.common import ports as _ports
 from manyfaced.common import status as _status
 
 # ---------------------------------------------------------------------------
@@ -67,31 +68,14 @@ PORT_SERVICE_NAMES: dict[int, str] = {
 _BEANSTALKD_RANGE = range(11301, 11312)
 
 
-# iptables REDIRECT mapping (see templates/setup-iptables-privileged-ports.sh):
-# privileged ports (<1024) can't be bound by the non-root honeypot, so they are
-# redirected to high ports the honeypot actually binds. The dashboard labels by
-# raw listen_port, so without this the busiest redirected ports (10022/SSH,
-# 10023/Telnet, ...) render as opaque "TCP" — issue #312.
-#
-# This MUST stay in sync with the redirect table in that script. The high-port
-# -> service label is derived from the same privileged->high mapping so a change
-# in the script only needs a matching edit here (not a second hardcoded copy).
-_PORT_REDIRECT_PRIV_TO_HIGH = {
-    80: 8080,  # HTTP
-    443: 8443,  # HTTPS
-    21: 10021,  # FTP
-    22: 10022,  # SSH
-    23: 10023,  # Telnet
-    25: 10025,  # SMTP
-    53: 10053,  # DNS
-    110: 10110,  # POP3
-    135: 10135,  # MSRPC
-    139: 10139,  # NetBIOS
-    143: 10143,  # IMAP
-    445: 10445,  # SMB
-    993: 10993,  # IMAPS
-    995: 10995,  # POP3S
-}
+# iptables REDIRECT mapping (see manyfaced/common/ports.py — the SINGLE SOURCE
+# OF TRUTH). Privileged ports (<1024) can't be bound by the non-root honeypot,
+# so they are redirected to high ports the honeypot actually binds. Capture
+# records store the BOUND (high) port as ``listen_port``; the dashboard must
+# resolve it back to the EXTERNAL (privileged) port attackers actually hit,
+# which is the useful info. The high->service label is derived from the same
+# canonical map so there is only one copy to maintain (issue #320).
+_PORT_REDIRECT_PRIV_TO_HIGH = _ports.PRIVILEGED_PORT_REDIRECTS
 # high redirect port -> privileged service name (the label attackers actually see)
 _REDIRECTED_PORT_SERVICE_NAMES: dict[int, str] = {
     high: PORT_SERVICE_NAMES[priv]
@@ -111,6 +95,17 @@ def port_service_name(port: int | None) -> str:
     if port in _BEANSTALKD_RANGE:
         return 'Beanstalkd'
     return 'TCP'
+
+
+def display_port(port: int | None) -> int:
+    """Port to show on the dashboard for a captured ``listen_port``.
+
+    Resolves a bound high port (e.g. 10022) back to the external privileged
+    port an attacker actually targeted (22), so the panel shows useful,
+    attacker-visible info rather than the container-internal bind port
+    (issue #320). Ports that are not redirect targets pass through unchanged.
+    """
+    return _ports.external_port(port)
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +231,7 @@ def annotate(record: dict[str, Any]) -> dict[str, Any]:
     rec = dict(record)
     port = record.get('listen_port') or 0
     rec['svc'] = port_service_name(port)
+    rec['display_port'] = display_port(port)
     rec['sev'] = severity_for(record)
     rec['target'] = _target_of(record)
     rec['bytes'] = len(record.get('request_raw') or '')
