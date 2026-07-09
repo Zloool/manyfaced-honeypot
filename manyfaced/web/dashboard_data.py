@@ -119,26 +119,24 @@ _MAX_HERO_PORTS = 42
 
 
 def resolve_display_ports(configured_ports: list[int], by_port: list[dict]) -> list[int]:
-    """Return the ports to draw on the hero patch-panel.
+    """Return the ports to surface on the dashboard, sorted by port number.
 
-    ``configured_ports`` is whatever ``Config.resolve_ports()`` returns.
-    ``by_port`` is the (unfiltered) ``aggregate_stats()['by_port']`` list —
-    used to pick a representative subset when the honeypot listens on the
-    full 1-65535 range (``port_mode = "all"``).
+    Every port with at least one historical capture (from ``by_port``) is
+    shown — resolved to its EXTERNAL (attacker-visible) port and de-duplicated
+    — so the display reflects real activity, not a curated guess. Only when
+    nothing has been captured yet do we fall back to the configured listening
+    ports (capped) so the panel isn't empty on a fresh honeypot.
     """
-    ports = sorted(set(configured_ports))
-    if len(ports) <= _MAX_HERO_PORTS:
-        return ports
-    hit_ports = [int(row['key']) for row in by_port if row.get('key')]
-    chosen = [p for p in hit_ports if p in ports][:_MAX_HERO_PORTS]
-    if len(chosen) < _MAX_HERO_PORTS:
-        # Pad with well-known ports so a quiet honeypot still shows something.
-        for p in sorted(PORT_SERVICE_NAMES):
-            if p in ports and p not in chosen:
-                chosen.append(p)
-            if len(chosen) >= _MAX_HERO_PORTS:
-                break
-    return sorted(chosen) or ports[:_MAX_HERO_PORTS]
+    hit_ports = {int(row['key']) for row in by_port if row.get('key')}
+    if hit_ports:
+        # Resolve bound high ports back to the external privileged port, then
+        # show every active port sorted by number.
+        active = {_ports.external_port(p) for p in hit_ports}
+        return sorted(active)
+    # No activity yet: show the configured listening ports (external view),
+    # capped so an "all" (1-65535) config doesn't explode the panel.
+    fallback = sorted({_ports.external_port(p) for p in configured_ports})
+    return fallback[:_MAX_HERO_PORTS]
 
 
 # ---------------------------------------------------------------------------

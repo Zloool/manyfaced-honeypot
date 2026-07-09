@@ -210,15 +210,20 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         log_rows = _data.group_log_rows(raw_recent)
 
         configured_ports = _config.settings.resolve_ports()
+        # Weight keyed by EXTERNAL port (resolve_display_ports returns external
+        # ports, and by_port keys are the bound ports the captures were stored
+        # on — map them through display_port so weights line up).
         weight_by_port = {
-            int(r['key']): r['count'] for r in overview['by_port'] if r.get('key') is not None
+            _data.display_port(int(r['key'])): r['count']
+            for r in overview['by_port']
+            if r.get('key') is not None
         }
         # Show EXTERNAL (attacker-visible) ports, not the container bind ports
-        # (issue #320). The honeypot records the bound high port; resolve back.
-        # weight_by_port is keyed by the bound port, so keep that alongside.
-        _bound_display = _data.resolve_display_ports(configured_ports, overview['by_port'])
+        # (issue #320). Sorted by port number, every historically-active port
+        # included (issue #321).
         display_ports = [
-            (_data.display_port(p), max(1, weight_by_port.get(p, 0))) for p in _bound_display
+            (p, max(1, weight_by_port.get(p, 0)))
+            for p in _data.resolve_display_ports(configured_ports, overview['by_port'])
         ]
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by
