@@ -233,6 +233,19 @@ jobs:
           # Uses per-port ss filter syntax (sport = :PORT) — no regex over ss output.
           # Expands ranges (e.g. 11300-11311 → individual ports). Retries up to
           # 10 times with 3s sleep for a total 30-second budget on startup.
+          #
+          # WHY the dashboard port (18889) is checked too (issue #348): the
+          # dashboard listens on 127.0.0.1:18889 and is exposed publicly via nginx
+          # :29999. The honeypot container is recreated on every deploy
+          # (docker rm -f + docker run); during image-pull + Python-start the
+          # dashboard socket is dead, so nginx returns 502/504. A ports-only check
+          # passes while :29999 is down, so the deploy wrongly reports SUCCESS.
+          # Checking 18889 here makes the gate wait for the dashboard to come up.
+          # NOTE for operators: the nginx site /etc/nginx/sites-available/
+          # manyfaced-dashboard should set `proxy_connect_timeout 5s;` and
+          # `proxy_read_timeout 30s;` on `location /` (it currently does NOT) so
+          # nginx fails fast instead of returning a hard 60s-default 504. This repo
+          # does not carry a copy of that conf — add the timeouts on the droplet.
           ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" 'bash -c '"'"'
             set -euo pipefail
 
@@ -259,7 +272,13 @@ jobs:
             PORT_LIST=$(echo "$PORT_LIST" | tr -s " \t\n" "\n" | grep -v "^$")
             TOTAL=$(echo "$PORT_LIST" | wc -l)
 
-            echo "Checking $TOTAL ports from HONEY_TOP_PORTS ..."
+            # Dashboard port: the honeypot dashboard binds 127.0.0.1:18889 and is
+            # proxied by nginx on :29999. Read it from the env file (issue #348),
+            # fall back to 18889 if absent. Must be LISTEN before we declare success.
+            DASHBOARD_PORT_RAW=$(grep "^HONEY_DASHBOARD_PORT=" /opt/manyfaced/honeypot.env 2>/dev/null | cut -d= -f2)
+            DASHBOARD_PORT=${DASHBOARD_PORT_RAW:-18889}
+
+            echo "Checking $TOTAL ports from HONEY_TOP_PORTS + dashboard port $DASHBOARD_PORT ..."
 
             # Retry loop: up to 10 iterations × 3 s = 30 s budget
             MAX_RETRIES=10
@@ -271,11 +290,18 @@ jobs:
                 fi
               done <<< "$PORT_LIST"
 
+              # Dashboard port check (issue #348): ensures the dashboard socket is
+              # actually up, not just the honeypot ports. Without this a deploy can
+              # report success while nginx :29999 serves 502/504.
+              if ! ss -Htln "sport = :$DASHBOARD_PORT" | grep -q LISTEN; then
+                MISSING="$MISSING $DASHBOARD_PORT"
+              fi
+
               # Trim leading space
               MISSING="${MISSING# }"
 
               if [ -z "$MISSING" ]; then
-                echo "Health check OK: $TOTAL/$TOTAL ports listening"
+                echo "Health check OK: $TOTAL/$TOTAL ports listening + dashboard :$DASHBOARD_PORT"
                 exit 0
               fi
 
