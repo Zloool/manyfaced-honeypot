@@ -7,22 +7,15 @@
 # This script redirects them to high ports that the honeypot binds to.
 #
 # Mapping:
-#   80   → 8080   (HTTP)
-#   443  → 8443   (HTTPS)
-#   21   → 10021  (FTP)
-#   22   → 10022  (SSH)
-#   23   → 10023  (Telnet)
-#   25   → 10025  (SMTP)
-#   53   → 10053  (DNS)
-#   110  → 10110  (POP3)
-#   135  → 10135  (MSRPC)
-#   139  → 10139  (NetBIOS)
-#   143  → 10143  (IMAP)
-#   445  → 10445  (SMB)
-#   993  → 10993  (IMAPS)
-#   995  → 10995  (POP3S)
+#   The canonical redirect table lives in manyfaced/common/ports.py
+#   (PRIVILEGED_PORT_REDIRECTS). This script DERIVES its rules from that same
+#   source so the three copies (python dashboard, this script, and the saved
+#   rules.v4) can never drift apart. To change a port mapping, edit
+#   manyfaced/common/ports.py and re-run this script — do NOT edit the list
+#   below by hand.
 #
 # Prerequisites:
+#   - manyfaced python package importable (pip install .)
 #   - honeypot must be listening on all the high ports above
 #   - iptables-persistent package for rule saving
 #   - DO firewall must allow the privileged ports
@@ -37,22 +30,23 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 
 log "Setting up iptables REDIRECT rules for privileged ports..."
 
-declare -A MAPPING=(
-    [80]=8080
-    [443]=8443
-    [21]=10021
-    [22]=10022
-    [23]=10023
-    [25]=10025
-    [53]=10053
-    [110]=10110
-    [135]=10135
-    [139]=10139
-    [143]=10143
-    [445]=10445
-    [993]=10993
-    [995]=10995
-)
+# Derive the mapping from the single source of truth in manyfaced/common/ports.py
+# so this script can't drift from the dashboard's view of port identity.
+# Emits a bash associative-array literal: declare -A MAPPING=( [80]=8080 ... )
+if command -v python3 >/dev/null 2>&1; then
+    # shellcheck disable=SC2209
+    MAPPING_SRC=$(python3 -c '
+from manyfaced.common.ports import PRIVILEGED_PORT_REDIRECTS as M
+print(" ".join("[%d]=%d" % (p, h) for p, h in sorted(M.items())))
+' 2>/dev/null || true)
+fi
+if [ -z "${MAPPING_SRC:-}" ]; then
+    warn "Could not import manyfaced.common.ports — falling back to an inline copy."
+    warn "If you change the redirect table, update BOTH this fallback and ports.py."
+    MAPPING_SRC="[80]=8080 [443]=8443 [21]=10021 [22]=10022 [23]=10023 [25]=10025 [53]=10053 [110]=10110 [135]=10135 [139]=10139 [143]=10143 [445]=10445 [993]=10993 [995]=10995"
+fi
+# shellcheck disable=SC2162,SC1083
+declare -A MAPPING=( ${MAPPING_SRC} )
 
 for priv_port in "${!MAPPING[@]}"; do
     high_port=${MAPPING[$priv_port]}
