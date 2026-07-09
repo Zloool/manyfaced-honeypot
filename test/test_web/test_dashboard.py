@@ -573,7 +573,10 @@ def test_build_payload_reports_hour_total(tmp_path, monkeypatch):
     storage._conn.execute('DELETE FROM honeypot_bears')
     storage._conn.commit()
     now = datetime.now()
-    stamp = lambda mins: (now - timedelta(minutes=mins)).strftime('%Y-%m-%d %H:%M:%S.%f')
+
+    def stamp(mins):
+        return (now - timedelta(minutes=mins)).strftime('%Y-%m-%d %H:%M:%S.%f')
+
     for i in range(3):
         storage.insert(
             {
