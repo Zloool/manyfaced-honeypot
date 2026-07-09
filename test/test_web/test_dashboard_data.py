@@ -98,17 +98,36 @@ class TestRedirectMapSingleSource:
         # Non-redirect ports pass through.
         assert ports_mod.external_port(3306) == 3306
 
-    def test_small_set_returned_as_is(self):
+    def test_no_activity_falls_back_to_configured(self):
+        # Fresh honeypot: no captures yet -> show configured listening ports.
         ports = dd.resolve_display_ports([22, 80, 443], by_port=[])
         assert ports == [22, 80, 443]
 
-    def test_all_mode_caps_and_prefers_active_ports(self):
-        configured = list(range(1, 65536))
-        by_port = [{'key': 22, 'count': 500}, {'key': 8080, 'count': 10}]
+    def test_all_historically_active_ports_shown_and_sorted(self):
+        # Every port with >=1 capture must appear, resolved to its EXTERNAL
+        # port and sorted by number (issue #321). The bound 10022 (SSH) and
+        # 8080 (HTTP) map to external 22 / 80.
+        configured = list(range(1, 65536))  # "all" mode
+        by_port = [
+            {'key': 10022, 'count': 500},  # SSH redirect target -> external 22
+            {'key': 8080, 'count': 300},  # HTTP redirect target -> external 80
+            {'key': 3306, 'count': 50},  # MySQL, direct
+            {'key': 443, 'count': 10},  # HTTPS, direct
+        ]
         ports = dd.resolve_display_ports(configured, by_port)
-        assert len(ports) <= dd._MAX_HERO_PORTS
-        assert 22 in ports
-        assert 8080 in ports
+        # All four active ports present, in numeric order.
+        assert ports == [22, 80, 443, 3306]
+        # No configured-only padding leaking in (e.g. 21/23 should be absent).
+        assert 21 not in ports
+        assert 23 not in ports
+
+    def test_weighted_active_ports_not_capped(self):
+        # With real activity, the _MAX_HERO_PORTS cap does not drop active ports.
+        configured = list(range(1, 65536))
+        by_port = [{'key': p, 'count': 1} for p in range(100, 200)]  # 100 active ports
+        ports = dd.resolve_display_ports(configured, by_port)
+        assert len(ports) == 100
+        assert ports == sorted(ports)  # sorted by number
 
 
 class TestSeverityFor:
