@@ -203,6 +203,9 @@ JS = r"""
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
                 window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
+  // Hero canvas readout (real requests/hour, fed from payload.stats.hour_total
+  // and refreshed on each live tick). Module-level so applyMeta can update it.
+  var heroRph = '0';
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -270,6 +273,7 @@ JS = r"""
 
   function applyMeta(meta){
     if (!meta) return;
+    heroRph = meta.rate;  // refresh hero canvas readout on each live tick
     var map = {'stat-total':meta.total,'stat-day':meta.day,'stat-uniq':meta.uniq,
                'stat-ports':meta.activePorts,'stat-rate':meta.rate};
     Object.keys(map).forEach(function(id){
@@ -580,6 +584,7 @@ JS = r"""
     var ports;
     try { ports = JSON.parse(wrap.getAttribute('data-ports') || '[]'); } catch(e){ ports = []; }
     var mult = Number(wrap.getAttribute('data-mult')) || 6;
+    heroRph = wrap.getAttribute('data-rph') || '0';
     if (!ports.length) return;
 
     var state2 = { ports: ports.map(function(p){ return {p:p.p, s:p.s, w:Math.max(1,p.w), glow:0, rings:[], flash:0}; }), pulses:[], W:0, H:0 };
@@ -636,7 +641,6 @@ JS = r"""
       }
       var cut = nowp-1000;
       while (spawns.length && spawns[0]<cut) spawns.shift();
-      rps = spawns.length;
       ctx.clearRect(0,0,state2.W,state2.H);
       ctx.strokeStyle = 'rgba(60,140,90,0.06)'; ctx.lineWidth = 1;
       for (var x=0;x<state2.W;x+=34){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,state2.H); ctx.stroke(); }
@@ -656,7 +660,7 @@ JS = r"""
       }
       ctx.font="14px 'VT323', monospace"; ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
       ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
-      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+rps+' pkt/s', ch.x+ch.w-18, ch.y+22);
+      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+heroRph+'/h', ch.x+ch.w-18, ch.y+22);
       ctx.textAlign='left';
       ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ch.y+38); ctx.lineTo(ch.x+ch.w-14,ch.y+38); ctx.stroke();
 

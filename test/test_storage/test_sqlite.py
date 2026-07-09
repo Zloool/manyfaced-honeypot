@@ -6,6 +6,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 # Imports handled by conftest.py sys.path setup
+from manyfaced.common import status as status_mod  # noqa: E402
 from manyfaced.db.storage import SQLiteStorage, StorageBackend, _CREATE_TABLE_SQL  # noqa: E402
 
 
@@ -1044,3 +1045,72 @@ class TestListenPortColumn:
         storage = SQLiteStorage(db_path=str(tmp_path / 'noconn.db'))
         storage._conn = None
         assert storage.volume_series() == []
+
+    def test_aggregate_stats_by_service_merges_unknown(self, tmp_path):
+        """distinct unmapped detected_id values all collapse to one 'unknown' row (issue #331)."""
+        storage = SQLiteStorage(db_path=str(tmp_path / 'svc.db'))
+        # Two distinct detected_id values that are NOT in _DETECTED_ID_NAMES -> both 'unknown'.
+        # Plus one known service (wordpress) to confirm cross-label behaviour.
+        rows = [
+            ('10.0.0.1', '2024-01-01 10:00:00.000', 99991),
+            ('10.0.0.2', '2024-01-01 10:01:00.000', 99992),
+            ('10.0.0.3', '2024-01-01 10:02:00.000', 99993),
+            ('10.0.0.4', '2024-01-01 10:03:00.000', status_mod.WORDPRESS_HTTP),
+        ]
+        for ip, ts, did in rows:
+            storage.insert(
+                {
+                    'ip': ip,
+                    'hostname': 'h',
+                    'timestamp': ts,
+                    'parsed_request': {},
+                    'raw_request': 'x',
+                    'is_detected': did,
+                    'listen_port': 80,
+                }
+            )
+            # Force the exact detected_id we want (insert maps is_detected>=1 -> that id
+            # via the INSERT, but we assert the merge behaviour deterministically).
+            storage._conn.execute(
+                'UPDATE honeypot_bears SET detected_id = ? WHERE bot_ip = ?', (did, ip)
+            )
+        storage._conn.commit()
+        stats = storage.aggregate_stats(since='2024-01-01 00:00:00.000')
+        by_service = stats['by_service']
+        unknown_rows = [r for r in by_service if r['key'] == 'unknown']
+        assert len(unknown_rows) == 1, f'expected one merged unknown row, got {by_service}'
+        assert unknown_rows[0]['count'] == 3
+        wp = [r for r in by_service if r['key'] == 'wordpress']
+        assert wp and wp[0]['count'] == 1
+        storage.close()
+
+    def test_volume_series_list_port_includes_redirect_target(self, tmp_path):
+        """filtering by external port also counts the redirected bound port (issue #330)."""
+        storage = SQLiteStorage(db_path=str(tmp_path / 'redir.db'))
+        rows = [
+            ('10.0.0.1', '2024-01-01 10:00:00.000', 22),    # external SSH, direct
+            ('10.0.0.2', '2024-01-01 10:01:00.000', 10022),  # external SSH, iptables-redirected
+            ('10.0.0.3', '2024-01-01 10:02:00.000', 80),     # unrelated
+        ]
+        for ip, ts, port in rows:
+            storage.insert(
+                {
+                    'ip': ip,
+                    'hostname': 'h',
+                    'timestamp': ts,
+                    'parsed_request': {},
+                    'raw_request': 'x',
+                    'is_detected': 1,
+                    'listen_port': port,
+                }
+            )
+        storage._conn.commit()
+        # External port 22 should match BOTH listen_port=22 and 10022.
+        ssh = {r['bucket']: r['count'] for r in storage.volume_series(bucket='hour', port=[22, 10022])}
+        assert ssh == {'2024-01-01 10:00': 2}
+        # And the helper in ports.py mirrors that mapping.
+        from manyfaced.common.ports import internal_ports
+
+        assert internal_ports(22) == [22, 10022]
+        assert internal_ports(80) == [80, 8080]
+        storage.close()

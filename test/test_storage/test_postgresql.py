@@ -198,6 +198,28 @@ class TestPostgreSQLStorageVolumeSeries:
         storage._conn = None
         assert storage.volume_series() == []
 
+    def test_volume_series_list_port_builds_in_clause(self, mock_psycopg2):
+        """a list of ports builds listen_port IN (...) covering direct+redirected (issue #330)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [('2024-01-01 10:00', 2)]
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        mock_psycopg2.connect.return_value = mock_conn
+
+        with patch.dict(os.environ, {}, clear=True):
+            storage = PostgreSQLStorage()
+        storage._conn = mock_conn
+
+        result = storage.volume_series(
+            since='2024-01-01 00:00:00', bucket='hour', port=[22, 10022]
+        )
+        assert result == [{'bucket': '2024-01-01 10:00', 'count': 2}]
+        query, params = mock_cursor.execute.call_args[0]
+        assert 'listen_port IN (%s, %s)' in query
+        assert 'timestamp >= %s' in query
+        assert params == ['2024-01-01 00:00:00', 22, 10022]
+
 
 class TestPostgreSQLStorageClose:
     """Tests for PostgreSQLStorage.close()."""

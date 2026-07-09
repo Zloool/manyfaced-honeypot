@@ -518,3 +518,83 @@ def test_dashboard_disabled_when_not_enabled():
         # Should return immediately without binding (disabled).
         run_dashboard(args, ev)
         ev.set()
+
+
+# ---------------------------------------------------------------------------
+# Top Ports card shows external attacker-facing ports (issue #329)
+# ---------------------------------------------------------------------------
+
+from manyfaced.web import dashboard_render as _render  # noqa: E402
+
+
+def test_render_intel_grid_top_ports_resolves_external_and_merges():
+    """Top Ports must show the external port, and merge direct+redirected hits (issue #329)."""
+    payload = {
+        'by_port': [
+            {'key': 22, 'count': 40},      # SSH, hit directly on external port
+            {'key': 10022, 'count': 308},  # SSH, iptables-redirected bound port
+            {'key': 10110, 'count': 59},   # POP3 redirected -> 110
+            {'key': 9090, 'count': 47},    # non-redirect, stays 9090
+        ],
+        'by_country': [],
+        'by_service': [],
+        'by_ip': [],
+    }
+    html = _render.render_intel_grid(payload)
+    # External ports 22 and 10022 both resolve to 22 and must merge into ONE row.
+    assert '22' in html
+    assert '10022' not in html  # never shown as a bound port
+    assert '110' in html        # 10110 -> 110
+    assert '9090' in html
+    # The merged SSH row should carry the summed count (40 + 308 = 348).
+    # render_intel_grid emits data-count per row; locate the 22 row's count.
+    import re
+
+    m = re.search(r'data-count="(\d+)" data-label="22"', html)
+    assert m and int(m.group(1)) == 348
+
+
+# ---------------------------------------------------------------------------
+# Hero stats report requests/hour, not a fake per-minute rate (issue #328)
+# ---------------------------------------------------------------------------
+
+
+def test_build_payload_reports_hour_total(tmp_path, monkeypatch):
+    """_build_payload exposes stats['hour_total'] (real last-60m count), no dead recent_rate."""
+    from manyfaced.db import storage as storage_mod
+
+    db_path = str(tmp_path / 'hour.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    _seed(storage)
+    # All seeded rows are within the last ~10h; move them into the last hour so
+    # they fall inside the 60m window the hero rate is computed from.
+    storage._conn.execute('DELETE FROM honeypot_bears')
+    storage._conn.commit()
+    now = datetime.now()
+    stamp = lambda mins: (now - timedelta(minutes=mins)).strftime('%Y-%m-%d %H:%M:%S.%f')
+    for i in range(3):
+        storage.insert(
+            {
+                'ip': f'5.5.5.{i}',
+                'hostname': 'h',
+                'timestamp': stamp(i),
+                'parsed_request': {},
+                'raw_request': 'x',
+                'is_detected': status_mod.WORDPRESS_HTTP,
+                'listen_port': 80,
+            }
+        )
+    storage._conn.commit()
+
+    payload = _dash_mod._build_payload('24h', 'tok')
+    assert 'hour_total' in payload['stats']
+    assert 'recent_rate' not in payload['stats']
+    assert payload['stats']['hour_total'] == 3
+    # The hero stat-card label is Requests/hour.
+    cards = _render._render_stat_cards(payload)
+    assert 'Requests/hour' in cards
+    assert 'Requests/min' not in cards
+    storage.close()
+    storage_mod.reset_storage_singleton()
