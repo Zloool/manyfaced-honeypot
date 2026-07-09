@@ -296,6 +296,65 @@ def render_intel_grid(payload: dict) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# IoC (issue #351)
+# ---------------------------------------------------------------------------
+
+
+def _render_ioc_section(payload: dict) -> str:
+    """Indicators of Compromise: top attacker IPs + C2/download hosts.
+
+    Top attacker IPs reuse the existing ``by_ip`` aggregate (already in the
+    payload). The country is resolved from ``by_country`` when the same IP
+    appears there (it usually won't — by_country is keyed by country, not IP —
+    so we fall back to '' and the column stays blank). C2 / download hosts are
+    the ``request_raw``-extracted hosts ranked by mention count — blocklist
+    candidates.
+    """
+    ip_rows = payload.get('by_ip', [])[:15]
+    c2_rows = payload.get('c2_hosts', [])[:15]
+
+    ip_items = []
+    for r in ip_rows:
+        ip_items.append(
+            '<div class="ioc-row" data-ioc-type="ip" data-ioc-value="'
+            f'{_esc(r["key"])}"><span class="ioc-value">{_esc(r["key"])}</span>'
+            f'<span class="intel-count">{fmt_k(r["count"])}</span></div>'
+        )
+    ip_body = ''.join(ip_items) if ip_items else '<p class="section-hint">no data</p>'
+
+    c2_items = []
+    for r in c2_rows:
+        c2_items.append(
+            '<div class="ioc-row" data-ioc-type="host" data-ioc-value="'
+            f'{_esc(r["host"])}"><span class="ioc-value">{_esc(r["host"])}</span>'
+            f'<span class="intel-count">{fmt_k(r["count"])}</span></div>'
+        )
+    c2_body = ''.join(c2_items) if c2_items else '<p class="section-hint">no data</p>'
+
+    since = payload.get('ioc_since')
+    since_label = f'window: {_esc(since)}' if since else 'window: all-time'
+    return f"""
+<section id="ioc" class="section">
+  <div class="section-head">
+    <div class="section-title">INDICATORS OF COMPROMISE</div>
+    <div class="rule"></div>
+    <div class="section-hint">{since_label} &middot; candidates for blocklisting</div>
+  </div>
+  <div class="ioc-grid">
+    <div class="intel-card" data-key="ioc-ips">
+      <div class="intel-head"><div class="intel-title">TOP ATTACKER IPS</div></div>
+      <div class="intel-list">{ip_body}</div>
+    </div>
+    <div class="intel-card" data-key="ioc-c2">
+      <div class="intel-head"><div class="intel-title">C2 / DOWNLOAD HOSTS</div></div>
+      <div class="intel-list">{c2_body}</div>
+    </div>
+  </div>
+</section>
+"""
+
+
 def _render_intel_section(payload: dict) -> str:
     return f"""
 <section id="intel" class="section">
@@ -559,7 +618,7 @@ def render_page(payload: dict) -> str:
 <nav class="top">
   <a href="#top" class="brand">MANYFACED<span class="brand-dim">_HONEYPOT</span></a>
   <div class="nav-links">
-    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#log">LOG</a>
+    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#ioc">IOC</a><a href="#log">LOG</a>
   </div>
   <div class="nav-right">
     <span class="live-pill"><span class="dot"></span>LIVE</span>
@@ -572,6 +631,7 @@ def render_page(payload: dict) -> str:
 {_render_hero(payload)}
 {_render_volume_section(payload)}
 {_render_intel_section(payload)}
+{_render_ioc_section(payload)}
 {_render_log_section(payload)}
 <div class="footer">MANYFACED HONEYPOT &middot; read-only, token-gated &middot; generated {generated}</div>
 </main>
@@ -605,6 +665,7 @@ def render_fragment(payload: dict) -> bytes:
     sections = {
         'vol-box': render_vol_box(payload),
         'intel-grid': render_intel_grid(payload),
+        'ioc': _render_ioc_section(payload),
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
         'meta': json.dumps(meta),

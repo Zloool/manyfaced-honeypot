@@ -41,9 +41,11 @@ from __future__ import annotations
 
 import hmac
 import logging
+import re
 import socket
 import threading
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -164,6 +166,38 @@ def _shape_volume_bars(volume_raw: list[dict], range_str: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+# Bound the C2-host scan so a busy production DB can't stall the refresher
+# (issue #351). The operator ranks by frequency and decides what to blocklist.
+_C2_RAW_SCAN_LIMIT = 20000
+_C2_TOP_N = 15
+
+# Hosts embedded in request_raw URLs. We want bare hosts only (no scheme, path,
+# port, or credentials) so the panel reads as a blocklist, not raw payload text.
+_C2_HOST_RE = re.compile(r'https?://([^/\s\'"<>]+)')
+
+
+def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> list[dict]:
+    """Rank C2 / malware-download hosts found inside ``request_raw`` payloads.
+
+    The honeypot captures raw bytes (``wget http://<host>/...`` injected into a
+    D-Link/Tenda CGI RCE, etc.) but has no dedicated column for the drop host,
+    so we scan ``request_raw`` text for ``http(s)://host`` patterns and rank by
+    mention frequency. ``store.fetch_request_raws`` already confines the read to
+    URL-bearing rows and bounds it by ``since`` + a row limit, so this stays
+    cheap on a multi-million-row DB.
+    """
+    try:
+        rows = store.fetch_request_raws(since=since, limit=_C2_RAW_SCAN_LIMIT)
+    except Exception:  # noqa: BLE001 — never let the IoC scan break the dashboard
+        logger.exception('C2 host extraction failed')
+        return []
+    counts: Counter[str] = Counter()
+    for raw in rows:
+        for m in _C2_HOST_RE.finditer(raw or ''):
+            counts[m.group(1)] += 1
+    return [{'host': h, 'count': c} for h, c in counts.most_common(top_n)]
+
+
 def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
@@ -181,6 +215,12 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
     try:
         overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
         overview = store.aggregate_stats(since=overview_since, bucket='day')
+
+        # Indicators of Compromise (issue #351): top attacker IPs come straight
+        # from `overview['by_ip']` (already aggregated in aggregate_stats); the
+        # C2 / download hosts are scanned out of request_raw text and ranked by
+        # frequency. Both surfaces are blocklist candidates for the operator.
+        c2_hosts = _extract_c2_hosts(store, since=overview_since)
 
         # Genuinely unbounded — the "Total Captures" card claims "all-time",
         # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
@@ -258,6 +298,8 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         'by_service': overview['by_service'],
         'by_ip': overview['by_ip'],
         'by_classification': overview.get('by_classification', {}),
+        'c2_hosts': c2_hosts,
+        'ioc_since': overview_since,
         'volume_bars': volume_bars,
         'log_rows': log_rows,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
