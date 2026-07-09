@@ -19,9 +19,11 @@ from __future__ import annotations
 import html
 import json
 import secrets
+from collections import Counter
 from typing import Any
 
 from manyfaced.db.storage import detected_id_name
+from manyfaced.web import dashboard_data as _data
 from manyfaced.web.dashboard_assets import CSS, JS
 from manyfaced.web.dashboard_data import port_service_name
 
@@ -66,9 +68,9 @@ def _render_stat_cards(payload: dict) -> str:
         ),
         (
             'stat-rate',
-            'Requests/min',
-            f'{s.get("recent_total", round(s["recent_rate"] * 60))}',
-            'last 60s, real',
+            'Requests/hour',
+            f'{s.get("hour_total", 0)}',
+            'last 60m, real',
             '#3dff88',
         ),
     ]
@@ -98,11 +100,11 @@ def _render_hero(payload: dict) -> str:
     </div>
     <div class="hero-mult">
       <div>PACKET STREAM &times;{payload['mult']}</div>
-      <div class="dim">amplified for visibility (real hit-rate weighted)</div>
+      <div class="dim">amplified for visibility &middot; rate shown is real</div>
     </div>
   </div>
 
-  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}">
+  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}" data-rph="{payload['stats'].get('hour_total', 0)}">
     <canvas id="srv-canvas"></canvas>
     <div class="hero-flag"><span class="dot"></span>SYSTEM ONLINE</div>
     <div class="hero-legend">
@@ -236,7 +238,15 @@ def _repeat_offender(row: dict, all_rows: list[dict]) -> bool:
 
 
 def render_intel_grid(payload: dict) -> str:
-    port_rows = [{'key': int(r['key']), 'count': r['count']} for r in payload['by_port']]
+    # Top Ports must show the *external* attacker-facing port, not the
+    # container-internal bound port (issue #329). And because external_port()
+    # is many-to-one (a port hit both directly and via redirect both map to the
+    # same external port), re-aggregate by the resolved port and sum counts, so
+    # e.g. listen_port=22 (direct) + 10022 (redirected) merge into one row.
+    port_resolved: Counter[int] = Counter()
+    for r in payload['by_port']:
+        port_resolved[_data.display_port(int(r['key']))] += r['count']
+    port_rows = [{'key': k, 'count': c} for k, c in port_resolved.items()]
     return ''.join(
         [
             _intel_card(
@@ -576,7 +586,7 @@ def render_fragment(payload: dict) -> bytes:
         'day': fmt(s['day']),
         'uniq': fmt(s['unique_ips']),
         'activePorts': payload['listening_count'],
-        'rate': str(s.get('recent_total', round(s['recent_rate'] * 60))),
+        'rate': str(s.get('hour_total', 0)),
         'summary': payload['log_summary'],
         'logPage': payload['page'],
         'logPageSize': payload['log_page_size'],

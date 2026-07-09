@@ -12,6 +12,7 @@ import os
 import sqlite3
 import time
 from abc import ABC, abstractmethod
+from collections import Counter
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
@@ -259,13 +260,17 @@ class StorageBackend(ABC):
         raise NotImplementedError('aggregate_stats not implemented by this backend')
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         """Return a request-volume time series, optionally scoped to one port.
 
         Used by the volume chart, which is filtered independently of the
         (unfiltered) top-lists in :meth:`aggregate_stats`. ``bucket`` is one
         of ``'minute5'`` (1H range), ``'hour'`` (24H) or ``'day'`` (7D/30D).
+
+        ``port`` may be a single port or a list of ports (e.g. an external port
+        plus its iptables-redirect target) — see :func:`manyfaced.common.ports.
+        internal_ports` (issue #330).
         """
         raise NotImplementedError('volume_series not implemented by this backend')
 
@@ -926,13 +931,20 @@ class SQLiteStorage(StorageBackend):
                 rows = conn.execute(q, (*params, top)).fetchall()
                 return [{'key': r[0], 'count': r[1]} for r in rows]
 
-            # Service grouping maps detected_id -> friendly name.
+            # Service grouping maps detected_id -> friendly name. Because the
+            # friendly name is many-to-one (every detected_id not in
+            # _DETECTED_ID_NAMES collapses to 'unknown'), group by the *mapped*
+            # label and sum, so e.g. multiple distinct unmapped ids merge into a
+            # single 'unknown' row (issue #331).
             svc_rows = conn.execute(
                 f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY detected_id ORDER BY c DESC',
                 params,
             ).fetchall()
-            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in svc_rows]
+            svc_counts: Counter[str] = Counter()
+            for detected_id, c in svc_rows:
+                svc_counts[detected_id_name(detected_id)] += c
+            by_service = [{'key': k, 'count': c} for k, c in svc_counts.most_common()]
 
             vol_rows = conn.execute(
                 f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
@@ -960,7 +972,7 @@ class SQLiteStorage(StorageBackend):
             return _empty_stats()
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         if self._conn is None:
             return []
@@ -971,8 +983,13 @@ class SQLiteStorage(StorageBackend):
             clauses.append('timestamp >= ?')
             params.append(cutoff)
         if port is not None:
-            clauses.append('listen_port = ?')
-            params.append(port)
+            if isinstance(port, int):
+                clauses.append('listen_port = ?')
+                params.append(port)
+            else:
+                placeholders = ', '.join('?' for _ in port)
+                clauses.append(f'listen_port IN ({placeholders})')
+                params.extend(port)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         bucket_expr = _sqlite_bucket_expr(bucket)
         try:
@@ -1348,12 +1365,18 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(q, [*params, top])
                 return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
 
+            # Service grouping maps detected_id -> friendly name. The friendly
+            # name is many-to-one, so group by the *mapped* label and sum
+            # (issue #331).
             cur.execute(
                 f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY detected_id ORDER BY c DESC',
                 params,
             )
-            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in cur.fetchall()]
+            svc_counts: Counter[str] = Counter()
+            for detected_id, c in cur.fetchall():
+                svc_counts[detected_id_name(detected_id)] += c
+            by_service = [{'key': k, 'count': c} for k, c in svc_counts.most_common()]
 
             cur.execute(
                 f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
@@ -1395,7 +1418,7 @@ class PostgreSQLStorage(StorageBackend):
                 return _empty_stats()
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         if self._conn is None:
             return []
@@ -1405,8 +1428,13 @@ class PostgreSQLStorage(StorageBackend):
             clauses.append('timestamp >= %s')
             params.append(since)
         if port is not None:
-            clauses.append('listen_port = %s')
-            params.append(port)
+            if isinstance(port, int):
+                clauses.append('listen_port = %s')
+                params.append(port)
+            else:
+                placeholders = ', '.join('%s' for _ in port)
+                clauses.append(f'listen_port IN ({placeholders})')
+                params.extend(port)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         bucket_expr = _pg_bucket_expr(bucket)
         try:
