@@ -17,6 +17,34 @@ class TestPortServiceName:
         assert dd.port_service_name(None) == '?'
 
 
+class TestRedirectedPortServiceName:
+    """iptables-redirected high ports must resolve to the real service (issue #312)."""
+
+    def test_redirected_ports_resolve_to_privileged_service(self):
+        # (high bind port, expected label) — mirrors setup-iptables-privileged-ports.sh
+        expected = {
+            10021: 'FTP',
+            10022: 'SSH',
+            10023: 'Telnet',
+            10025: 'SMTP',
+            10053: 'DNS',
+            10110: 'POP3',
+            10135: 'MSRPC',
+            10139: 'NetBIOS',
+            10143: 'IMAP',
+            10445: 'SMB',
+            10993: 'IMAPS',
+            10995: 'POP3S',
+        }
+        for high, label in expected.items():
+            assert dd.port_service_name(high) == label, high
+
+    def test_non_redirected_high_port_still_falls_back(self):
+        # 8080/8443 are the HTTP/HTTPS redirects but their privileged names are
+        # harmless here; a truly unknown high port must still fall back to 'TCP'.
+        assert dd.port_service_name(12345) == 'TCP'
+
+
 class TestResolveDisplayPorts:
     def test_small_set_returned_as_is(self):
         ports = dd.resolve_display_ports([22, 80, 443], by_port=[])

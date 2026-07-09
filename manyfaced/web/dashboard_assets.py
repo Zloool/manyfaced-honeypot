@@ -38,12 +38,12 @@ button{font-family:inherit;cursor:pointer}
 
 .title-font{font-family:'VT323',ui-monospace,monospace}
 
-nav.top{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:22px;padding:11px 22px;
+nav.top{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:22px;padding:11px 22px;flex-wrap:wrap;
   background:rgba(6,11,7,.86);backdrop-filter:blur(7px);border-bottom:1px solid rgba(120,255,170,.16)}
 .brand{font-family:'VT323',monospace;font-size:23px;color:#d3ffe4;letter-spacing:1px;line-height:1}
 .brand-dim{color:#3f7a55}
-.nav-links{display:flex;gap:16px;font-size:12px;letter-spacing:.5px}
-.nav-links a{color:#4e8768}
+.nav-links{display:flex;gap:16px;font-size:12px;letter-spacing:.5px;flex-wrap:wrap}
+.nav-links a{color:#4e8768;white-space:nowrap}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:12px}
 .live-pill{display:inline-flex;align-items:center;gap:7px;color:#83f5ae}
 .dot{width:8px;height:8px;border-radius:50%;background:#3dff88;box-shadow:0 0 9px #3dff88;animation:blink 1.4s infinite;display:inline-block}
@@ -102,14 +102,14 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .chip-clear{color:#ff6b74;border-color:rgba(255,107,116,.35);background:transparent}
 .chip-label{font-size:11px;color:#3f7a55}
 
-.vol-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:16px 18px}
-.vol-row{display:grid;grid-template-columns:88px 1fr 78px;align-items:center;gap:12px;padding:3px 6px;border-radius:4px;cursor:pointer;background:transparent}
-.vol-row.focus{background:rgba(120,255,170,.1)}
-.vol-row-label{font-size:11px;color:#4e8768;text-align:right;font-variant-numeric:tabular-nums}
-.vol-track{height:15px;background:rgba(120,255,170,.07);border-radius:3px;overflow:hidden}
-.vol-fill{height:100%;background:linear-gradient(90deg,#1f7a49,#3dff88);box-shadow:0 0 10px rgba(61,255,136,.4)}
-.vol-row.focus .vol-fill{background:linear-gradient(90deg,#1f7a49,#d3ffe4)}
-.vol-count{font-size:12px;color:#83f5ae;text-align:right;font-variant-numeric:tabular-nums}
+.vol-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:16px 18px;overflow-x:auto}
+.vol-chart{display:flex;align-items:flex-end;gap:6px;min-height:170px;padding-top:6px}
+.vol-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:14px;cursor:pointer;height:100%}
+.vol-col.focus .vol-bar{background:linear-gradient(180deg,#1f7a49,#d3ffe4)}
+.vol-bars{flex:1 1 auto;width:100%;display:flex;align-items:flex-end;justify-content:center;min-height:0}
+.vol-bar{width:100%;max-width:46px;min-height:2px;background:linear-gradient(180deg,#1f7a49,#3dff88);box-shadow:0 0 10px rgba(61,255,136,.4);border-radius:3px 3px 0 0;transition:height .3s ease}
+.vol-xlabel{font-size:10px;color:#4e8768;text-align:center;font-variant-numeric:tabular-nums;margin-top:6px;white-space:nowrap}
+.vol-xcount{font-size:11px;color:#83f5ae;text-align:center;font-variant-numeric:tabular-nums}
 
 .intel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
 .intel-card{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:15px 16px}
@@ -139,6 +139,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .log-head-row{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
   border-bottom:1px solid rgba(120,255,170,.14);font-size:10px;letter-spacing:1px;color:#2f5c40;text-transform:uppercase}
 .log-empty{padding:34px;text-align:center;color:#3f7a55;font-size:13px}
+
+.log-pager{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:14px;justify-content:center}
+.log-pager .seg-btn[disabled]{opacity:.4;cursor:default}
+.log-pager .seg-btn{min-width:34px}
+.pager-ellipsis{color:#3f7a55;padding:0 4px}
+.pager-info{font-size:11px;color:#4e8768;margin-left:8px;font-variant-numeric:tabular-nums}
 
 .log-entry{border-bottom:1px solid rgba(120,255,170,.07)}
 .log-row-main{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
@@ -178,6 +184,10 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .footer{text-align:center;color:#254a33;font-size:11px;margin-top:46px}
 
 @media (max-width:720px){
+  nav.top{gap:10px 14px;padding:10px 14px}
+  .brand{font-size:20px}
+  .nav-links{gap:12px;order:3;width:100%;justify-content:flex-start}
+  .nav-right{margin-left:auto;gap:10px;flex-wrap:wrap;justify-content:flex-end}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
 }
@@ -192,7 +202,7 @@ JS = r"""
   'use strict';
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
-                window: null, method: 'ALL', sort: 'newest', search: '', paused: false };
+                window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -219,9 +229,10 @@ JS = r"""
   // chunks. The boundary can't be predicted ahead of time by anything that
   // ends up embedded in <content> (e.g. attacker-controlled capture text),
   // so it can't be used to forge a fake section split.
-  function fetchFragment(range, port){
+  function fetchFragment(range, port, page){
     var url = '?token='+encodeURIComponent(CFG.token)+'&format=fragment&range='+encodeURIComponent(range);
     if (port != null) url += '&port='+encodeURIComponent(port);
+    if (page != null) url += '&page='+encodeURIComponent(page);
     return fetch(url, {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(text){
       var nl = text.indexOf('\n');
       if (nl < 0) return {};
@@ -253,6 +264,7 @@ JS = r"""
     wireLogRows();
     wireIntelRows();
     wireVolumeRows();
+    wireLogPager();
     applyFilters();
   }
 
@@ -269,6 +281,8 @@ JS = r"""
       summary.setAttribute('data-full', meta.summary);
       summary.textContent = meta.summary;
     }
+    // Keep the pager state in sync with the rendered page (issue #316).
+    if (meta.logPage != null) state.page = meta.logPage;
   }
 
   // ---------------- range / port controls ----------------
@@ -284,6 +298,7 @@ JS = r"""
     if (!btn) return;
     state.range = btn.getAttribute('data-range');
     state.window = null;
+    state.page = 1;
     setActive(rangeRow, 'data-range', state.range);
     fetchFragment(state.range, state.port).then(function(frag){
       applyFragment(frag, ['vol-box','intel-grid','log-rows']);
@@ -292,6 +307,7 @@ JS = r"""
 
   function setPortFilter(port){
     state.port = (port === '' || port == null) ? null : Number(port);
+    state.page = 1;
     $all('.chip-port').forEach(function(b){
       b.classList.toggle('active', (b.getAttribute('data-port')||'') === String(state.port==null?'':state.port));
     });
@@ -316,7 +332,7 @@ JS = r"""
     if (volBox && !volBox.__wired){
       volBox.__wired = true;
       volBox.addEventListener('click', function(e){
-        var row = e.target.closest('.vol-row');
+        var row = e.target.closest('.vol-col');
         if (!row) return;
         var start = row.getAttribute('data-start'), end = row.getAttribute('data-end');
         var label = row.getAttribute('data-label');
@@ -460,7 +476,7 @@ JS = r"""
 
   function clearAllFilters(){
     state.port = null; state.country = null; state.service = null; state.ip = null;
-    state.window = null; state.method = 'ALL'; state.search = '';
+    state.window = null; state.method = 'ALL'; state.search = ''; state.page = 1;
     if (searchInput) searchInput.value = '';
     if (methodRow) setActive(methodRow, 'data-method', 'ALL');
     $all('.chip-port').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-port') === ''); });
@@ -470,6 +486,28 @@ JS = r"""
   }
 
   // ---------------- log rows: toggle raw / group, filtering ----------------
+  function wireLogPager(){
+    var wrap = $('#log-pager-wrap');
+    if (!wrap || wrap.__wired) return;
+    wrap.__wired = true;
+    wrap.addEventListener('click', function(e){
+      var btn = e.target.closest('.log-pager [data-page]');
+      if (!btn || btn.disabled) return;
+      var p = parseInt(btn.getAttribute('data-page'), 10);
+      if (!p || p === state.page) return;
+      setLogPage(p);
+    });
+    // Re-apply active state when fragments refresh the pager in place.
+    wrap.__wire = true;
+  }
+
+  function setLogPage(p){
+    state.page = p;
+    fetchFragment(state.range, state.port, p).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager']);
+    });
+  }
+
   function wireLogRows(){
     var container = $('#log-rows');
     if (!container || container.__wired) return;
@@ -680,7 +718,7 @@ JS = r"""
   // ---------------- live polling ----------------
   function refreshLive(){
     if (state.paused) return;
-    fetchFragment(state.range, state.port).then(function(frag){
+    fetchFragment(state.range, state.port, state.page).then(function(frag){
       applyFragment(frag, ['vol-box','intel-grid','log-rows']);
     }).catch(function(){ /* transient network hiccup — try again next tick */ });
   }
