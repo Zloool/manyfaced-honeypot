@@ -1,0 +1,61 @@
+name: triage-comment
+
+# Issue/PR comment tripwire (issue #325): flag malware / fake-patch drops.
+#
+# Triggers on every newly-created comment. It inspects ONLY the comment's
+# author association + text (metadata from the GitHub event) — it never
+# resolves, downloads, or executes anything the comment points at, and it
+# never checks out untrusted PR code (we check out our own default branch).
+#
+# A flagged comment is minimized + labelled `possible-malware-drop` so human
+# triage is notified. We deliberately do NOT quote the suspicious content
+# back into another comment (no self-XSS / secondary drop channel).
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write # add label + GraphQL minimizeComment via GITHUB_TOKEN
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7 # our own default branch (trusted code only)
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+
+      - name: Classify comment
+        id: scan
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          COMMENT_AUTHOR_ASSOC: ${{ github.event.comment.author_association }}
+        run: |
+          set -euo pipefail
+          out=$(python scripts/comment_tripwire.py)
+          echo "classifier: ${out}"
+          if [[ "${out}" == FLAG* ]]; then
+            echo "flag=true" >> "$GITHUB_OUTPUT"
+            echo "reason=${out#FLAG: }" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Minimize + label suspicious comment
+        if: steps.scan.outputs.flag == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ID: ${{ github.event.comment.node_id }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          REASON: ${{ steps.scan.outputs.reason }}
+        run: |
+          set -euo pipefail
+          # Minimize the comment (GraphQL). Classifier: POSSIBLY_INFECTING.
+          gh api graphql \
+            -f query='mutation($id:ID!,$class:ReportedContentClass!){minimizeComment(input:{subjectId:$id,classifier:$class}){minimizedComment{isMinimized}}}' \
+            -f id="$NODE_ID" \
+            -f class=POSSIBLY_INFECTING
+          # Label the issue/PR for human triage (issues + PRs share this endpoint).
+          gh api -X POST "repos/${{ github.repository }}/issues/${ISSUE_NUM}/labels" \
+            -f "labels[]=possible-malware-drop"
+          echo "Minimized + labelled comment from ${{ github.event.comment.user.login }}: ${REASON}"
