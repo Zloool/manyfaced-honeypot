@@ -257,6 +257,7 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         'by_country': overview['by_country'],
         'by_service': overview['by_service'],
         'by_ip': overview['by_ip'],
+        'by_classification': overview.get('by_classification', {}),
         'volume_bars': volume_bars,
         'log_rows': log_rows,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
