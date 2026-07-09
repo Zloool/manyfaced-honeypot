@@ -188,16 +188,25 @@ def _classify_row(
 
 def backfill(
     db_path: str,
-    batch_size: int = 1000,
+    batch_size: int = 5000,
     dry_run: bool = False,
     limit: int | None = None,
     sleep: float = 0.0,
 ) -> int:
-    """Classify every row where ``classification IS NULL``.
+    """Classify **every** row where ``classification IS NULL``.
 
-    Resumable: a row only leaves the NULL set once its UPDATE commits, so an
-    interrupt mid-run leaves the rest reprocessable. Idempotent: once all rows
-    are classified, the NULL scan returns nothing and the run is a no-op.
+    Full catch-up: the NULL set is drained across the *whole* table (no recent-
+    time-window or hard row cap), one commit-sized batch at a time, until zero
+    NULL rows remain.
+
+    Idempotent + resumable: a row only leaves the NULL set once its UPDATE
+    commits, so re-running only ever touches rows that are still NULL. An
+    interrupt mid-run leaves the remainder reprocessable, and a run after full
+    completion selects nothing and is a no-op — already-classified rows are
+    never recomputed or rewritten.
+
+    Each committed batch logs how many NULL rows remain so an operator can watch
+    progress and spot a stuck job.
     """
     conn = None
     try:
@@ -210,7 +219,12 @@ def backfill(
                 f'FROM honeypot_bears WHERE classification IS NULL {limit_clause}'
             ).fetchall()
 
-        total = len(_pending(''))
+        def _null_remaining() -> int:
+            return conn.execute(
+                'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL'
+            ).fetchone()[0]
+
+        total = _null_remaining()
         if total == 0:
             print('[enrich] nothing to backfill (all rows classified).')
             return 0
@@ -221,11 +235,12 @@ def backfill(
         counts = {'benign': 0, 'unknown': 0, 'malicious': 0}
         processed = 0
 
-        # Drain the NULL set in batches. A row only leaves the set once its
-        # UPDATE commits, so an interrupt mid-run leaves the rest reprocessable.
-        # ``limit`` caps the TOTAL rows processed (used to simulate a partial
-        # run for resumability testing); the inner loop re-scans the shrinking
-        # NULL set so it always makes progress and terminates.
+        # Drain the NULL set in commit-sized batches. Each batch is one
+        # transaction: classify up to ``batch_size`` NULL rows, UPDATE them, then
+        # commit — so an interrupt only loses the uncommitted current batch and a
+        # re-run resumes from the still-NULL remainder. ``limit`` caps the TOTAL
+        # rows processed (used to simulate a partial run for resumability
+        # testing); otherwise the loop runs until no NULL rows remain.
         while True:
             if limit is not None and processed >= limit:
                 break
@@ -259,15 +274,22 @@ def backfill(
                         'classification=?, benign_source=? WHERE id=?',
                         (asn, org, classification, benign_source, r['id']),
                     )
-                if processed % batch_size == 0:
-                    if not dry_run:
-                        conn.commit()
-                    print(
-                        f'[enrich] processed {processed}/{total} '
-                        f'(benign={counts["benign"]}, unknown={counts["unknown"]})'
-                    )
-                    if sleep:
-                        time.sleep(sleep)
+
+            # Commit the batch, then report how many NULL rows are still left so
+            # operators can see catch-up progress / detect a stuck job. In
+            # dry-run nothing is written, so derive the remainder from processed.
+            if not dry_run:
+                conn.commit()
+                remaining = _null_remaining()
+            else:
+                remaining = max(total - processed, 0)
+            print(
+                f'[enrich] processed {processed}/{total} '
+                f'(benign={counts["benign"]}, unknown={counts["unknown"]}); '
+                f'{remaining} NULL row(s) remain'
+            )
+            if sleep:
+                time.sleep(sleep)
 
         if not dry_run:
             conn.commit()
@@ -290,7 +312,9 @@ def backfill(
 def main() -> int:
     parser = argparse.ArgumentParser(description='Backfill benign-source classification.')
     parser.add_argument('--db', default='/opt/manyfaced/bots/honeypot.sqlite')
-    parser.add_argument('--batch', type=int, default=1000, help='Progress-report batch size.')
+    parser.add_argument(
+        '--batch', type=int, default=5000, help='Rows per commit-sized batch/transaction.'
+    )
     parser.add_argument('--dry-run', action='store_true', help='Report split without writing.')
     parser.add_argument('--no-backup', action='store_true', help='Skip the .bak backup.')
     parser.add_argument('--limit', type=int, default=None, help='Cap rows processed (testing).')
