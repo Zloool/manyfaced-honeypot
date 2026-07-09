@@ -221,15 +221,26 @@ class StorageBackend(ABC):
     # backends is insert/close only (see test_storage). Concrete subclasses
     # (SQLiteStorage, PostgreSQLStorage) override these; calling the base raises.
 
-    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+    def recent_records(
+        self, limit: int = 50, since: str | None = None, offset: int = 0
+    ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
         Args:
             limit: Max rows to return.
             since: Optional inclusive lower bound on ``timestamp`` (already
                 formatted as the column's textual ``%Y-%m-%d %H:%M:%S.%f``).
+            offset: Rows to skip from the newest end (pagination). Defaults to 0.
         """
         raise NotImplementedError('recent_records not implemented by this backend')
+
+    def count_recent(self, since: str | None = None) -> int:
+        """Count honeypot_bears rows within the optional ``since`` window.
+
+        Used to drive capture-log pagination (issue #316) so older rows stay
+        reachable. Concrete subclasses override this; the base raises.
+        """
+        raise NotImplementedError('count_recent not implemented by this backend')
 
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         """Return dashboard aggregates over the honeypot_bears table.
@@ -788,7 +799,9 @@ class SQLiteStorage(StorageBackend):
 
     # -- read API (issue #234 dashboard) ------------------------------------
 
-    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+    def recent_records(
+        self, limit: int = 50, since: str | None = None, offset: int = 0
+    ) -> list[dict]:
         if self._conn is None:
             return []
         conn = self._conn
@@ -797,14 +810,34 @@ class SQLiteStorage(StorageBackend):
         if since is not None:
             sql += ' WHERE timestamp >= ?'
             params = (since,)
-        sql += ' ORDER BY timestamp DESC LIMIT ?'
+        sql += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
         try:
-            rows = conn.execute(sql, (*params, int(limit))).fetchall()
+            rows = conn.execute(sql, (*params, int(limit), int(offset))).fetchall()
             cols = [d[0] for d in conn.execute('SELECT * FROM honeypot_bears LIMIT 0').description]
             return [dict(zip(cols, row)) for row in rows]
         except (sqlite3.Error, sqlite3.OperationalError):
             logger.exception('Error reading recent records from SQLite storage')
             return []
+
+    def count_recent(self, since: str | None = None) -> int:
+        """Count honeypot_bears rows within the optional ``since`` window.
+
+        Used to drive capture-log pagination (issue #316) so older rows inside
+        the selected time range stay reachable beyond the rendered page size.
+        """
+        if self._conn is None:
+            return 0
+        conn = self._conn
+        sql = 'SELECT COUNT(*) FROM honeypot_bears'
+        params: tuple = ()
+        if since is not None:
+            sql += ' WHERE timestamp >= ?'
+            params = (since,)
+        try:
+            return int(conn.execute(sql, params).fetchone()[0])
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error counting recent records from SQLite storage')
+            return 0
 
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         if self._conn is None:
@@ -1151,7 +1184,9 @@ class PostgreSQLStorage(StorageBackend):
 
     # -- read API (issue #234 dashboard) ------------------------------------
 
-    def recent_records(self, limit: int = 50, since: str | None = None) -> list[dict]:
+    def recent_records(
+        self, limit: int = 50, since: str | None = None, offset: int = 0
+    ) -> list[dict]:
         if self._conn is None and not self._ensure_connected():
             return []
         sql = 'SELECT * FROM honeypot_bears'
@@ -1159,10 +1194,10 @@ class PostgreSQLStorage(StorageBackend):
         if since is not None:
             sql += ' WHERE timestamp >= %s'
             params.append(since)
-        sql += ' ORDER BY timestamp DESC LIMIT %s'
+        sql += ' ORDER BY timestamp DESC LIMIT %s OFFSET %s'
         try:
             with self._conn.cursor() as cur:
-                cur.execute(sql, (*params, int(limit)))
+                cur.execute(sql, (*params, int(limit), int(offset)))
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
@@ -1174,12 +1209,41 @@ class PostgreSQLStorage(StorageBackend):
                 return []
             try:
                 with self._conn.cursor() as cur:
-                    cur.execute(sql, (*params, int(limit)))
+                    cur.execute(sql, (*params, int(limit), int(offset)))
                     cols = [d[0] for d in cur.description]
                     return [dict(zip(cols, row)) for row in cur.fetchall()]
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error reading recent records from PostgreSQL storage')
                 return []
+
+    def count_recent(self, since: str | None = None) -> int:
+        """Count honeypot_bears rows within the optional ``since`` window.
+
+        Used to drive capture-log pagination (issue #316). Mirrors
+        :meth:`SQLiteStorage.count_recent`.
+        """
+        if self._conn is None and not self._ensure_connected():
+            return 0
+        sql = 'SELECT COUNT(*) FROM honeypot_bears'
+        params: list = []
+        if since is not None:
+            sql += ' WHERE timestamp >= %s'
+            params.append(since)
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, params)
+                return int(cur.fetchone()[0])
+        except psycopg2.Error:  # noqa: BLE001
+            self._reset_conn()
+            if not self._ensure_connected():
+                return 0
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    return int(cur.fetchone()[0])
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error counting recent records from PostgreSQL storage')
+                return 0
 
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         if self._conn is None:
