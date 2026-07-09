@@ -18,6 +18,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # --- Project root wiring ---
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -30,6 +32,20 @@ sys.modules['GeoIP'] = MagicMock()
 
 from manyfaced.handlers.router import Router  # noqa: E402
 from manyfaced.handlers.routes import ROUTES  # noqa: E402
+from manyfaced.common.bearstorage import BearStorage  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _stub_resolve_geo():
+    """Stub BearStorage.resolve_geo / resolve_dns_name so pipeline tests never
+    sleep on the real ip-api rate limiter (~1.33s per lookup) or do a
+    synchronous reverse-DNS call. These tests assert on response structure, not
+    geo/DNS data."""
+    with (
+        patch.object(BearStorage, 'resolve_geo', return_value=('', '', '', '')),
+        patch.object(BearStorage, 'resolve_dns_name', return_value=''),
+    ):
+        yield
 
 
 def _make_request(path: str) -> str:
