@@ -54,6 +54,9 @@ _COUNTERS: dict[str, int] = {
     'geo_lookup_failure': 0,
     'db_insert_failure': 0,
     'handler_exception': 0,
+    'classification.benign': 0,
+    'classification.unknown': 0,
+    'classification.malicious': 0,
 }
 # Domain-labeled response counters (e.g. "wordpress", "phpmyadmin").
 _RESPONSES_BY_DOMAIN: dict[str, int] = {}

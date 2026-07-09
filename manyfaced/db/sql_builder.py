@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     login        TEXT,
     bot_profile_data TEXT,
     listen_port  INTEGER,
+    bot_asn      TEXT,
+    bot_org      TEXT,
+    classification TEXT,
+    benign_source TEXT,
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -42,15 +46,17 @@ CREATE INDEX IF NOT EXISTS idx_bears_bot_continent ON honeypot_bears(bot_contine
 CREATE INDEX IF NOT EXISTS idx_bears_bot_ip       ON honeypot_bears(bot_ip);
 CREATE INDEX IF NOT EXISTS idx_bears_request_path ON honeypot_bears(request_path);
 CREATE INDEX IF NOT EXISTS idx_bears_listen_port  ON honeypot_bears(listen_port);
+CREATE INDEX IF NOT EXISTS idx_bears_classification ON honeypot_bears(classification);
 """
 
 INSERT_SQL = """\
 INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port,
+     bot_asn, bot_org, classification, benign_source)
 VALUES
-    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 CREATE_TABLE_PG_SQL = """\
@@ -73,6 +79,10 @@ CREATE TABLE IF NOT EXISTS honeypot_bears (
     login        TEXT,
     bot_profile_data TEXT,
     listen_port  INTEGER,
+    bot_asn      VARCHAR(32),
+    bot_org      VARCHAR(255),
+    classification VARCHAR(16),
+    benign_source VARCHAR(64),
     UNIQUE(bot_ip, timestamp)
 )
 """
@@ -81,9 +91,10 @@ INSERT_PG_SQL = """\
 INSERT INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
      request_version, request_raw, bot_user_agent, bot_country,
-     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port)
+     bot_continent, bot_tracert, bot_dns_name, detected_id, hive_id, login, bot_profile_data, listen_port,
+     bot_asn, bot_org, classification, benign_source)
 VALUES
-    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT(bot_ip, timestamp) DO NOTHING
 """
 
@@ -123,6 +134,14 @@ def extract_record_fields(record: dict) -> tuple:
         detected_id = record.get('isDetected')
     hive_id = record.get('hive_id')
     login = record.get('login') or ''
+
+    # Classification + network signals (issue #271). These arrive pre-computed
+    # on the capture path (BearStorage.resolve_geo + classify()); for older
+    # records the backfill script recomputes them. Default to '' (unknown).
+    bot_asn = record.get('bot_asn') or ''
+    bot_org = record.get('bot_org') or ''
+    classification = record.get('classification') or ''
+    benign_source = record.get('benign_source') or ''
 
     # listen_port — local honeypot port the bot connected to (issue #299).
     # 0 means "unknown" (older clients / pre-#299 reports / fallback paths).
@@ -172,4 +191,8 @@ def extract_record_fields(record: dict) -> tuple:
         login,
         bot_profile_data,
         listen_port,
+        bot_asn,
+        bot_org,
+        classification,
+        benign_source,
     )

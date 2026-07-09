@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from manyfaced.handlers.router import Router  # noqa: F401
 
 from manyfaced.common.bearstorage import BearStorage
+from manyfaced.common.classification import classify
 from manyfaced.common.config import settings
 from manyfaced.common.credential_extractor import extract_http_credentials, format_creds_string
 from manyfaced.common.httphandler import HTTPRequest
@@ -328,6 +329,23 @@ class HTTPHandler:
             bs.resolve_geo(bot_ip, timeout=2.0)
         except Exception:
             logger.debug('Geo resolution failed for %s', bot_ip)
+
+        # Classify the source as benign/unknown from its strongest available
+        # signals (reverse DNS is already resolved; ASN/org arrived with geo).
+        # classify() is pure and cheap. The result rides on the report to the
+        # server which stores it pre-classified (issue #271).
+        try:
+            bs.classification, bs.benign_source = classify(
+                reverse_dns=bs.dns_name,
+                org=bs.org,
+                asn=bs.asn,
+                user_agent=bs.ua,
+            )
+            from manyfaced.common.metrics import incr
+
+            incr(f'classification.{bs.classification}')
+        except Exception:
+            logger.debug('Classification failed for %s', bot_ip)
 
         # Collect BotProfile data from all handler instances for this IP
         router = _get_router()

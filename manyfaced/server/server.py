@@ -13,6 +13,7 @@ from socket import (
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.config import settings
 from manyfaced.common.utils import dump_file, receive_timeout
+from manyfaced.common.classification import classify
 from manyfaced.db.dbconnect import Insert, BearRequests
 from manyfaced.handlers.base_handler import BaseHandler
 
@@ -50,6 +51,18 @@ class ServerHandler(BaseHandler):
 
     def save_data(self, data, args):
         try:
+            # Classify the source as benign/unknown from the signals the client
+            # already shipped (reverse DNS + UA); ASN/org are resolved at the
+            # client (resolve_geo) and forwarded alongside country/continent
+            # (issue #271). classify() is pure and cheap.
+            asn = data.get('asn', '') or ''
+            org = data.get('org', '') or ''
+            classification, benign_source = classify(
+                reverse_dns=data.get('dns_name', '') or '',
+                org=org,
+                asn=asn,
+                user_agent=data.get('ua', '') or '',
+            )
             bear = BearRequests(
                 ip=data['ip'],
                 raw_request=data['raw_request'],
@@ -64,6 +77,10 @@ class ServerHandler(BaseHandler):
                 login=data.get('login', ''),
                 bot_profile_data=data.get('bot_profile_data'),
                 listen_port=data.get('listen_port', 0) or 0,
+                asn=asn,
+                org=org,
+                classification=classification,
+                benign_source=benign_source,
             )
             Insert(bear)
             logger.info('Data saved for %s', data['ip'])
