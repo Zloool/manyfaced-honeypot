@@ -29,6 +29,27 @@ sys.modules['GeoIP'] = MagicMock()
 
 from manyfaced.common.httphandler import HTTPRequest  # noqa: E402
 from manyfaced.handlers.http_handler import HTTPHandler  # noqa: E402
+from manyfaced.common.bearstorage import BearStorage  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _stub_resolve_geo():
+    """Stub BearStorage.resolve_geo / resolve_dns_name so handler tests never
+    hit the real ip-api rate limiter (~1.33s sleep per lookup in the worker
+    thread) or perform a synchronous reverse-DNS call (socket.gethostbyaddr,
+    ~1s timeout when the IP has no PTR).
+
+    Routing/enrichment tests assert on response *content* or on
+    ``resolve_geo.assert_called_once_with(...)`` — stubbing the return value
+    keeps the call (so those assertions stay valid) while removing the waits.
+    The geo + DNS lookups themselves are exercised by test_geolocate.py and the
+    enrichment integration tests that opt out of this fixture."""
+    with (
+        patch.object(BearStorage, 'resolve_geo', return_value=('', '', '', '')),
+        patch.object(BearStorage, 'resolve_dns_name', return_value=''),
+    ):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # HTTPHandler Tests
