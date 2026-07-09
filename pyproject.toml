@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
-dev = ["pytest>=7.0", "ruff==0.15.20", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
+dev = ["pytest>=7.0", "pytest-timeout>=2.1", "ruff==0.15.20", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
 
 [project.scripts]
 manyfaced = "manyfaced.mfh:run"
@@ -53,7 +53,7 @@ ignore = [
 "test/*" = ["E402", "F401", "F841"]
 
 [tool.pytest.ini_options]
-addopts = "-v --cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76"
+addopts = "-v --timeout=60 --cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76"
 testpaths = ["test"]
 
 [tool.interrogate]
