@@ -112,16 +112,41 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
     just the main file (plus any residual sidecars for safety) so the backup is
     self-contained.
 
-    After writing, old backups beyond ``keep`` are pruned so repeated deploys
-    cannot fill the disk.
+    Old backups beyond ``keep - 1`` are pruned *before* the copy so the new
+    backup can fit on a small droplet (issue 2026-07 disk-full deploy fail:
+    the new copy needed 404M of headroom but 3 stale .bak already held it, so
+    the copy failed and the deploy aborted). Pruning first guarantees at most
+    ``keep`` backups exist transiently.
 
     Returns the backup path, or None if the source does not exist.
     """
     if not os.path.exists(db_path):
         return None
+    # Free space FIRST: drop oldest backups down to keep-1 so the new copy fits.
+    if keep < 0:
+        pass  # -1 = keep everything, no prune
+    elif keep == 0:
+        _prune_backups(db_path, 0)
+        return None  # 0 = keep no backups at all
+    else:
+        _prune_backups(db_path, keep - 1)
     stamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
     backup_path = f'{db_path}.{stamp}.bak'
     try:
+        # Refuse to start the copy if there isn't room for a full DB clone plus
+        # a safety margin. A raw ENOSPC mid-copy would leave a half-written .bak
+        # and a confusing failure; fail fast with a clear cause instead.
+        needed = os.path.getsize(db_path) * 1.1  # +10% margin for sidecars
+        free = shutil.disk_usage(os.path.dirname(db_path) or '.').free
+        if free < needed:
+            raise OSError(
+                f'not enough free space to back up ({free // (1024 * 1024)} MB free, '
+                f'need ~{int(needed) // (1024 * 1024)} MB). Prune old .bak files or '
+                f'reclaim disk before migrating.'
+            )
+    except FileNotFoundError:
+        # getsize failed on a sidecar; fall through to the copy attempt.
+        pass
         src = sqlite3.connect(db_path)
         src.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         src.close()
@@ -150,11 +175,10 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
                 pass
         raise
     print(f'[migrate] backup written: {backup_path}')
-    _prune_backups(db_path, keep)
     return backup_path
 
 
-def migrate(db_path: str, backup: bool = True, keep: int = 3) -> int:
+def migrate(db_path: str, backup: bool = True, keep: int = 1) -> int:
     if backup:
         # Fail closed: a backup failure must abort the migration rather than
         # silently proceeding to alter the live schema with no revert point
@@ -213,8 +237,8 @@ def main() -> int:
     parser.add_argument(
         '--keep',
         type=int,
-        default=3,
-        help='Number of most-recent .bak backups to retain (default 3; 0 prunes all, -1 keeps everything).',
+        default=1,
+        help='Number of most-recent .bak backups to retain (default 1; 0 keeps none, -1 keeps everything).',
     )
     args = parser.parse_args()
     return migrate(args.db, backup=not args.no_backup, keep=args.keep)

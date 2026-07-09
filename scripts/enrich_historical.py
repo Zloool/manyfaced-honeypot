@@ -77,10 +77,19 @@ def _prune_backups(db_path: str, keep: int) -> None:
             pass
 
 
-def _backup(db_path: str, keep: int = 3) -> str | None:
+def _backup(db_path: str, keep: int = 1) -> str | None:
     """Copy the live DB (and WAL sidecars) to a timestamped .bak beside it."""
     if not os.path.exists(db_path):
         return None
+    # Free space FIRST: drop oldest backups so the new copy can fit on a small
+    # droplet (mirrors the migrate_db.py fix — issue 2026-07 disk-full deploy).
+    if keep < 0:
+        pass
+    elif keep == 0:
+        _prune_backups(db_path, 0)
+        return None
+    else:
+        _prune_backups(db_path, keep - 1)
     stamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
     backup_path = f'{db_path}.{stamp}.bak'
     try:
@@ -102,7 +111,6 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
             except OSError:
                 pass
         raise
-    _prune_backups(db_path, keep)
     return backup_path
 
 
