@@ -129,6 +129,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-fill.danger{background:#ff6b74}
 .intel-count{font-size:12px;color:#83f5ae;text-align:right;font-variant-numeric:tabular-nums}
 
+.ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.ioc-row{display:grid;grid-template-columns:1fr 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
+  border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace}
+.ioc-row .ioc-value{font-size:12px;color:#ffcf5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ioc-row .intel-count{color:#ff9aa0}
+
 .log-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .search-wrap{position:relative;flex:1;min-width:220px}
 .search-prompt{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#2f5c40;font-size:12px}

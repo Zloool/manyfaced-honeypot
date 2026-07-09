@@ -275,6 +275,20 @@ class StorageBackend(ABC):
         """
         raise NotImplementedError('volume_series not implemented by this backend')
 
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads that embed a URL (``://``), bounded by ``since``.
+
+        Used by the dashboard's Indicators-of-Compromise panel (issue #351) to
+        surface C2 / malware-download hosts that are only reachable by
+        scanning ``request_raw`` text (there is no dedicated column for them).
+        The ``://`` filter keeps the scan confined to payload-bearing rows, and
+        ``limit`` bounds the work on a busy production DB — the operator ranks
+        by frequency and decides what to blocklist.
+
+        Concrete subclasses override this; the base raises.
+        """
+        raise NotImplementedError('fetch_request_raws not implemented by this backend')
+
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -1004,6 +1018,33 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading volume series from SQLite storage')
             return []
 
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
+
+        See the base-class docstring for the rationale (issue #351). The
+        ``LIKE '%://%'`` predicate confines the read to payload-bearing rows so
+        a multi-million-row DB stays cheap to scan; ``limit`` caps the rows
+        pulled into Python for frequency ranking.
+        """
+        if self._conn is None:
+            return []
+        clauses = ["request_raw LIKE '%://%'"]
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT ?'
+        )
+        try:
+            rows = self._conn.execute(sql, (*params, int(limit))).fetchall()
+            return [row[0] for row in rows if row[0]]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading request_raw payloads from SQLite storage')
+            return []
+
     def __del__(self) -> None:
         self.close()
 
@@ -1472,6 +1513,45 @@ class PostgreSQLStorage(StorageBackend):
                     return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error reading volume series from PostgreSQL storage')
+                return []
+
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
+
+        See the base-class docstring for the rationale (issue #351). The
+        ``ILIKE '%://%'`` predicate confines the read to payload-bearing rows,
+        ``limit`` caps the rows pulled into Python, and the retry-on-error path
+        mirrors :meth:`volume_series` (dead conn -> reconnect once).
+        """
+        if self._conn is None and not self._ensure_connected():
+            return []
+        clauses = ['request_raw ILIKE %s']
+        params: list = ['%://%']
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT %s'
+        )
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (*params, int(limit)))
+                return [row[0] for row in cur.fetchall() if row[0]]
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            logger.warning(
+                'PostgreSQL fetch_request_raws error; rolling back and reconnecting once'
+            )
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, (*params, int(limit)))
+                    return [row[0] for row in cur.fetchall() if row[0]]
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading request_raw payloads from PostgreSQL storage')
                 return []
 
     # -- data lifecycle (issue #243 #4) --------------------------------------
