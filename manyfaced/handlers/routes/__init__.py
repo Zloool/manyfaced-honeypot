@@ -59,6 +59,7 @@ from manyfaced.handlers.routes.routes_dbadmin import ROUTES as _dbadmin_routes  
 from manyfaced.handlers.routes.routes_docker import ROUTES as _docker_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_mcp import ROUTES as _mcp_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_iot import ROUTES as _iot_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_exploit_cgi import ROUTES as _exploit_cgi_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_nginx_probe import ROUTES as _nginx_probe_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_k8s import ROUTES as _k8s_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_nextjs import ROUTES as _nextjs_routes  # noqa: E402
@@ -120,6 +121,10 @@ ROUTES: list[Route] = (
     + list(_elasticsearch_routes)
     + list(_zabbix_routes)
     + list(_laravel_routes)
+    # Exploit-scanner routes (issue #350) are inserted BEFORE thinkphp/laravel so
+    # they win for /index.php (pearcmd) and the D-Link/Tenda .cgi names, which
+    # would otherwise be shadowed by those framework handlers.
+    + list(_exploit_cgi_routes)
     + list(_thinkphp_routes)
     + list(_elastic_routes)
     + list(_env_disc_routes)
