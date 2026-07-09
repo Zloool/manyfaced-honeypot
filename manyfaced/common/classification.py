@@ -35,6 +35,10 @@ from __future__ import annotations
 import fnmatch
 import os
 from dataclasses import dataclass
+
+# Importing the data package keeps manyfaced.data reachable in the
+# import-reachability gate (it has no code of its own, only the allowlist TOML).
+import manyfaced.data  # noqa: F401
 from typing import Iterable
 
 try:
