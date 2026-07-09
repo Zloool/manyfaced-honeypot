@@ -49,6 +49,22 @@ CREATE INDEX IF NOT EXISTS idx_bears_listen_port  ON honeypot_bears(listen_port)
 CREATE INDEX IF NOT EXISTS idx_bears_classification ON honeypot_bears(classification);
 """
 
+# PostgreSQL twin of CREATE_INDEXES_SQL (issue #347). Same idempotent
+# CREATE INDEX IF NOT EXISTS statements, executed by PostgreSQLStorage._init_db.
+# The dashboard aggregate_stats filters on honeypot_bears.timestamp (typed TEXT),
+# so a btree over the ISO-8601 strings lets `WHERE timestamp >= '...'` use an
+# index scan instead of a full sequential scan (fixes the dashboard 504 storm).
+CREATE_INDEXES_PG_SQL = """\
+CREATE INDEX IF NOT EXISTS idx_bears_timestamp    ON honeypot_bears(timestamp);
+CREATE INDEX IF NOT EXISTS idx_bears_detected_id  ON honeypot_bears(detected_id);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_country  ON honeypot_bears(bot_country);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_continent ON honeypot_bears(bot_continent);
+CREATE INDEX IF NOT EXISTS idx_bears_bot_ip       ON honeypot_bears(bot_ip);
+CREATE INDEX IF NOT EXISTS idx_bears_request_path ON honeypot_bears(request_path);
+CREATE INDEX IF NOT EXISTS idx_bears_listen_port  ON honeypot_bears(listen_port);
+CREATE INDEX IF NOT EXISTS idx_bears_classification ON honeypot_bears(classification);
+"""
+
 INSERT_SQL = """\
 INSERT OR IGNORE INTO honeypot_bears
     (bot_ip, hostname, timestamp, request_path, request_command,
