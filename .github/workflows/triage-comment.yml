@@ -48,11 +48,14 @@ jobs:
           NODE_ID: ${{ github.event.comment.node_id }}
           ISSUE_NUM: ${{ github.event.issue.number }}
           REASON: ${{ steps.scan.outputs.reason }}
+          # GraphQL query kept as a literal env value so the inline $id/$class
+          # placeholders are not misread as shell expansions (shellcheck SC2016).
+          QUERY: 'mutation($id:ID!,$class:ReportedContentClass!){minimizeComment(input:{subjectId:$id,classifier:$class}){minimizedComment{isMinimized}}}'
         run: |
           set -euo pipefail
           # Minimize the comment (GraphQL). Classifier: POSSIBLY_INFECTING.
           gh api graphql \
-            -f query='mutation($id:ID!,$class:ReportedContentClass!){minimizeComment(input:{subjectId:$id,classifier:$class}){minimizedComment{isMinimized}}}' \
+            -f query="$QUERY" \
             -f id="$NODE_ID" \
             -f class=POSSIBLY_INFECTING
           # Label the issue/PR for human triage (issues + PRs share this endpoint).

@@ -10,7 +10,9 @@ UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 UNKNOWN_TELNET = 4294967285  # Telnet probe
 UNKNOWN_RDP = 4294967284  # RDP probe
 UNKNOWN_VNC = 4294967283  # VNC probe
-FINGERPRINT_PROBE = 4294967282  # High-entropy random-path honeypot-fingerprinting probe (issue #324)
+FINGERPRINT_PROBE = (
+    4294967282  # High-entropy random-path honeypot-fingerprinting probe (issue #324)
+)
 
 # HTTP service-specific detected IDs (for routing to service handlers)
 WORDPRESS_HTTP = 1001
