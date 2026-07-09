@@ -8,8 +8,10 @@ name: CI
 #
 # Job NAMES are kept identical to the old deploy.yml job names so the required
 # status checks on the master branch protection keep matching (no churn window).
-# Required checks: Lint, Test (Python 3.x)×3, Typecheck (Python 3.x)×3,
+# Required checks: Lint, Test (Python 3.12), Typecheck (Python 3.12),
 # Lint GitHub Actions workflows, Lint shell scripts.
+# NOTE: the Test/Typecheck matrix was collapsed to a single Python version
+# (3.12) to avoid runner-queue fan-out / rate limits — see issue #318.
 on:
   pull_request:
     branches: ["master"]
@@ -55,11 +57,14 @@ jobs:
 
   test:
     # Run on PRs and manual dispatch for validation.
+    # Matrix tightened to a single Python version (3.12, the project minimum)
+    # to avoid runner-queue fan-out / rate limits (issue #318). Other versions
+    # are still supported; they're just not exercised on every push.
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v7
 
@@ -79,11 +84,13 @@ jobs:
 
   typecheck:
     # Run on PRs and manual dispatch for validation.
+    # Matrix tightened to a single Python version (3.12) to avoid runner-queue
+    # fan-out / rate limits (issue #318).
     name: Typecheck (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v7
 

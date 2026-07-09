@@ -67,12 +67,47 @@ PORT_SERVICE_NAMES: dict[int, str] = {
 _BEANSTALKD_RANGE = range(11301, 11312)
 
 
+# iptables REDIRECT mapping (see templates/setup-iptables-privileged-ports.sh):
+# privileged ports (<1024) can't be bound by the non-root honeypot, so they are
+# redirected to high ports the honeypot actually binds. The dashboard labels by
+# raw listen_port, so without this the busiest redirected ports (10022/SSH,
+# 10023/Telnet, ...) render as opaque "TCP" — issue #312.
+#
+# This MUST stay in sync with the redirect table in that script. The high-port
+# -> service label is derived from the same privileged->high mapping so a change
+# in the script only needs a matching edit here (not a second hardcoded copy).
+_PORT_REDIRECT_PRIV_TO_HIGH = {
+    80: 8080,  # HTTP
+    443: 8443,  # HTTPS
+    21: 10021,  # FTP
+    22: 10022,  # SSH
+    23: 10023,  # Telnet
+    25: 10025,  # SMTP
+    53: 10053,  # DNS
+    110: 10110,  # POP3
+    135: 10135,  # MSRPC
+    139: 10139,  # NetBIOS
+    143: 10143,  # IMAP
+    445: 10445,  # SMB
+    993: 10993,  # IMAPS
+    995: 10995,  # POP3S
+}
+# high redirect port -> privileged service name (the label attackers actually see)
+_REDIRECTED_PORT_SERVICE_NAMES: dict[int, str] = {
+    high: PORT_SERVICE_NAMES[priv]
+    for priv, high in _PORT_REDIRECT_PRIV_TO_HIGH.items()
+    if priv in PORT_SERVICE_NAMES
+}
+
+
 def port_service_name(port: int | None) -> str:
     """Best-effort friendly protocol label for a raw port number."""
     if not port:
         return '?'
     if port in PORT_SERVICE_NAMES:
         return PORT_SERVICE_NAMES[port]
+    if port in _REDIRECTED_PORT_SERVICE_NAMES:
+        return _REDIRECTED_PORT_SERVICE_NAMES[port]
     if port in _BEANSTALKD_RANGE:
         return 'Beanstalkd'
     return 'TCP'

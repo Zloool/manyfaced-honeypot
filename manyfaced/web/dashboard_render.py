@@ -64,7 +64,13 @@ def _render_stat_cards(payload: dict) -> str:
             'faces listening',
             '#ffcf5c',
         ),
-        ('stat-rate', 'Live Requests/s', f'{s["recent_rate"]:.1f}', 'last 60s, real', '#3dff88'),
+        (
+            'stat-rate',
+            'Requests/min',
+            f'{s.get("recent_total", round(s["recent_rate"] * 60))}',
+            'last 60s, real',
+            '#3dff88',
+        ),
     ]
     out = []
     for cid, label, value, sub, color in cards:
@@ -118,19 +124,32 @@ def _render_hero(payload: dict) -> str:
 
 
 def render_vol_box(payload: dict) -> str:
+    """Render request volume as a proper time-series bar chart.
+
+    Time runs left→right along a shared horizontal (x) axis; bar height is the
+    count (y axis). Before issue #315 the panel was a vertical list of
+    horizontal bars keyed by a per-row time label, which read like a table and
+    hid the shape-over-time. The underlying ``by_bucket``/``vol_since`` data is
+    already time-ordered, so this is a pure render change.
+    """
     bars = payload['volume_bars']
     bmax = max((b['count'] for b in bars), default=1) or 1
-    rows = []
+    cells = []
     for b in bars:
         pct = max(2.0, b['count'] / bmax * 100)
-        rows.append(
-            '<div class="vol-row" '
+        cells.append(
+            '<div class="vol-col" '
             f'data-start="{b["start"]}" data-end="{b["end"]}" data-label="{_esc(b["label"])}">'
-            f'<div class="vol-row-label">{_esc(b["label"])}</div>'
-            f'<div class="vol-track"><div class="vol-fill" style="width:{pct:.1f}%"></div></div>'
-            f'<div class="vol-count">{fmt_k(b["count"])}</div></div>'
+            f'<div class="vol-bars"><div class="vol-bar" style="height:{pct:.1f}%" '
+            f'title="{_esc(b["label"])}: {fmt_k(b["count"])}"></div></div>'
+            f'<div class="vol-xlabel">{_esc(b["label"])}</div>'
+            f'<div class="vol-xcount">{fmt_k(b["count"])}</div></div>'
         )
-    return ''.join(rows) if rows else '<p class="section-hint">no data for this window</p>'
+    return (
+        '<div class="vol-chart">' + ''.join(cells) + '</div>'
+        if bars
+        else '<p class="section-hint">no data for this window</p>'
+    )
 
 
 def _render_range_row(payload: dict) -> str:
@@ -400,6 +419,49 @@ def _group_row(group: dict) -> str:
     )
 
 
+def render_log_pager(payload: dict) -> str:
+    """Render the capture-log paginator (issue #316).
+
+    Offset/numbered paging over the time-range window. The summary line stays
+    accurate to the current page; when the window fits on one page the pager is
+    hidden.
+    """
+    page = int(payload.get('page', 1))
+    size = int(payload.get('log_page_size', 50))
+    total = int(payload.get('log_window_total', 0))
+    total_pages = max(1, (total + size - 1) // size)
+    if total_pages <= 1:
+        return ''
+    pages = []
+    # Compact numbered control: always first/last, current ±1, ellipses.
+    shown: list[int] = []
+    for p in (1, page - 1, page, page + 1, total_pages):
+        if 1 <= p <= total_pages and p not in shown:
+            shown.append(p)
+    shown.sort()
+    prev_class = 'seg-btn sm' + ('' if page > 1 else ' disabled')
+    pages.append(
+        f'<button class="{prev_class}" data-page="{max(1, page - 1)}" data-nav="prev"{" disabled" if page <= 1 else ""}>&lsaquo; PREV</button>'
+    )
+    last = 0
+    for p in shown:
+        if last and p - last > 1:
+            pages.append('<span class="pager-ellipsis">…</span>')
+        active = ' active' if p == page else ''
+        pages.append(f'<button class="seg-btn sm{active}" data-page="{p}">{p}</button>')
+        last = p
+    next_class = 'seg-btn sm' + ('' if page < total_pages else ' disabled')
+    pages.append(
+        f'<button class="{next_class}" data-page="{min(total_pages, page + 1)}" data-nav="next"{" disabled" if page >= total_pages else ""}>NEXT &rsaquo;</button>'
+    )
+    return (
+        f'<div class="log-pager" data-page="{page}" data-total-pages="{total_pages}" '
+        f'data-total="{total}" data-size="{size}">'
+        + ''.join(pages)
+        + f'<span class="pager-info">page {page} / {total_pages}</span></div>'
+    )
+
+
 def render_log_rows(payload: dict) -> str:
     out = []
     for row in payload['log_rows']:
@@ -412,6 +474,7 @@ def render_log_rows(payload: dict) -> str:
 
 def _render_log_section(payload: dict) -> str:
     rows_html = render_log_rows(payload)
+    pager_html = render_log_pager(payload)
     empty_hidden = '' if payload['log_rows'] else ' hidden'
     return f"""
 <section id="log" class="section">
@@ -444,6 +507,7 @@ def _render_log_section(payload: dict) -> str:
     <div id="log-rows">{rows_html}</div>
     <div id="log-empty" class="log-empty"{empty_hidden}>// no captures match the current filters</div>
   </div>
+  <div id="log-pager-wrap">{pager_html}</div>
 </section>
 """
 
@@ -512,13 +576,17 @@ def render_fragment(payload: dict) -> bytes:
         'day': fmt(s['day']),
         'uniq': fmt(s['unique_ips']),
         'activePorts': payload['listening_count'],
-        'rate': f'{s["recent_rate"]:.1f}',
+        'rate': str(s.get('recent_total', round(s['recent_rate'] * 60))),
         'summary': payload['log_summary'],
+        'logPage': payload['page'],
+        'logPageSize': payload['log_page_size'],
+        'logWindowTotal': payload['log_window_total'],
     }
     sections = {
         'vol-box': render_vol_box(payload),
         'intel-grid': render_intel_grid(payload),
         'log-rows': render_log_rows(payload),
+        'log-pager': render_log_pager(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]
