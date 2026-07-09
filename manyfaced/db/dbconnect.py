@@ -27,6 +27,10 @@ class BearRequests:
     login: str = ''
     bot_profile_data: dict[str, Any] | None = None
     listen_port: int = 0
+    asn: str = ''  # Autonomous system number, e.g. 'AS13335' (issue #271)
+    org: str = ''  # Network owner, e.g. 'Cloudflare, Inc.' (issue #271)
+    classification: str = ''  # benign|malicious|unknown (issue #271)
+    benign_source: str = ''  # matched allowlist name when benign (issue #271)
 
 
 def Insert(bear: BearRequests) -> None:
@@ -44,6 +48,10 @@ def Insert(bear: BearRequests) -> None:
         'continent': bear.continent,
         'login': bear.login,
         'listen_port': bear.listen_port,
+        'bot_asn': bear.asn,
+        'bot_org': bear.org,
+        'classification': bear.classification,
+        'benign_source': bear.benign_source,
     }
 
     # Bot profile data — accumulated state (escalation, dialogue, history) for this IP

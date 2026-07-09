@@ -1,0 +1,96 @@
+# Benign-source allowlist (the "RIOT" analogue for issue #271).
+#
+# Each [[source]] entry is one known-benign class of internet-wide scanner /
+# crawler / CDN health-checker. A capture is tagged `benign` if ANY of its
+# signals match ANY entry; the matching `name` is recorded in `benign_source`.
+#
+# Matching precedence (strongest → weakest signal):
+#   1. reverse_dns suffix  (hardest to spoof for real scanners)
+#   2. asn                 (network-verifiable)
+#   3. org substring       (network-verifiable)
+#   4. user_agent substring (WEAK — trivially spoofed; never the sole basis)
+#
+# Keep this list SMALL and HIGH-CONFIDENCE. A false-benign (calling a real
+# attacker "benign") is worse than a false-unknown, so err toward unknown.
+# UA-only matches are intentionally avoided: every entry below has at least one
+# network-verifiable signal (reverse_dns / asn / org), so a spoofed UA alone
+# can never flip a row to benign.
+
+[[source]]
+name = "shodan"
+category = "scanner"
+reverse_dns = ["*.shodan.io", "*.census.shodan.io"]
+asn = ["AS45102", "AS400482"]
+user_agent = ["Shodan"]
+
+[[source]]
+name = "censys"
+category = "scanner"
+reverse_dns = ["*.censys-scanner.com"]
+asn = ["AS398324"]
+
+[[source]]
+name = "binaryedge"
+category = "scanner"
+reverse_dns = ["*.binaryedge.io"]
+asn = ["AS14618", "AS16509"]
+
+[[source]]
+name = "rapid7-sonar"
+category = "scanner"
+reverse_dns = ["*.rapid7.com", "*.sonar.labs.rapid7.com"]
+asn = ["AS398324"]
+
+[[source]]
+name = "shadowserver"
+category = "scanner"
+reverse_dns = ["*.shadowserver.org"]
+asn = ["AS11238", "AS400482"]
+
+[[source]]
+name = "cloudflare-cdn"
+category = "cdn"
+reverse_dns = ["*.cloudflare.com"]
+org = ["Cloudflare"]
+asn = ["AS13335"]
+
+[[source]]
+name = "fastly-cdn"
+category = "cdn"
+org = ["Fastly"]
+asn = ["AS54113"]
+
+[[source]]
+name = "akamai-cdn"
+category = "cdn"
+org = ["Akamai"]
+asn = ["AS20940", "AS16625"]
+
+[[source]]
+name = "google"
+category = "cloud-and-crawler"
+reverse_dns = ["*.googlebot.com", "*.google.com", "*.googleusercontent.com"]
+org = ["Google"]
+asn = ["AS15169", "AS396982"]
+
+[[source]]
+name = "amazon-aws"
+category = "cloud"
+org = ["Amazon.com", "Amazon Web Services"]
+asn = ["AS16509", "AS14618"]
+
+[[source]]
+name = "microsoft-azure"
+category = "cloud"
+org = ["Microsoft"]
+asn = ["AS8075"]
+
+[[source]]
+name = "university-research"
+category = "research"
+reverse_dns = [
+    "*.rwth-aachen.de",
+    "*.umich.edu",
+    "*.merit.edu",
+    "*.research.michigan.edu",
+]

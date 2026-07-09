@@ -1,0 +1,157 @@
+"""Tests for scripts/enrich_historical.py (issue #271 backfill).
+
+Verifies: migrate adds the new columns idempotently; backfill classifies rows
+correctly from in-row signals without network; idempotency (second run is a
+no-op); resumability (interrupted run leaves rows reprocessable). Network ASN
+resolution is stubbed so the test never hits ip-api.com.
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+from unittest.mock import patch  # noqa: E402
+
+import pytest  # noqa: E402
+
+# Import the script as a module (it inserts repo root onto sys.path itself).
+SCRIPT = os.path.join(os.path.dirname(__file__), '..', '..', 'scripts', 'enrich_historical.py')
+sys.path.insert(0, os.path.dirname(SCRIPT))
+import enrich_historical as eh  # noqa: E402
+
+
+def _make_db(path: str) -> None:
+    conn = sqlite3.connect(path)
+    conn.execute(
+        'CREATE TABLE honeypot_bears ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT,'
+        ' bot_ip TEXT, bot_dns_name TEXT, bot_user_agent TEXT,'
+        ' bot_asn TEXT, bot_org TEXT, classification TEXT, benign_source TEXT)'
+    )
+    conn.commit()
+    conn.close()
+
+
+def _insert(conn, rows):
+    conn.executemany(
+        'INSERT INTO honeypot_bears (bot_ip, bot_dns_name, bot_user_agent, '
+        'bot_asn, bot_org) VALUES (?,?,?,?,?)',
+        rows,
+    )
+    conn.commit()
+
+
+def test_migrate_adds_columns_idempotently(tmp_path):
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    assert eh.migrate(str(db), backup=False) == 0
+    conn = sqlite3.connect(str(db))
+    cols = {r[1] for r in conn.execute('PRAGMA table_info(honeypot_bears)').fetchall()}
+    assert {'bot_asn', 'bot_org', 'classification', 'benign_source'} <= cols
+    # Second run is a no-op, not an error.
+    assert eh.migrate(str(db), backup=False) == 0
+    conn.close()
+
+
+def test_backfill_classifies_from_row_signals(tmp_path):
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    # Two benign (in-row signal), one unknown.
+    _insert(
+        conn,
+        [
+            ('1.2.3.4', 'census.shodan.io', '', '', ''),
+            ('5.6.7.8', '', '', 'AS13335', 'Cloudflare, Inc.'),
+            ('9.9.9.9', 'my-router.isp.net', 'curl/8.0', 'AS12345', 'My ISP'),
+        ],
+    )
+    conn.close()
+
+    # Stub geo lookup so no network; ASN/org come from the row anyway.
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    rows = conn.execute(
+        'SELECT bot_ip, classification, benign_source FROM honeypot_bears ORDER BY id'
+    ).fetchall()
+    conn.close()
+    by_ip = {ip: (c, b) for ip, c, b in rows}
+    assert by_ip['1.2.3.4'] == ('benign', 'shodan')
+    assert by_ip['5.6.7.8'] == ('benign', 'cloudflare-cdn')
+    assert by_ip['9.9.9.9'] == ('unknown', '')
+
+
+def test_backfill_idempotent_second_run_is_noop(tmp_path):
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    _insert(conn, [('1.2.3.4', 'census.shodan.io', '', '', '')])
+    conn.close()
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+        # Second run: nothing pending.
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    # Exactly one row, still classified (no duplicate writes / errors).
+    n = conn.execute(
+        "SELECT COUNT(*) FROM honeypot_bears WHERE classification='benign'"
+    ).fetchone()[0]
+    conn.close()
+    assert n == 1
+
+
+def test_backfill_resumable_after_interrupt(tmp_path):
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    _insert(
+        conn,
+        [
+            ('1.1.1.1', 'census.shodan.io', '', '', ''),
+            ('2.2.2.2', 'census.shodan.io', '', '', ''),
+        ],
+    )
+    conn.close()
+
+    # Simulate an interrupt: process only the first row, then crash the loop
+    # by raising on the second pass. Easiest: monkeypatch _classify_row to set
+    # the first row then stop. Instead, we run backfill with a limit of 1 to
+    # mimic a partial run, then run again to finish.
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False, limit=1) == 0
+        # Resume — remaining row must be classified.
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    n = conn.execute(
+        "SELECT COUNT(*) FROM honeypot_bears WHERE classification='benign'"
+    ).fetchone()[0]
+    conn.close()
+    assert n == 2
+
+
+def test_backfill_dry_run_does_not_write(tmp_path):
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    _insert(conn, [('1.2.3.4', 'census.shodan.io', '', '', '')])
+    conn.close()
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=True) == 0
+    conn = sqlite3.connect(str(db))
+    n = conn.execute(
+        'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NOT NULL'
+    ).fetchone()[0]
+    conn.close()
+    assert n == 0

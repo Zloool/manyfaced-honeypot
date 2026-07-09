@@ -66,14 +66,16 @@ def test_no_sleep_in_hot_path():
 
 
 def test_private_ip_returns_empty():
-    """Private/loopback IPs should return ('', '') without making an HTTP call."""
+    """Private/loopback IPs should return ('', '', '', '') without making an HTTP call."""
     for ip in ('127.0.0.1', '::1', '10.0.0.1', '192.168.1.1', '172.16.0.1'):
         with patch('urllib.request.urlopen') as mock_urlopen:
-            country, continent = lookup_ip_geolocation(ip)
+            country, continent, asn, org = lookup_ip_geolocation(ip)
 
         assert mock_urlopen.call_count == 0
         assert country == ''
         assert continent == ''
+        assert asn == ''
+        assert org == ''
 
 
 # ===================================================================
@@ -84,21 +86,25 @@ def test_private_ip_returns_empty():
 def test_cache_reuse():
     """Repeated lookups for the same IP should return cached results without another HTTP call."""
     with _geo_cache_lock:
-        _geo_cache['203.0.113.1'] = ('Japan', 'Asia', time.monotonic() + 1000)
+        _geo_cache['203.0.113.1'] = ('Japan', 'Asia', '', '', time.monotonic() + 1000)
 
-    country, continent = lookup_ip_geolocation('203.0.113.1')
+    country, continent, asn, org = lookup_ip_geolocation('203.0.113.1')
     assert country == 'Japan'
     assert continent == 'Asia'
+    assert asn == ''
+    assert org == ''
 
 
 def test_cache_is_thread_safe():
     """Cache reads/writes should be thread-safe (use lock)."""
     with _geo_cache_lock:
-        _geo_cache['test.ip'] = ('Test', 'Test', time.monotonic() + 1000)
+        _geo_cache['test.ip'] = ('Test', 'Test', '', '', time.monotonic() + 1000)
 
-    country, continent = lookup_ip_geolocation('test.ip')
+    country, continent, asn, org = lookup_ip_geolocation('test.ip')
     assert country == 'Test'
     assert continent == 'Test'
+    assert asn == ''
+    assert org == ''
 
 
 # ===================================================================
@@ -112,8 +118,8 @@ def test_background_worker_processes_lookups():
     def mock_do_geo_lookup(ip, timeout=2.0):
         # Simulate a successful lookup AND write to cache (like real _do_geo_lookup does)
         with _geo_cache_lock:
-            _geo_cache[ip] = ('France', 'Europe', time.monotonic() + 1000)
-        return ('France', 'Europe')
+            _geo_cache[ip] = ('France', 'Europe', '', '', time.monotonic() + 1000)
+        return ('France', 'Europe', '', '')
 
     start_geo_worker()
 
@@ -127,7 +133,7 @@ def test_background_worker_processes_lookups():
             time.sleep(0.1)
 
     # All three should now be cached
-    country, continent = lookup_ip_geolocation('203.0.113.0')
+    country, continent, asn, org = lookup_ip_geolocation('203.0.113.0')
     assert country == 'France'
     assert continent == 'Europe'
 
@@ -138,7 +144,7 @@ def test_background_worker_rate_limits():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with patch('time.sleep') as mock_sleep:
-            result = ('Test', 'Test', time.monotonic() + 1000)
+            result = ('Test', 'Test', '', '', time.monotonic() + 1000)
             if mock_sleep.call_count > 0:
                 sleep_times.append(mock_sleep.call_args[0][0])
             return result
@@ -180,13 +186,13 @@ def test_failure_response_logs_warning():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('', '', time.monotonic() + 1000)
-        return ('', '')
+            _geo_cache[ip] = ('', '', '', '', time.monotonic() + 1000)
+        return ('', '', '', '')
 
     # Keep patch active while waiting for worker to process
     with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
         start_geo_worker()
-        country, continent = lookup_ip_geolocation('1.2.3.4')
+        country, continent, asn, org = lookup_ip_geolocation('1.2.3.4')
 
         assert country == ''  # Hot path: not cached yet
 
@@ -196,13 +202,13 @@ def test_failure_response_logs_warning():
             time.sleep(0.1)
 
     # After patch exits, worker should have cached empty result
-    country2, continent2 = lookup_ip_geolocation('1.2.3.4')
+    country2, continent2, asn2, org2 = lookup_ip_geolocation('1.2.3.4')
     assert country2 == ''
     assert continent2 == ''
 
 
 # ===================================================================
-# Test 7: empty response returns empty
+# Test 8b: empty response returns empty
 # ===================================================================
 
 
@@ -210,13 +216,13 @@ def test_empty_response_returns_empty():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('', '', time.monotonic() + 1000)
-        return ('', '')
+            _geo_cache[ip] = ('', '', '', '', time.monotonic() + 1000)
+        return ('', '', '', '')
 
     # Keep patch active while waiting for worker to process
     with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
         start_geo_worker()
-        country, continent = lookup_ip_geolocation('999.999.999.999')
+        country, continent, asn, org = lookup_ip_geolocation('999.999.999.999')
 
         assert country == ''  # Hot path: not cached yet
 
@@ -224,8 +230,9 @@ def test_empty_response_returns_empty():
         while time.monotonic() < deadline and '999.999.999.999' not in _geo_cache:
             time.sleep(0.1)
 
-    country2, continent2 = lookup_ip_geolocation('999.999.999.999')
+    country2, continent2, asn2, org2 = lookup_ip_geolocation('999.999.999.999')
     assert country2 == ''
+    assert continent2 == ''
 
 
 # ===================================================================
@@ -237,13 +244,13 @@ def test_success_response_populates_cache():
 
     def mock_do_geo_lookup(ip, timeout=2.0):
         with _geo_cache_lock:
-            _geo_cache[ip] = ('Germany', 'Europe', time.monotonic() + 1000)
-        return ('Germany', 'Europe')
+            _geo_cache[ip] = ('Germany', 'Europe', '', '', time.monotonic() + 1000)
+        return ('Germany', 'Europe', '', '')
 
     # Keep patch active while waiting for worker to process
     with patch('manyfaced.common.geolocate._do_geo_lookup', side_effect=mock_do_geo_lookup):
         start_geo_worker()
-        country, continent = lookup_ip_geolocation('1.1.1.1')
+        country, continent, asn, org = lookup_ip_geolocation('1.1.1.1')
 
         # First call returns empty (not cached yet)
         assert country == ''
@@ -253,7 +260,7 @@ def test_success_response_populates_cache():
             time.sleep(0.1)
 
     # After patch exits, worker should have cached the result
-    country2, continent2 = lookup_ip_geolocation('1.1.1.1')
+    country2, continent2, asn2, org2 = lookup_ip_geolocation('1.1.1.1')
     assert country2 == 'Germany'
     assert continent2 == 'Europe'
 
@@ -274,13 +281,13 @@ def test_cache_evicts_oldest_when_over_max_size():
 
     # Fill to the cap with valid (unexpired) entries.
     for i in range(_GEO_CACHE_MAX_SIZE):
-        _store_geo(f'10.0.0.{i}', (f'C{i}', 'X'))
+        _store_geo(f'10.0.0.{i}', (f'C{i}', 'X', '', ''))
 
     with _geo_cache_lock:
         assert len(_geo_cache) == _GEO_CACHE_MAX_SIZE
 
     # One more insertion must evict exactly one oldest entry, never exceed the cap.
-    _store_geo('10.255.255.255', ('New', 'Y'))
+    _store_geo('10.255.255.255', ('New', 'Y', '', ''))
     with _geo_cache_lock:
         assert len(_geo_cache) == _GEO_CACHE_MAX_SIZE
         # The very first (LRU) entry should have been evicted.
@@ -293,10 +300,10 @@ def test_cache_expired_entries_are_not_returned():
     """A cached entry past its TTL behaves as a miss (issue #175 — TTL scope)."""
     # Store with an already-expired timestamp.
     with _geo_cache_lock:
-        _geo_cache['9.9.9.9'] = ('Old', 'Country', time.monotonic() - 1)
+        _geo_cache['9.9.9.9'] = ('Old', 'Country', '', '', time.monotonic() - 1)
 
     # The lookup must not return the stale value; it schedules a refresh.
-    country, continent = lookup_ip_geolocation('9.9.9.9')
+    country, continent, asn, org = lookup_ip_geolocation('9.9.9.9')
     assert country == ''
     assert continent == ''
 
