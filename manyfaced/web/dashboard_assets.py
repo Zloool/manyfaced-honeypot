@@ -103,7 +103,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .chip-label{font-size:11px;color:#3f7a55}
 
 .vol-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:16px 18px;overflow-x:auto}
-.vol-chart{display:flex;align-items:flex-end;gap:6px;min-height:170px;padding-top:6px}
+.vol-chart{display:flex;align-items:flex-end;gap:6px;height:200px;padding-top:6px}
 .vol-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:14px;cursor:pointer;height:100%}
 .vol-col.focus .vol-bar{background:linear-gradient(180deg,#1f7a49,#d3ffe4)}
 .vol-bars{flex:1 1 auto;width:100%;display:flex;align-items:flex-end;justify-content:center;min-height:0}

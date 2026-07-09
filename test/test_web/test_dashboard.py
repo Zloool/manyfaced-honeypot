@@ -371,6 +371,32 @@ def test_dashboard_fragment_invalid_range_falls_back(dashboard_server):
     assert 'MFB' in body.splitlines()[0]
 
 
+def test_dashboard_volume_bars_rise_with_data():
+    """Bars must carry a real (non-floor) height when data exists, and the
+    chart must have a definite height so the percentage chain resolves.
+
+    Regression guard for the broken-volume-graph bug: with only min-height on
+    .vol-chart the bar heights (height:N%) collapsed to the 2px min-height, so
+    numbers rendered but bars never rose.
+    """
+    from manyfaced.web import dashboard_render as dr
+    from manyfaced.web import dashboard_assets as da
+
+    bars = [
+        {'start': 0, 'end': 1, 'label': '0h', 'count': 3},
+        {'start': 1, 'end': 2, 'label': '1h', 'count': 30},
+        {'start': 2, 'end': 3, 'label': '2h', 'count': 1},
+    ]
+    payload = {'volume_bars': bars}
+    box = dr.render_vol_box(payload)
+    # Tallest bar should exceed the 2% floor (30 vs max 30 -> 100%).
+    heights = [float(h) for h in __import__('re').findall(r'height:([\d.]+)%', box)]
+    assert heights, 'no bar heights emitted'
+    assert max(heights) >= 99.0, f'tallest bar did not rise: {heights}'
+    # Chart must have a definite pixel height for the % chain to resolve.
+    assert 'height:200px' in da.CSS
+
+
 def test_dashboard_fragment_port_filter_scopes_volume(dashboard_server):
     """?port=<n> recomputes the volume bars without erroring for an unknown/empty port."""
     secret, base = dashboard_server
