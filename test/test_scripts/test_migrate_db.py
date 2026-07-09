@@ -178,18 +178,56 @@ def test_prune_backups_caps_retention(tmp_path: Path):
 
 
 def test_migrate_retention_flag_default_keep(tmp_path: Path):
-    """migrate() prunes to keep=3 by default so repeated deploys can't fill disk."""
+    """migrate() prunes to keep=1 by default so repeated deploys can't fill disk.
+
+    The 2026-07 disk-full deploy failure happened because the new 404 MB .bak
+    copy needed headroom that 3 stale .bak files already consumed. keep=1 (and
+    pruning BEFORE the copy) guarantees at most one prior backup exists at copy
+    time, leaving room for the new one on an 8 GB droplet.
+    """
     db = tmp_path / 'h.db'
     conn = sqlite3.connect(db)
     _make_table(conn, ['timestamp', 'ip'])
     conn.close()
 
-    # Run migrate 5 times; each writes one .bak then prunes to keep=3.
+    # Run migrate 5 times; each prunes to keep=1 before writing the new .bak.
     for _ in range(5):
         migrate_db.migrate(str(db))
 
     backups = sorted(tmp_path.glob('h.db.*.bak'))
-    assert len(backups) <= 3, f'expected <=3 backups, found {len(backups)}'
+    assert len(backups) <= 1, f'expected <=1 backups, found {len(backups)}'
+
+
+def test_migrate_prunes_before_copy_frees_space(tmp_path: Path):
+    """Pruning BEFORE the copy leaves room for the new .bak (2026-07 regression).
+
+    Reproduces the deploy failure: a live DB plus N retained .bak files already
+    fill the disk, so a naive "copy then prune" aborts with ENOSPC and the
+    deploy rolls back. With prune-before-copy, the oldest backups are removed
+    first, so the newest .bak always fits.
+    """
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])
+    conn.close()
+
+    # Seed 3 stale backups so that "copy then prune" (old behavior) would need
+    # 4 copies present at once. With prune-before-copy only 1 old remains.
+    old_stamps = ['20260101000000', '20260201000000', '20260301000000']
+    for s in old_stamps:
+        (tmp_path / f'h.db.{s}.bak').write_text('x')
+
+    rc = migrate_db.migrate(str(db), keep=1)
+    assert rc == 0
+
+    remaining = sorted(tmp_path.glob('h.db.*.bak'))
+    # With keep=1 the old backups are pruned to keep-1=0 before the copy, so
+    # only the single new .bak remains (a "copy-then-prune" impl would have
+    # needed all 4 present at once and hit ENOSPC).
+    assert len(remaining) == 1, f'expected exactly 1 backup, found {remaining}'
+    # None of the 3 seeded stamps survive.
+    survived = {p.name for p in remaining}
+    assert not (set(f'h.db.{s}.bak' for s in old_stamps) & survived)
 
 
 def test_migrate_aborts_when_backup_fails(tmp_path: Path):
