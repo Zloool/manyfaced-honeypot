@@ -56,3 +56,6 @@ DBADMIN_HTTP = 1033
 # Env / config disclosure face (issue #272) — scaffold omitted this constant;
 # added here so the env_disc handler can import its detected-id per the task spec.
 ENV_DISC_HTTP = 1034
+# Exploit-scanner honeypot faces (issue #350): D-Link/Tenda CGI RCE (router
+# command-injection -> wget malware-drop), pearcmd LFI/RCE, path traversal.
+EXPLOIT_CGI_HTTP = 1035
