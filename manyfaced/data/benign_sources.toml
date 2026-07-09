@@ -71,6 +71,14 @@ category = "crawler"
 reverse_dns = ["*.search.msn.com", "*.msn.com"]
 
 [[source]]
+name = "visionheight"
+category = "scanner"
+# Verified researcher scanner. Its PTR is a single, exact host (no wildcard
+# suffix), so the matcher treats it as an exact-host match — still a
+# network-verifiable PTR, so it is a trustworthy benign signal.
+reverse_dns = ["scan.visionheight.com"]
+
+[[source]]
 name = "university-research"
 category = "research"
 reverse_dns = [
