@@ -1088,9 +1088,9 @@ class TestListenPortColumn:
         """filtering by external port also counts the redirected bound port (issue #330)."""
         storage = SQLiteStorage(db_path=str(tmp_path / 'redir.db'))
         rows = [
-            ('10.0.0.1', '2024-01-01 10:00:00.000', 22),    # external SSH, direct
+            ('10.0.0.1', '2024-01-01 10:00:00.000', 22),  # external SSH, direct
             ('10.0.0.2', '2024-01-01 10:01:00.000', 10022),  # external SSH, iptables-redirected
-            ('10.0.0.3', '2024-01-01 10:02:00.000', 80),     # unrelated
+            ('10.0.0.3', '2024-01-01 10:02:00.000', 80),  # unrelated
         ]
         for ip, ts, port in rows:
             storage.insert(
@@ -1106,7 +1106,9 @@ class TestListenPortColumn:
             )
         storage._conn.commit()
         # External port 22 should match BOTH listen_port=22 and 10022.
-        ssh = {r['bucket']: r['count'] for r in storage.volume_series(bucket='hour', port=[22, 10022])}
+        ssh = {
+            r['bucket']: r['count'] for r in storage.volume_series(bucket='hour', port=[22, 10022])
+        }
         assert ssh == {'2024-01-01 10:00': 2}
         # And the helper in ports.py mirrors that mapping.
         from manyfaced.common.ports import internal_ports

@@ -531,10 +531,10 @@ def test_render_intel_grid_top_ports_resolves_external_and_merges():
     """Top Ports must show the external port, and merge direct+redirected hits (issue #329)."""
     payload = {
         'by_port': [
-            {'key': 22, 'count': 40},      # SSH, hit directly on external port
+            {'key': 22, 'count': 40},  # SSH, hit directly on external port
             {'key': 10022, 'count': 308},  # SSH, iptables-redirected bound port
-            {'key': 10110, 'count': 59},   # POP3 redirected -> 110
-            {'key': 9090, 'count': 47},    # non-redirect, stays 9090
+            {'key': 10110, 'count': 59},  # POP3 redirected -> 110
+            {'key': 9090, 'count': 47},  # non-redirect, stays 9090
         ],
         'by_country': [],
         'by_service': [],
@@ -544,7 +544,7 @@ def test_render_intel_grid_top_ports_resolves_external_and_merges():
     # External ports 22 and 10022 both resolve to 22 and must merge into ONE row.
     assert '22' in html
     assert '10022' not in html  # never shown as a bound port
-    assert '110' in html        # 10110 -> 110
+    assert '110' in html  # 10110 -> 110
     assert '9090' in html
     # The merged SSH row should carry the summed count (40 + 308 = 348).
     # render_intel_grid emits data-count per row; locate the 22 row's count.

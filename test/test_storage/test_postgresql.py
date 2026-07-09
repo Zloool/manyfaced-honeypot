@@ -211,9 +211,7 @@ class TestPostgreSQLStorageVolumeSeries:
             storage = PostgreSQLStorage()
         storage._conn = mock_conn
 
-        result = storage.volume_series(
-            since='2024-01-01 00:00:00', bucket='hour', port=[22, 10022]
-        )
+        result = storage.volume_series(since='2024-01-01 00:00:00', bucket='hour', port=[22, 10022])
         assert result == [{'bucket': '2024-01-01 10:00', 'count': 2}]
         query, params = mock_cursor.execute.call_args[0]
         assert 'listen_port IN (%s, %s)' in query

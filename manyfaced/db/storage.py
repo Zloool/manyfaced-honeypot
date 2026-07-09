@@ -260,13 +260,17 @@ class StorageBackend(ABC):
         raise NotImplementedError('aggregate_stats not implemented by this backend')
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         """Return a request-volume time series, optionally scoped to one port.
 
         Used by the volume chart, which is filtered independently of the
         (unfiltered) top-lists in :meth:`aggregate_stats`. ``bucket`` is one
         of ``'minute5'`` (1H range), ``'hour'`` (24H) or ``'day'`` (7D/30D).
+
+        ``port`` may be a single port or a list of ports (e.g. an external port
+        plus its iptables-redirect target) — see :func:`manyfaced.common.ports.
+        internal_ports` (issue #330).
         """
         raise NotImplementedError('volume_series not implemented by this backend')
 
