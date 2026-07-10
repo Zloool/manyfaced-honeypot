@@ -200,11 +200,14 @@ def severity_for(record: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Log grouping — collapse port-scans / repeated hits from the same bot_ip
-# within a ~10s window so they don't flood the log.
+# Log grouping — collapse port-scans / repeated hits from the same bot_ip so
+# a single noisy attacker can't flood the log with near-duplicate rows.
+# Consecutive rows sharing a source IP are always collapsed, with no time
+# window: a scanner that reconnects every few minutes floods the log exactly
+# as much as one that hammers it every second, so gap length isn't a useful
+# signal here — only "did any other source's traffic interleave" is.
 # ---------------------------------------------------------------------------
 
-_GROUP_WINDOW_SECONDS = 10
 _SCAN_MIN_PORTS = 4
 
 
@@ -246,24 +249,25 @@ def annotate(record: dict[str, Any]) -> dict[str, Any]:
 def group_log_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Group newest-first ``recent_records()`` rows into single/scan/repeat/burst rows.
 
-    Buckets by (bot_ip, 10s window). A bucket with 1 record renders as a
-    plain row; >=2 records collapse into a group row (badge SCAN when >=4
-    distinct ports were hit, REPEAT when it's the same path/target repeated,
-    else BURST), expandable to the individual child rows.
+    Runs of consecutive rows from the same ``bot_ip`` always collapse into one
+    group row (badge SCAN when >=4 distinct ports were hit, REPEAT when it's
+    the same path/target repeated, else BURST), expandable to the individual
+    child rows — regardless of how far apart in time they land, as long as no
+    other source's row interrupts the run (so chronological order is
+    preserved and unrelated attackers never get merged together). A run of
+    exactly 1 record renders as a plain row.
     """
     annotated = [annotate(r) for r in records]
-    buckets: dict[tuple[str, int], list[dict[str, Any]]] = {}
-    order: list[tuple[str, int]] = []
+    runs: list[list[dict[str, Any]]] = []
     for rec in annotated:
-        key = (rec.get('bot_ip') or '', int(rec['_ts_epoch'] // _GROUP_WINDOW_SECONDS))
-        if key not in buckets:
-            buckets[key] = []
-            order.append(key)
-        buckets[key].append(rec)
+        ip = rec.get('bot_ip') or ''
+        if runs and (runs[-1][0].get('bot_ip') or '') == ip:
+            runs[-1].append(rec)
+        else:
+            runs.append([rec])
 
     rows: list[dict[str, Any]] = []
-    for key in order:
-        members = buckets[key]
+    for members in runs:
         if len(members) == 1:
             rows.append({'kind': 'single', 'row': members[0], 'ts': members[0]['_ts_epoch']})
             continue

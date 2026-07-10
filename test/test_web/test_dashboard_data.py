@@ -227,13 +227,25 @@ class TestGroupLogRows:
         assert len(rows) == 2
         assert all(r['kind'] == 'single' for r in rows)
 
-    def test_events_outside_window_do_not_group(self):
+    def test_same_ip_always_groups_regardless_of_time_gap(self):
         records = [
             _rec('1.2.3.4', '2024-01-01 00:00:00.000', 80),
-            _rec('1.2.3.4', '2024-01-01 00:01:00.000', 80),  # 60s later, outside 10s window
+            _rec('1.2.3.4', '2024-01-01 00:01:00.000', 80),  # 60s later — still consecutive
         ]
         rows = dd.group_log_rows(records)
-        assert len(rows) == 2
+        assert len(rows) == 1
+        assert rows[0]['kind'] == 'group'
+        assert len(rows[0]['members']) == 2
+
+    def test_interleaved_other_ip_breaks_the_run(self):
+        records = [
+            _rec('1.2.3.4', '2024-01-01 00:00:00.000', 80),
+            _rec('5.6.7.8', '2024-01-01 00:00:01.000', 80),
+            _rec('1.2.3.4', '2024-01-01 00:00:02.000', 80),
+        ]
+        rows = dd.group_log_rows(records)
+        assert len(rows) == 3
+        assert all(r['kind'] == 'single' for r in rows)
 
     def test_annotate_prefers_hostname_over_hive_id_for_sensor(self):
         rec = _rec('1.2.3.4', '2024-01-01 00:00:00.000', 80)
