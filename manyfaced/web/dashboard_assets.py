@@ -115,7 +115,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-card{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:15px 16px}
 .intel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .intel-title{font-size:12px;letter-spacing:1px;color:#d3ffe4;text-transform:uppercase}
-.intel-row{display:grid;grid-template-columns:20px 1fr 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
+.intel-row{display:grid;grid-template-columns:20px minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
 .intel-row.active{background:rgba(120,255,170,.09)}
 .intel-rank{font-size:11px;color:#2f5c40;text-align:right}
 .intel-label-row{display:flex;align-items:baseline;gap:8px}
@@ -129,6 +129,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-fill.danger{background:#ff6b74}
 .intel-count{font-size:12px;color:#83f5ae;text-align:right;font-variant-numeric:tabular-nums}
 
+.ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.ioc-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
+  border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace}
+.ioc-row .ioc-value{font-size:12px;color:#ffcf5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ioc-row .intel-count{color:#ff9aa0}
+
 .log-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .search-wrap{position:relative;flex:1;min-width:220px}
 .search-prompt{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#2f5c40;font-size:12px}
@@ -136,6 +142,10 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   color:#d3ffe4;font-size:12px;padding:8px 11px 8px 26px;outline:none}
 
 .log-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden}
+.payloads-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto}
+.payload-row{border-bottom:1px solid rgba(120,255,170,.07);padding:8px 12px}
+.payload-row:last-child{border-bottom:none}
+.payload-pre{margin:0;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;color:#8fe6ac;text-transform:none}
 .log-head-row{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
   border-bottom:1px solid rgba(120,255,170,.14);font-size:10px;letter-spacing:1px;color:#2f5c40;text-transform:uppercase}
 .log-empty{padding:34px;text-align:center;color:#3f7a55;font-size:13px}
@@ -188,8 +198,15 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   .brand{font-size:20px}
   .nav-links{gap:12px;order:3;width:100%;justify-content:flex-start}
   .nav-right{margin-left:auto;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .hero-title{font-size:34px}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
+  /* Intel / IoC grids: single column so the 260px min never exceeds the
+     viewport, and long host/IP values wrap instead of forcing horizontal
+     overflow (the "hive telemetry too wide on mobile" report, issue #359b). */
+  .intel-grid,.ioc-grid{grid-template-columns:1fr}
+  .ioc-row .ioc-value{white-space:normal;word-break:break-all;overflow:visible;text-overflow:clip}
+  .hero-canvas-wrap{height:300px}
 }
 """
 
@@ -203,6 +220,9 @@ JS = r"""
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
                 window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
+  // Hero canvas readout (real requests/hour, fed from payload.stats.hour_total
+  // and refreshed on each live tick). Module-level so applyMeta can update it.
+  var heroRph = '0';
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -270,6 +290,7 @@ JS = r"""
 
   function applyMeta(meta){
     if (!meta) return;
+    heroRph = meta.rate;  // refresh hero canvas readout on each live tick
     var map = {'stat-total':meta.total,'stat-day':meta.day,'stat-uniq':meta.uniq,
                'stat-ports':meta.activePorts,'stat-rate':meta.rate};
     Object.keys(map).forEach(function(id){
@@ -580,9 +601,10 @@ JS = r"""
     var ports;
     try { ports = JSON.parse(wrap.getAttribute('data-ports') || '[]'); } catch(e){ ports = []; }
     var mult = Number(wrap.getAttribute('data-mult')) || 6;
+    heroRph = wrap.getAttribute('data-rph') || '0';
     if (!ports.length) return;
 
-    var state2 = { ports: ports.map(function(p){ return {p:p.p, s:p.s, w:Math.max(1,p.w), glow:0, rings:[], flash:0}; }), pulses:[], W:0, H:0 };
+    var state2 = { ports: ports.map(function(p){ return {p:p.p, s:p.s, w:Math.max(1,p.w), glow:0, flash:0}; }), pulses:[], W:0, H:0 };
     var chassis = null, spawns = [], rps = 0, acc = 0, last = performance.now();
 
     function wpick(arr){
@@ -594,8 +616,23 @@ JS = r"""
     }
     function rr(x,y,w,h,rad){ ctx.beginPath(); ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad);
       ctx.arcTo(x+w,y+h,x,y+h,rad); ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath(); }
-    function bez(a,b,c,d,t){ var u=1-t; return {x:u*u*u*a.x+3*u*u*t*b.x+3*u*t*t*c.x+t*t*t*d.x,
-      y:u*u*u*a.y+3*u*u*t*b.y+3*u*t*t*c.y+t*t*t*d.y}; }
+    function mkPath(pts){
+      var lens=[], total=0, i;
+      for (i=1;i<pts.length;i++){ var l=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y); lens.push(l); total+=l; }
+      return {pts:pts, lens:lens, len:total||1};
+    }
+    function pathPoint(cb,t){
+      var d = t*cb.len, pts = cb.pts;
+      for (var i=0;i<cb.lens.length;i++){
+        var l = cb.lens[i];
+        if (d<=l || i===cb.lens.length-1){
+          var f = l? Math.max(0,Math.min(1,d/l)) : 0;
+          return {x:pts[i].x+(pts[i+1].x-pts[i].x)*f, y:pts[i].y+(pts[i+1].y-pts[i].y)*f};
+        }
+        d -= l;
+      }
+      return pts[pts.length-1];
+    }
     function sevCol(s){ return s==='crit'?'#ff6b74':s==='warn'?'#ffcf5c':'#3dff88'; }
 
     function layout(){
@@ -608,14 +645,39 @@ JS = r"""
       var cols = 6, rows = Math.ceil(state2.ports.length/cols);
       var padX=26, padTop=54, padBot=20;
       var gw=(cw-padX*2)/cols, gh=(ch-padTop-padBot)/rows;
-      var railY = cy+40;
+      var railY = cy+40, centerX = cx+cw/2, n = state2.ports.length;
+      chassis.railY = railY; chassis.railX0 = cx+16; chassis.railX1 = cx+cw-16;
       state2.ports.forEach(function(pt,i){
         var c=i%cols, r=Math.floor(i/cols);
-        pt.cx = cx+padX+gw*c+gw/2; pt.cy = cy+padTop+gh*r+gh/2-4;
-        pt.lw = Math.min(gw-12,64); pt.lh = 20;
-        var dir = (c%2)?1:-1; var bow = dir*Math.min(gw*0.42,52);
-        var sx=pt.cx, sy=railY, ex=pt.cx, ey=pt.cy-pt.lh/2-3;
-        pt.cab = {sx:sx,sy:sy,ex:ex,ey:ey,c1x:sx+bow,c1y:sy+(ey-sy)*0.32,c2x:ex+bow,c2y:sy+(ey-sy)*0.72};
+        // center every row (snapped to whole columns so corridors stay in the clear inter-box
+        // channels) so the port grid itself is symmetric about the chassis center line
+        var rowCount = Math.min(cols, n - r*cols);
+        var rowOff = Math.round((cols-rowCount)/2)*gw;
+        var cellLeft = cx+padX+gw*c+rowOff;
+        pt.cx = cellLeft+gw/2; pt.cy = cy+padTop+gh*r+gh/2-4;
+        pt.lw = Math.min(gw-24,60); pt.lh = 20;
+        var boxTop = pt.cy-pt.lh/2;
+        var gutter = (gw-pt.lw)/2;
+        // every port gets its OWN trace, and the fan is mirror-symmetric about center:
+        // ports left of center drop down their LEFT gutter, ports right of center mirror
+        // down their RIGHT gutter; deeper rows sit progressively further toward the outer
+        // edge so their long drop clears the lanes above. Its own horizontal lane sits in
+        // the gap over its row (staggered by distance from center so mirror-image columns
+        // share a height), then a short stub into the port's top edge. No shared trunk, no
+        // shared row bus, no overlaps, no crossings.
+        var inset = Math.max(3, gutter*0.72 - r*5);
+        var leftHalf = pt.cx < centerX-0.5;
+        var dropX = leftHalf ? cellLeft + inset : cellLeft + gw - inset;
+        // route each horizontal lane through the MIDDLE of the gap between the port above
+        // (below its service label) and this port's box, so a trace never crosses a label
+        var upperY = (r===0) ? railY : (cy+padTop+gh*(r-1)+gh/2-4 + pt.lh/2 + 13);
+        var laneY = (upperY + boxTop)/2;
+        pt.cab = mkPath([
+          {x:dropX, y:railY},
+          {x:dropX, y:laneY},
+          {x:pt.cx, y:laneY},
+          {x:pt.cx, y:boxTop}
+        ]);
       });
     }
     layout();
@@ -636,7 +698,6 @@ JS = r"""
       }
       var cut = nowp-1000;
       while (spawns.length && spawns[0]<cut) spawns.shift();
-      rps = spawns.length;
       ctx.clearRect(0,0,state2.W,state2.H);
       ctx.strokeStyle = 'rgba(60,140,90,0.06)'; ctx.lineWidth = 1;
       for (var x=0;x<state2.W;x+=34){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,state2.H); ctx.stroke(); }
@@ -656,33 +717,42 @@ JS = r"""
       }
       ctx.font="14px 'VT323', monospace"; ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
       ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
-      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+rps+' pkt/s', ch.x+ch.w-18, ch.y+22);
+      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+heroRph+'/h', ch.x+ch.w-18, ch.y+22);
       ctx.textAlign='left';
       ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ch.y+38); ctx.lineTo(ch.x+ch.w-14,ch.y+38); ctx.stroke();
 
+      function tracePath(cb){
+        var p=cb.pts; ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
+        for (var k=1;k<p.length;k++) ctx.lineTo(p[k].x,p[k].y);
+      }
+      if (chassis.railY != null){
+        ctx.beginPath(); ctx.moveTo(chassis.railX0,chassis.railY); ctx.lineTo(chassis.railX1,chassis.railY);
+        ctx.strokeStyle='rgba(52,132,88,0.22)'; ctx.lineWidth=2; ctx.stroke();
+      }
       state2.ports.forEach(function(pt){
         var cb = pt.cab; if (!cb) return;
         pt.flash *= Math.pow(0.015, dt/1000);
-        ctx.beginPath(); ctx.moveTo(cb.sx,cb.sy); ctx.bezierCurveTo(cb.c1x,cb.c1y,cb.c2x,cb.c2y,cb.ex,cb.ey);
-        ctx.strokeStyle = 'rgba(52,132,88,'+(0.20+pt.flash*0.55)+')'; ctx.lineWidth=3.4; ctx.stroke();
+        var p=cb.pts, tap=p[0], entry=p[p.length-1];
+        tracePath(cb);
+        ctx.strokeStyle = 'rgba(52,132,88,'+(0.20+pt.flash*0.55)+')'; ctx.lineWidth=3.4; ctx.lineJoin='round'; ctx.stroke();
         if (pt.flash>0.02){
           ctx.save(); ctx.shadowColor=pt.fcol||'#3dff88'; ctx.shadowBlur=9*pt.flash; ctx.globalAlpha=Math.min(1,pt.flash);
-          ctx.strokeStyle=pt.fcol||'#3dff88'; ctx.lineWidth=2;
-          ctx.beginPath(); ctx.moveTo(cb.sx,cb.sy); ctx.bezierCurveTo(cb.c1x,cb.c1y,cb.c2x,cb.c2y,cb.ex,cb.ey); ctx.stroke();
+          ctx.strokeStyle=pt.fcol||'#3dff88'; ctx.lineWidth=2; ctx.lineJoin='round';
+          tracePath(cb); ctx.stroke();
           ctx.restore();
         }
-        ctx.beginPath(); ctx.arc(cb.sx,cb.sy,2.3,0,7); ctx.fillStyle='rgba(140,240,180,0.55)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(tap.x,tap.y,2.3,0,7); ctx.fillStyle='rgba(140,240,180,0.55)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(entry.x,entry.y,2,0,7); ctx.fillStyle='rgba(140,240,180,0.55)'; ctx.fill();
       });
 
       state2.pulses = state2.pulses.filter(function(pl){
         pl.t += dt/pl.dur; var cb = pl.pt.cab; if (!cb) return false;
         if (pl.t>=1){
           pl.pt.glow = Math.min(1.5, pl.pt.glow+(pl.col==='#ff6b74'?1.1:0.85));
-          pl.pt.rings.push({rad:6,a:0.7}); pl.pt.flash=1; pl.pt.fcol=pl.col;
+          pl.pt.flash=1; pl.pt.fcol=pl.col;
           return false;
         }
-        var P = function(t){ return bez({x:cb.sx,y:cb.sy},{x:cb.c1x,y:cb.c1y},{x:cb.c2x,y:cb.c2y},{x:cb.ex,y:cb.ey},t); };
-        var a = P(pl.t), b = P(Math.max(0,pl.t-0.09));
+        var a = pathPoint(cb,pl.t), b = pathPoint(cb,Math.max(0,pl.t-0.09));
         ctx.save(); ctx.shadowColor=pl.col; ctx.shadowBlur=10; ctx.strokeStyle=pl.col; ctx.lineWidth=3;
         ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(a.x,a.y); ctx.stroke();
         ctx.beginPath(); ctx.arc(a.x,a.y,2.6,0,7); ctx.fillStyle=pl.col; ctx.fill();
@@ -703,11 +773,6 @@ JS = r"""
         ctx.fillStyle = g>0.3?'#f2fff7':'#c4f5d6'; ctx.fillText(pt.p, pt.cx+4, pt.cy);
         ctx.fillStyle='rgba(150,240,185,0.55)'; ctx.font="9px 'JetBrains Mono', monospace"; ctx.textBaseline='top';
         ctx.fillText(pt.s, pt.cx, pt.cy+pt.lh/2+3);
-        pt.rings = pt.rings.filter(function(r){
-          r.rad += dt*0.08; r.a -= dt*0.0016; if (r.a<=0) return false;
-          ctx.beginPath(); ctx.arc(pt.cx+4,pt.cy,r.rad,0,7); ctx.strokeStyle='rgba(61,255,136,'+r.a+')'; ctx.lineWidth=1.4; ctx.stroke();
-          return true;
-        });
       });
 
       requestAnimationFrame(draw);

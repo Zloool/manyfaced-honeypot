@@ -23,6 +23,7 @@ from manyfaced.handlers.router import (  # noqa: F401
     Route,
     Router,
 )
+from manyfaced.common import status as _status
 
 # Handler classes (imported lazily to avoid circular imports)
 
@@ -58,6 +59,7 @@ from manyfaced.handlers.routes.routes_dbadmin import ROUTES as _dbadmin_routes  
 from manyfaced.handlers.routes.routes_docker import ROUTES as _docker_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_mcp import ROUTES as _mcp_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_iot import ROUTES as _iot_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_exploit_cgi import ROUTES as _exploit_cgi_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_nginx_probe import ROUTES as _nginx_probe_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_k8s import ROUTES as _k8s_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_nextjs import ROUTES as _nextjs_routes  # noqa: E402
@@ -80,8 +82,9 @@ from manyfaced.handlers.routes.routes_laravel import ROUTES as _laravel_routes  
 from manyfaced.handlers.routes.routes_thinkphp import ROUTES as _thinkphp_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_elastic import ROUTES as _elastic_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_env_disc import ROUTES as _env_disc_routes  # noqa: E402
-from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes  # noqa: E402
-from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes  # noqa: E402
+from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes
+from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes
+from manyfaced.handlers.fingerprint import HighEntropyPath, NotFoundHandler  # noqa: E402
 
 # Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
 # Drupal → cPanel → Bitrix → WebDAV → ConfigDisclosure → catch-all
@@ -118,11 +121,20 @@ ROUTES: list[Route] = (
     + list(_elasticsearch_routes)
     + list(_zabbix_routes)
     + list(_laravel_routes)
+    # Exploit-scanner routes (issue #350) are inserted BEFORE thinkphp/laravel so
+    # they win for /index.php (pearcmd) and the D-Link/Tenda .cgi names, which
+    # would otherwise be shadowed by those framework handlers.
+    + list(_exploit_cgi_routes)
     + list(_thinkphp_routes)
     + list(_elastic_routes)
     + list(_env_disc_routes)
     + list(_nginx_routes)
     + list(_phpunit_routes)
+    # Fingerprint-deflection layer (issue #324): high-entropy random paths and
+    # a missing /favicon.ico get a realistic Apache 404 *before* the monster-page
+    # catch-all, so we don't answer-everything-with-200 (a classic honeypot tell).
+    + [Route(HighEntropyPath(), NotFoundHandler, _status.FINGERPRINT_PROBE, 'fingerprint_404')]
+    + [Route(PathExact('/favicon.ico'), NotFoundHandler, _status.FINGERPRINT_PROBE, 'favicon_404')]
     + [Route(Any(), _generic(), 4294967294, 'catchall_monster_page')]
 )
 

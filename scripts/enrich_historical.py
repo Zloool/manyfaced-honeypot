@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from manyfaced.common.classification import classify  # noqa: E402
 from manyfaced.common.geolocate import lookup_ip_geolocation  # noqa: E402
+from manyfaced.db.storage import get_storage  # noqa: E402
 
 # Columns this script guarantees exist before backfilling.
 _NEW_COLUMNS = ('bot_asn', 'bot_org', 'classification', 'benign_source')
@@ -188,16 +189,25 @@ def _classify_row(
 
 def backfill(
     db_path: str,
-    batch_size: int = 1000,
+    batch_size: int = 5000,
     dry_run: bool = False,
     limit: int | None = None,
     sleep: float = 0.0,
 ) -> int:
-    """Classify every row where ``classification IS NULL``.
+    """Classify **every** row where ``classification IS NULL``.
 
-    Resumable: a row only leaves the NULL set once its UPDATE commits, so an
-    interrupt mid-run leaves the rest reprocessable. Idempotent: once all rows
-    are classified, the NULL scan returns nothing and the run is a no-op.
+    Full catch-up: the NULL set is drained across the *whole* table (no recent-
+    time-window or hard row cap), one commit-sized batch at a time, until zero
+    NULL rows remain.
+
+    Idempotent + resumable: a row only leaves the NULL set once its UPDATE
+    commits, so re-running only ever touches rows that are still NULL. An
+    interrupt mid-run leaves the remainder reprocessable, and a run after full
+    completion selects nothing and is a no-op — already-classified rows are
+    never recomputed or rewritten.
+
+    Each committed batch logs how many NULL rows remain so an operator can watch
+    progress and spot a stuck job.
     """
     conn = None
     try:
@@ -210,7 +220,12 @@ def backfill(
                 f'FROM honeypot_bears WHERE classification IS NULL {limit_clause}'
             ).fetchall()
 
-        total = len(_pending(''))
+        def _null_remaining() -> int:
+            return conn.execute(
+                'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL'
+            ).fetchone()[0]
+
+        total = _null_remaining()
         if total == 0:
             print('[enrich] nothing to backfill (all rows classified).')
             return 0
@@ -221,11 +236,12 @@ def backfill(
         counts = {'benign': 0, 'unknown': 0, 'malicious': 0}
         processed = 0
 
-        # Drain the NULL set in batches. A row only leaves the set once its
-        # UPDATE commits, so an interrupt mid-run leaves the rest reprocessable.
-        # ``limit`` caps the TOTAL rows processed (used to simulate a partial
-        # run for resumability testing); the inner loop re-scans the shrinking
-        # NULL set so it always makes progress and terminates.
+        # Drain the NULL set in commit-sized batches. Each batch is one
+        # transaction: classify up to ``batch_size`` NULL rows, UPDATE them, then
+        # commit — so an interrupt only loses the uncommitted current batch and a
+        # re-run resumes from the still-NULL remainder. ``limit`` caps the TOTAL
+        # rows processed (used to simulate a partial run for resumability
+        # testing); otherwise the loop runs until no NULL rows remain.
         while True:
             if limit is not None and processed >= limit:
                 break
@@ -259,15 +275,22 @@ def backfill(
                         'classification=?, benign_source=? WHERE id=?',
                         (asn, org, classification, benign_source, r['id']),
                     )
-                if processed % batch_size == 0:
-                    if not dry_run:
-                        conn.commit()
-                    print(
-                        f'[enrich] processed {processed}/{total} '
-                        f'(benign={counts["benign"]}, unknown={counts["unknown"]})'
-                    )
-                    if sleep:
-                        time.sleep(sleep)
+
+            # Commit the batch, then report how many NULL rows are still left so
+            # operators can see catch-up progress / detect a stuck job. In
+            # dry-run nothing is written, so derive the remainder from processed.
+            if not dry_run:
+                conn.commit()
+                remaining = _null_remaining()
+            else:
+                remaining = max(total - processed, 0)
+            print(
+                f'[enrich] processed {processed}/{total} '
+                f'(benign={counts["benign"]}, unknown={counts["unknown"]}); '
+                f'{remaining} NULL row(s) remain'
+            )
+            if sleep:
+                time.sleep(sleep)
 
         if not dry_run:
             conn.commit()
@@ -287,10 +310,118 @@ def backfill(
             conn.close()
 
 
+def _backfill_pg(
+    batch_size: int = 5000,
+    dry_run: bool = False,
+    limit: int | None = None,
+) -> int:
+    """PostgreSQL twin of :func:`backfill` — drains every ``classification IS
+    NULL`` row using the live storage backend (issue #349 prod path).
+
+    The daemon's PostgreSQL backend is the source of truth in production; the
+    SQLite path above only handles the legacy local ``.sqlite``. This reuses
+    ``_classify_row`` and the same commit-sized, resumable drain loop, but
+    speaks psycopg2 (``%s`` params) against ``get_storage()._conn``.
+
+    Returns 0 on success, 1 on unrecoverable error.
+    """
+    import psycopg2  # local import: only needed for the PG path
+
+    store = get_storage()
+    if store.__class__.__name__ != 'PostgreSQLStorage':
+        print(
+            '[enrich] --pg requested but get_storage() is not PostgreSQL; aborting.',
+            file=sys.stderr,
+        )
+        return 1
+    conn = store.connection  # psycopg2 connection (process-wide singleton)
+    try:
+
+        def _pending(limit_clause: str) -> list:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT id, bot_ip, bot_asn, bot_org, bot_dns_name, bot_user_agent '
+                    'FROM honeypot_bears WHERE classification IS NULL ' + limit_clause
+                )
+                return cur.fetchall()
+
+        def _null_remaining() -> int:
+            with conn.cursor() as cur:
+                cur.execute('SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL')
+                return cur.fetchone()[0]
+
+        total = _null_remaining()
+        if total == 0:
+            print('[enrich] nothing to backfill (all rows classified).')
+            return 0
+
+        print(f'[enrich] {total} row(s) pending classification{" (dry-run)" if dry_run else ""}.')
+        asn_cache: dict[str, tuple[str, str]] = {}
+        counts = {'benign': 0, 'unknown': 0, 'malicious': 0}
+        processed = 0
+
+        while True:
+            if limit is not None and processed >= limit:
+                break
+            rows = _pending(f'ORDER BY id LIMIT {batch_size}')
+            if not rows:
+                break
+            for r in rows:
+                if limit is not None and processed >= limit:
+                    break
+                asn, org, classification, benign_source = _classify_row(
+                    {
+                        'bot_ip': r[1],
+                        'bot_asn': r[2],
+                        'bot_org': r[3],
+                        'bot_dns_name': r[4],
+                        'bot_user_agent': r[5],
+                    },
+                    asn_cache,
+                )
+                counts[classification] = counts.get(classification, 0) + 1
+                processed += 1
+                if not dry_run:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            'UPDATE honeypot_bears SET bot_asn=%s, bot_org=%s, '
+                            'classification=%s, benign_source=%s WHERE id=%s',
+                            (asn, org, classification, benign_source, r[0]),
+                        )
+            if not dry_run:
+                conn.commit()
+                remaining = _null_remaining()
+            else:
+                remaining = max(total - processed, 0)
+            print(
+                f'[enrich] processed {processed}/{total} '
+                f'(benign={counts["benign"]}, unknown={counts["unknown"]}); '
+                f'{remaining} NULL row(s) remain'
+            )
+
+        if not dry_run:
+            conn.commit()
+        print(
+            f'[enrich] done: {processed} row(s) '
+            f'benign={counts["benign"]} unknown={counts["unknown"]} '
+            f'malicious={counts["malicious"]}' + (' [dry-run, no writes]' if dry_run else '')
+        )
+        return 0
+    except psycopg2.Error as exc:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        print(f'[enrich] ERROR: {exc}', file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Backfill benign-source classification.')
     parser.add_argument('--db', default='/opt/manyfaced/bots/honeypot.sqlite')
-    parser.add_argument('--batch', type=int, default=1000, help='Progress-report batch size.')
+    parser.add_argument(
+        '--batch', type=int, default=5000, help='Rows per commit-sized batch/transaction.'
+    )
     parser.add_argument('--dry-run', action='store_true', help='Report split without writing.')
     parser.add_argument('--no-backup', action='store_true', help='Skip the .bak backup.')
     parser.add_argument('--limit', type=int, default=None, help='Cap rows processed (testing).')
@@ -298,7 +429,23 @@ def main() -> int:
         '--sleep', type=float, default=0.0, help='Seconds to sleep between batches.'
     )
     parser.add_argument('--keep', type=int, default=3, help='Backups to retain.')
+    parser.add_argument(
+        '--pg',
+        action='store_true',
+        help='Backfill the live PostgreSQL backend (get_storage()) instead of the '
+        'legacy SQLite file. Use on production where honeypot_bears lives in PG.',
+    )
     args = parser.parse_args()
+
+    if args.pg:
+        # PostgreSQL is the source of truth in production; the columns already
+        # exist (created by PostgreSQLStorage._init_db), so skip the SQLite
+        # migrate/_backup step and drain NULL rows via the live connection.
+        return _backfill_pg(
+            batch_size=args.batch,
+            dry_run=args.dry_run,
+            limit=args.limit,
+        )
 
     if migrate(args.db, backup=not args.no_backup, keep=args.keep) != 0:
         return 1

@@ -113,3 +113,15 @@ def is_redirected(port: int | None) -> bool:
     if not port:
         return False
     return int(port) in HIGH_TO_PRIV
+
+
+def internal_ports(external: int) -> list[int]:
+    """Every ``listen_port`` value that should match a click on ``external``.
+
+    An attacker-facing external port maps to itself, plus — when it is a
+    privileged port behind an iptables redirect — the high bound port it is
+    redirected to. This is the *inverse* of :func:`external_port` and is used
+    to scope DB queries by the external port a user clicked (issue #330).
+    """
+    high = PRIVILEGED_PORT_REDIRECTS.get(int(external))
+    return [int(external), high] if high else [int(external)]

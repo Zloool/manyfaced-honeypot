@@ -164,3 +164,185 @@ def test_backfill_dry_run_does_not_write(tmp_path):
     ).fetchone()[0]
     conn.close()
     assert n == 0
+
+
+def test_backfill_classifies_all_null_rows(tmp_path):
+    """Issue #349: every NULL row across the whole table is classified — no gap
+    left behind after a single backfill run (regression for the 1,580-NULL gap).
+    """
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    # A large mixed set spanning many commit-sized batches (batch default 5000).
+    rows = []
+    for i in range(12000):
+        if i % 2 == 0:
+            rows.append((f'10.0.{i % 250}.{i % 255}', 'census.shodan.io', '', '', ''))
+        else:
+            rows.append((f'10.1.{i % 250}.{i % 255}', 'host.example.net', 'curl/8', 'AS7', 'x'))
+    _insert(conn, rows)
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        # Small batch size to exercise the multi-batch drain loop.
+        assert eh.backfill(str(db), batch_size=500, dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    null_left = conn.execute(
+        'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL'
+    ).fetchone()[0]
+    total = conn.execute('SELECT COUNT(*) FROM honeypot_bears').fetchone()[0]
+    benign = conn.execute(
+        "SELECT COUNT(*) FROM honeypot_bears WHERE classification='benign'"
+    ).fetchone()[0]
+    conn.close()
+    assert total == 12000
+    assert null_left == 0  # complete: no unclassified rows remain
+    assert benign == 6000  # every shodan row classified benign
+
+
+def test_backfill_twice_is_noop_does_not_recompute(tmp_path):
+    """Issue #349: running the backfill a second time must not touch or change
+    already-classified rows (idempotent). We prove no rewrite by mutating a
+    classified row's value and asserting the second run leaves it untouched.
+    """
+    db = tmp_path / 'h.sqlite'
+    _make_db(str(db))
+    eh.migrate(str(db), backup=False)
+    conn = sqlite3.connect(str(db))
+    _insert(conn, [('1.2.3.4', 'census.shodan.io', '', '', '')])
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    # Tamper with the already-classified row: give benign_source a sentinel that
+    # classify() would never produce. A second run must NOT overwrite it, since
+    # the row is no longer NULL and idempotent backfill only touches NULL rows.
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE honeypot_bears SET benign_source='SENTINEL' WHERE bot_ip='1.2.3.4'")
+    conn.commit()
+    conn.close()
+
+    with patch('enrich_historical.lookup_ip_geolocation', return_value=('', '', '', '')):
+        assert eh.backfill(str(db), dry_run=False) == 0
+
+    conn = sqlite3.connect(str(db))
+    src = conn.execute(
+        "SELECT benign_source FROM honeypot_bears WHERE bot_ip='1.2.3.4'"
+    ).fetchone()[0]
+    conn.close()
+    assert src == 'SENTINEL'  # untouched — no recompute/rewrite on second run
+
+
+class _FakePgCursor:
+    """Minimal psycopg2-style cursor over an in-memory SQLite table.
+
+    Supports the ``with`` context-manager protocol so it behaves like a real
+    psycopg2 cursor (which the backfill relies on).
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=None):
+        # The backfill's SQL is already valid for sqlite (same table/columns,
+        # inlined LIMIT) — only the UPDATE uses psycopg2 %s params, which we
+        # translate to sqlite ? placeholders.
+        if sql.strip().upper().startswith('UPDATE'):
+            _asn, _org, _cls, _src, _rid = params
+            self._conn.execute(
+                'UPDATE honeypot_bears SET bot_asn=?, bot_org=?, classification=?, '
+                'benign_source=? WHERE id=?',
+                (_asn, _org, _cls, _src, _rid),
+            )
+        else:
+            self._rows = self._conn.execute(sql).fetchall()
+        return self
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def fetchone(self):
+        return self._rows[0]
+
+
+class _FakePgConn:
+    """Psycopg2-connection-like wrapper around a real sqlite3 connection."""
+
+    def __init__(self, sqlite_conn):
+        self._sqlite = sqlite_conn
+
+    def cursor(self):
+        return _FakePgCursor(self._sqlite)
+
+    def commit(self):
+        self._sqlite.commit()
+
+    def rollback(self):
+        self._sqlite.rollback()
+
+
+class _FakePgStorage:
+    """Duck-typed stand-in for PostgreSQLStorage with a psycopg2-like conn."""
+
+    def __init__(self, sqlite_conn):
+        self._conn = _FakePgConn(sqlite_conn)
+
+    @property
+    def __class__(self):
+        # Make store.__class__.__name__ == 'PostgreSQLStorage' so the backfill's
+        # backend guard passes.
+        return type('PostgreSQLStorage', (), {})
+
+    @property
+    def connection(self):
+        return self._conn
+
+
+def test_backfill_pg_drains_all_null_rows(tmp_path):
+    """Issue #349 prod path: _backfill_pg drains every NULL row via the live
+    PostgreSQL backend (exercised here with a fake psycopg2-like connection)."""
+    import sqlite3
+
+    db = tmp_path / 'pg.sqlite'
+    raw = sqlite3.connect(str(db))
+    raw.execute(
+        'CREATE TABLE honeypot_bears ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT,'
+        ' bot_ip TEXT, bot_dns_name TEXT, bot_user_agent TEXT,'
+        ' bot_asn TEXT, bot_org TEXT, classification TEXT, benign_source TEXT)'
+    )
+    rows = []
+    for i in range(3000):
+        if i % 2 == 0:
+            rows.append((f'10.0.{i % 250}.{i % 255}', 'census.shodan.io', '', '', ''))
+        else:
+            rows.append((f'10.1.{i % 250}.{i % 255}', 'host.example.net', 'curl/8', 'AS7', 'x'))
+    raw.executemany(
+        'INSERT INTO honeypot_bears (bot_ip, bot_dns_name, bot_user_agent, bot_asn, bot_org)'
+        ' VALUES (?,?,?,?,?)',
+        rows,
+    )
+    raw.commit()
+
+    fake = _FakePgStorage(raw)
+    with patch('enrich_historical.get_storage', return_value=fake):
+        assert eh._backfill_pg(batch_size=500, dry_run=False) == 0
+
+    null_left = raw.execute(
+        'SELECT COUNT(*) FROM honeypot_bears WHERE classification IS NULL'
+    ).fetchone()[0]
+    benign = raw.execute(
+        "SELECT COUNT(*) FROM honeypot_bears WHERE classification='benign'"
+    ).fetchone()[0]
+    raw.close()
+    assert null_left == 0  # complete drain — no gap left
+    assert benign == 1500
