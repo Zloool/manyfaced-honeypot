@@ -118,6 +118,31 @@ jobs:
       # rsync'd venv + systemd unit. The image is built by the
       # build-and-push-image job (tagged sha-<short_sha> and :latest).
       # Rollback = re-pin the container to a previously deployed image tag.
+      # ── Disk-space guard (issue #419) ────────────────────────────────────
+      # The droplet accumulates per-commit sha-<12> image tags. The post-deploy
+      # cleanup only ran `docker image prune -f` (dangling-only) AND only after a
+      # successful deploy, so tagged images piled up until the root fs hit 100%
+      # and every deploy failed at image extraction ("no space left on device").
+      # Reclaim space BEFORE the pull so a near-full droplet self-heals. This is
+      # safe: rollback re-pulls its target from GHCR (immutable tags) and the
+      # currently-running container's image is never removed by prune.
+      - name: Reclaim disk before pull (prune unused images + build cache)
+        env:
+          DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
+          DROPLET_SSH_USER: ${{ secrets.DROPLET_SSH_USER }}
+          DROPLET_SERVER_IP: ${{ secrets.DROPLET_SERVER_IP }}
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p "${DROPLET_SSH_PORT}" "${DROPLET_SSH_USER}@${DROPLET_SERVER_IP}" '
+            set -euo pipefail
+            echo "Disk before reclaim:"; df -h / | tail -1
+            # Prune unused images (not just dangling) and build cache. Images
+            # referenced by the running container are protected automatically.
+            docker image prune -af >/dev/null 2>&1 || true
+            docker builder prune -af >/dev/null 2>&1 || true
+            echo "Disk after reclaim:"; df -h / | tail -1
+          '
+
       - name: Authenticate to GHCR and pull release image
         env:
           DROPLET_SSH_PORT: ${{ secrets.DROPLET_SSH_PORT }}
