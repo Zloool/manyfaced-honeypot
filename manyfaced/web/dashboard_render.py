@@ -591,46 +591,85 @@ def _render_log_section(payload: dict) -> str:
 """
 
 
-def _render_payloads_section(payload: dict) -> str:
-    """Raw captured request payloads, surfaced right after the capture log.
+def render_payloads_rows(payload: dict) -> str:
+    """Render the Payloads panel rows (issue #368 follow-up).
 
-    Each entry is the actual bytes an attacker sent (truncated + escaped
-    server-side). Issue #368 adds a **decoded** pane beside the raw one: the
-    best-effort URL/base64-decoded view — so encoded exploit payloads
-    (``%2e%2e%2fetc%2Fpasswd``, `.env` probes, base64 C2 drops) become
-    human-readable without expanding every log row.
+    Each row carries the same ``data-*`` attributes as a capture-log entry
+    (``data-ports``/``data-method``/``data-cc``/``data-ip``/``data-service``/
+    ``data-search``) so the client's existing toolbar filters (port chips,
+    method/search box, country/service/ip intel rows) match Payloads rows the
+    same way they match the capture log, instead of the panel staying static
+    while every other control filters. Each row also shows a RAW | DECODED
+    split (issue #368) so encoded exploit payloads become human-readable.
     """
     payloads = payload.get('payloads') or []
     if not payloads:
-        items = '<p class="section-hint">no payloads captured yet</p>'
-    else:
-        total = len(payloads)
-        rows_html = []
-        for i, entry in enumerate(payloads, 1):
-            raw, decoded = entry if isinstance(entry, tuple) else (entry, entry)
-            decoded_pane = (
-                f'<pre class="log-raw payload-decoded">{_esc(decoded)}</pre>'
-                if decoded != raw
-                else '<p class="section-hint payload-nodecode">no encoding detected</p>'
-            )
-            rows_html.append(
-                f"""<div class="payload-row">
-  <div class="log-raw-meta payload-meta"><b>PAYLOAD {i:02d}/{total:02d}</b><span>{len(raw)} chars raw</span></div>
-  <div class="payload-split">
-    <div class="payload-pane"><div class="payload-pane-label">RAW</div><pre class="log-raw">{_esc(raw)}</pre></div>
-    <div class="payload-pane"><div class="payload-pane-label">DECODED</div>{decoded_pane}</div>
-  </div>
-</div>"""
-            )
-        items = ''.join(rows_html)
+        return ''
+    total = len(payloads)
+    items = []
+    for i, p in enumerate(payloads, 1):
+        method_label, _cls = _method_badge(p.get('request_command') or '')
+        service = detected_id_name(p.get('detected_id'))
+        port = p.get('listen_port') or 0
+        raw = p.get('raw') or ''
+        decoded = p.get('decoded') or raw
+        data_method = method_label if method_label in ('GET', 'POST') else 'OTHER'
+        search = _esc(
+            ' '.join([p.get('bot_ip') or '', p.get('bot_country') or '', service, raw]).lower()
+        )
+        attrs = (
+            f'data-ports="{port}" data-method="{data_method}" '
+            f'data-cc="{_esc(p.get("bot_country"))}" data-ip="{_esc(p.get("bot_ip"))}" '
+            f'data-service="{_esc(service)}" data-search="{search}"'
+        )
+        decoded_pane = (
+            f'<pre class="log-raw payload-decoded">{_esc(decoded)}</pre>'
+            if decoded != raw
+            else '<p class="section-hint payload-nodecode">no encoding detected</p>'
+        )
+        items.append(
+            f'<div class="payload-row" {attrs}>'
+            '<div class="log-raw-meta payload-meta">'
+            f'<b>PAYLOAD {i:02d}/{total:02d}</b>'
+            f'<span>bot_ip <b>{_esc(p.get("bot_ip") or "—")}</b></span>'
+            f'<span>port <b>{port}</b></span>'
+            f'<span>{len(raw)} chars raw</span>'
+            '</div>'
+            '<div class="payload-split">'
+            f'<div class="payload-pane"><div class="payload-pane-label">RAW</div>'
+            f'<pre class="log-raw">{_esc(raw)}</pre></div>'
+            f'<div class="payload-pane"><div class="payload-pane-label">DECODED</div>{decoded_pane}</div>'
+            '</div>'
+            '</div>'
+        )
+    return ''.join(items)
+
+
+def _render_payloads_section(payload: dict) -> str:
+    """Raw captured request payloads, surfaced right after the capture log.
+
+    Each entry is the actual bytes an attacker sent (already truncated +
+    escaped server-side) with a RAW | DECODED split (issue #368) and a
+    ``data-*`` filter surface so the toolbar controls scope this panel too.
+    ``#payloads-rows`` is a dedicated fragment target (mirroring ``#log-rows``)
+    so the client's fetch-based refresh (IoC clicks, range switch, live poll)
+    can replace just the rows in place — the panel used to never refresh after
+    first paint (issue #368).
+    """
+    payloads = payload.get('payloads') or []
+    rows_html = render_payloads_rows(payload)
+    empty_hidden = ' hidden' if payloads else ''
     return f"""
 <section id="payloads" class="section">
   <div class="section-head">
     <div class="section-title">PAYLOADS</div>
     <div class="rule"></div>
-    <div class="section-hint">raw + decoded captured request bytes ({len(payloads)} shown)</div>
+    <div class="section-hint" id="payloads-summary" data-full="raw + decoded captured request bytes ({len(payloads)} shown)">raw + decoded captured request bytes ({len(payloads)} shown)</div>
   </div>
-  <div class="payloads-box">{items}</div>
+  <div class="payloads-box">
+    <div id="payloads-rows">{rows_html}</div>
+    <div id="payloads-empty" class="log-empty"{empty_hidden}>// no payloads match the current filters</div>
+  </div>
 </section>
 """
 
@@ -713,7 +752,7 @@ def render_fragment(payload: dict) -> bytes:
         'ioc': _render_ioc_section(payload),
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
-        'payloads': _render_payloads_section(payload),
+        'payloads-rows': render_payloads_rows(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]
