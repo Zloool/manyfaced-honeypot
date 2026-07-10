@@ -638,3 +638,160 @@ def test_build_payload_renders_benign_unknown_split(tmp_path, monkeypatch):
     assert 'stat-benign' in cards
     storage.close()
     storage_mod.reset_storage_singleton()
+
+
+# ---------------------------------------------------------------------------
+# Payloads panel: only juicy findings (issue #362)
+# ---------------------------------------------------------------------------
+
+
+def _row(raw, **kw):
+    base = {
+        'raw': raw,
+        'classification': kw.get('classification', 'unknown'),
+        'detected_id': kw.get('detected_id'),
+        'request_path': kw.get('request_path', '/'),
+        'request_command': kw.get('request_command', 'GET'),
+        'login': kw.get('login', ''),
+    }
+    return base
+
+
+def test_build_payloads_drops_benign_and_favicon_and_ranks_crit_above_info():
+    """_build_payloads drops benign scanners + favicon noise and ranks crit
+    (credential captured) above info-level URL probes (issue #362)."""
+    rows = [
+        # Benign research scanner -> excluded entirely.
+        _row('GET /admin HTTP/1.1', classification='benign'),
+        # Favicon noise -> excluded.
+        _row('GET /favicon.ico HTTP/1.1', request_path='/favicon.ico'),
+        # Bare HEAD probe with no payload -> excluded.
+        _row('HEAD / HTTP/1.1', request_command='HEAD'),
+        # Info-level: plain URL-bearing GET.
+        _row('GET /x?u=http://203.0.113.9/p HTTP/1.1'),
+        # Crit-level: credential captured (login non-empty).
+        _row('POST /login HTTP/1.1', request_command='POST', login='admin:hunter2'),
+    ]
+    out = _dash_mod._build_payloads(rows)
+    assert len(out) == 2
+    # crit (login captured) must rank ABOVE info.
+    assert out[0].startswith('POST /login')
+    # benign + favicon + bare HEAD all gone.
+    joined = '\n'.join(out)
+    assert 'favicon.ico' not in joined
+    assert 'GET /admin' not in joined
+
+
+def test_build_payloads_respects_limit():
+    rows = [_row(f'GET /x{i}?u=http://203.0.113.{i}/p HTTP/1.1') for i in range(100)]
+    out = _dash_mod._build_payloads(rows)
+    assert len(out) == _dash_mod._PAYLOADS_LIMIT
+
+
+def test_fetch_interesting_raws_shape_and_benign_filter(tmp_path, monkeypatch):
+    """The SQLite backend returns row dicts and drops benign rows (issue #362)."""
+    from manyfaced.db import storage as storage_mod
+    from manyfaced.db.storage import SQLiteStorage
+
+    db_path = str(tmp_path / 'juicy.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    storage.insert(
+        {
+            'ip': '1.1.1.1',
+            'hostname': 'h',
+            'timestamp': '2026-01-01 00:00:00.000000',
+            'parsed_request': {},
+            'raw_request': 'GET /favicon.ico HTTP/1.1',
+            'request_path': '/favicon.ico',
+            'request_command': 'GET',
+            'is_detected': None,
+            'listen_port': 80,
+            'classification': 'unknown',
+        }
+    )
+    storage.insert(
+        {
+            'ip': '2.2.2.2',
+            'hostname': 'h',
+            'timestamp': '2026-01-02 00:00:00.000000',
+            'parsed_request': {},
+            'raw_request': 'GET /x?u=http://203.0.113.9/p HTTP/1.1',
+            'request_path': '/x',
+            'request_command': 'GET',
+            'is_detected': None,
+            'listen_port': 80,
+            'classification': 'benign',
+        }
+    )
+    storage.insert(
+        {
+            'ip': '3.3.3.3',
+            'hostname': 'h',
+            'timestamp': '2026-01-03 00:00:00.000000',
+            'parsed_request': {},
+            'raw_request': 'POST /boaform/admin/formLogin?x=http://91.92.40.118/m HTTP/1.1',
+            'request_path': '/boaform/admin/formLogin',
+            'request_command': 'POST',
+            'is_detected': None,
+            'listen_port': 80,
+            'classification': 'unknown',
+        }
+    )
+    rows = storage.fetch_interesting_raws(since=None, limit=100)
+    # favicon (no ://) and benign both excluded -> exactly the URL-bearing unknown row.
+    assert len(rows) == 1
+    r = rows[0]
+    assert r['raw'].startswith('POST /boaform')
+    assert r['classification'] == 'unknown'
+    assert 'detected_id' in r and 'request_path' in r and 'login' in r and 'request_command' in r
+    storage.close()
+    storage_mod.reset_storage_singleton()
+
+
+def test_build_payload_uses_interesting_raws(tmp_path, monkeypatch):
+    """End-to-end: _build_payload's Payloads panel excludes benign rows (issue #362)."""
+    from manyfaced.db import storage as storage_mod
+    from manyfaced.db.storage import SQLiteStorage
+
+    db_path = str(tmp_path / 'pl.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    storage.insert(
+        {
+            'ip': '2.2.2.2',
+            'hostname': 'h',
+            'timestamp': '2026-01-02 00:00:00.000000',
+            'parsed_request': {},
+            'raw_request': 'GET /x?u=http://203.0.113.9/p HTTP/1.1',
+            'request_path': '/x',
+            'request_command': 'GET',
+            'is_detected': None,
+            'listen_port': 80,
+            'classification': 'benign',
+        }
+    )
+    storage.insert(
+        {
+            'ip': '3.3.3.3',
+            'hostname': 'h',
+            'timestamp': '2026-01-03 00:00:00.000000',
+            'parsed_request': {},
+            'raw_request': 'POST /boaform/admin/formLogin?x=http://91.92.40.118/m HTTP/1.1',
+            'request_path': '/boaform/admin/formLogin',
+            'request_command': 'POST',
+            'is_detected': None,
+            'listen_port': 80,
+            'classification': 'unknown',
+        }
+    )
+    payload = _dash_mod._build_payload('24h', 'tok', page=1)
+    joined = '\n'.join(payload['payloads'])
+    assert 'favicon' not in joined
+    # The benign row is gone; the unknown drop host remains.
+    assert '91.92.40.118' in joined
+    assert '203.0.113.9' not in joined
+    storage.close()
+    storage_mod.reset_storage_singleton()
