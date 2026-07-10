@@ -26,7 +26,12 @@ from typing import TYPE_CHECKING
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
 from manyfaced.common.status import BOT_TIMEOUT
-from manyfaced.handlers.http_handler import HTTPHandler
+from manyfaced.common.utils import receive_timeout
+from manyfaced.handlers.http_handler import (
+    HTTPHandler,
+    _build_bear_storage,
+    _enrich_and_send_bear,
+)
 
 # Internal IPs to filter out (loopback, DO internal network, honeypot's own IP)
 _INTERNAL_IPS = frozenset(
@@ -237,11 +242,6 @@ def _handle_bot_connection(
         update_event: Event to signal shutdown.
     """
     from manyfaced.common.metrics import incr, set_gauge  # noqa: PLC0415
-    from manyfaced.common.utils import receive_timeout  # noqa: PLC0415
-
-    message = receive_timeout(connection_socket, BOT_TIMEOUT)
-    if not message:
-        return
 
     bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
 
@@ -253,6 +253,26 @@ def _handle_bot_connection(
     # Observability: count each real bot connection and track concurrency (issue #166).
     incr('bot_connections')
     set_gauge('active_connections', threading.active_count())
+
+    # ── Non-HTTP face dispatch (issue #377) ──────────────────────────────────
+    # Server-first faces (SSH/FTP/Telnet/SMTP/POP3/IMAP/VNC/RDP/MySQL/MSSQL/
+    # AMQP) must GREET on accept, before any client bytes arrive — they cannot
+    # be detected from the wire because the client has not spoken yet. The face
+    # is resolved by the port the client connected to. Client-first faces
+    # (Redis/Memcached/MongoDB/Zookeeper/Postgres/ES) read the client frame
+    # then reply. HTTP falls through to the existing handler unchanged.
+    from manyfaced.common.faces import get_face, is_http_port  # noqa: PLC0415
+
+    spec = get_face(listen_port)
+    if spec is not None and not is_http_port(listen_port):
+        _handle_non_http_connection(
+            connection_socket, args, bot_ip, update_event, listen_port, spec
+        )
+        return
+
+    message = receive_timeout(connection_socket, BOT_TIMEOUT)
+    if not message:
+        return
 
     handler = HTTPHandler(args, update_event, listen_port=listen_port)
     output_data = handler.handle_request(message, bot_ip=bot_ip)
@@ -295,6 +315,81 @@ def _handle_bot_connection(
 
         _get_router().clear_handler_instances()
         connection_socket.close()
+
+
+def _handle_non_http_connection(
+    connection_socket: 'socket.socket',
+    args,
+    bot_ip: str,
+    update_event: _MpEvent,
+    listen_port: int,
+    spec,
+) -> None:
+    """Handle a non-HTTP face connection via the port-keyed registry (issue #377).
+
+    Model: PRELUDE (server-first greet on accept) → EXCHANGE (read client
+    frame, reply, optionally capture credentials). For client-first faces the
+    greeting is empty and we go straight to the exchange.
+
+    Args:
+        connection_socket: The client socket.
+        args: CLI arguments namespace.
+        bot_ip: Source IP.
+        update_event: Shutdown event (unused here, kept for signature parity).
+        listen_port: The bound port the client connected to.
+        spec: The resolved ``FaceSpec`` from ``manyfaced.common.faces``.
+    """
+    from manyfaced.common.faces import FaceSpec  # noqa: PLC0415
+
+    assert isinstance(spec, FaceSpec)
+
+    # ── PRELUDE: send the server-first greeting (before any recv) ──────────
+    if spec.direction == 'server-first' and spec.greeting:
+        try:
+            connection_socket.sendall(spec.greeting)
+        except socket.error:
+            return
+
+    # ── EXCHANGE: read the client's frame (auth / request) ─────────────────
+    message = receive_timeout(connection_socket, BOT_TIMEOUT)
+    raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
+
+    reply = b''
+    if raw_bytes and spec.respond is not None:
+        try:
+            reply = spec.respond(raw_bytes, bot_ip) or b''
+        except Exception as e:  # never let a handler blow up the dispatch loop
+            logger.debug('face %s respond error: %s', spec.name, e)
+            reply = b''
+
+    # ── SSH: drive the binary credential capture after the banner ──────────
+    if spec.name == 'ssh':
+        creds = _capture_credentials(connection_socket, bot_ip, spec.greeting)
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        if creds:
+            bs.login = creds
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Interactive (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL) credential capture
+    if spec.capture_creds and reply:
+        creds = _capture_credentials(connection_socket, bot_ip, reply)
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        if creds:
+            bs.login = creds
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Client-first reply (Redis/Memcached/MongoDB/Zookeeper/Postgres/ES) ──
+    if reply:
+        try:
+            connection_socket.sendall(reply)
+        except socket.error:
+            pass
+
+    # Always record the probe (greeting-only / no-credential exchanges too).
+    bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+    _enrich_and_send_bear(bs, bot_ip)
 
 
 def create_server(args, update_event: _MpEvent, port: int) -> bool:
@@ -434,6 +529,12 @@ def main(args, update_event):
 
     port_mode = getattr(args, 'port_mode', 'single')
     top_ports = getattr(args, 'top_ports', '')
+
+    # Register args so the non-HTTP face dispatch (issue #377) can reach the
+    # report server host/port when enriching + queuing captures.
+    from manyfaced.handlers.http_handler import set_enrich_args  # noqa: PLC0415
+
+    set_enrich_args(args)
 
     if port_mode == 'all':
         ports = list(range(1, 65536))
