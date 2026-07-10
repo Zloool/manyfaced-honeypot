@@ -235,7 +235,12 @@ class StorageBackend(ABC):
     # (SQLiteStorage, PostgreSQLStorage) override these; calling the base raises.
 
     def recent_records(
-        self, limit: int = 50, since: str | None = None, offset: int = 0
+        self,
+        limit: int = 50,
+        since: str | None = None,
+        offset: int = 0,
+        ip: str | None = None,
+        host: str | None = None,
     ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
@@ -244,10 +249,16 @@ class StorageBackend(ABC):
             since: Optional inclusive lower bound on ``timestamp`` (already
                 formatted as the column's textual ``%Y-%m-%d %H:%M:%S.%f``).
             offset: Rows to skip from the newest end (pagination). Defaults to 0.
+            ip: Optional ``bot_ip`` filter (issue #366) — scope the capture log
+                to a single attacker IP clicked from the IoC panel.
+            host: Optional ``request_raw`` substring filter (issue #366) — scope
+                the log to requests that carried a C2/download host.
         """
         raise NotImplementedError('recent_records not implemented by this backend')
 
-    def count_recent(self, since: str | None = None) -> int:
+    def count_recent(
+        self, since: str | None = None, ip: str | None = None, host: str | None = None
+    ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316) so older rows stay
