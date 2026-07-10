@@ -482,7 +482,9 @@ def _payload_with_scope(payload: dict, page: int, ip: str | None, host: str | No
             limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
         )
         log_rows = _data.group_log_rows(raw_recent)
-        interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host)
+        interesting = store.fetch_interesting_raws(
+            since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host
+        )
         payloads = _build_payloads(interesting)
     finally:
         # Do NOT close: see _build_payload's identical comment.
