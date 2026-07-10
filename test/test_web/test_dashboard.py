@@ -675,9 +675,9 @@ def test_build_payloads_drops_benign_and_favicon_and_ranks_crit_above_info():
     out = _dash_mod._build_payloads(rows)
     assert len(out) == 2
     # crit (login captured) must rank ABOVE info.
-    assert out[0].startswith('POST /login')
+    assert out[0]['raw'].startswith('POST /login')
     # benign + favicon + bare HEAD all gone.
-    joined = '\n'.join(out)
+    joined = '\n'.join(r['raw'] for r in out)
     assert 'favicon.ico' not in joined
     assert 'GET /admin' not in joined
 
@@ -788,7 +788,7 @@ def test_build_payload_uses_interesting_raws(tmp_path, monkeypatch):
         }
     )
     payload = _dash_mod._build_payload('24h', 'tok', page=1)
-    joined = '\n'.join(payload['payloads'])
+    joined = '\n'.join(r['raw'] for r in payload['payloads'])
     assert 'favicon' not in joined
     # The benign row is gone; the unknown drop host remains.
     assert '91.92.40.118' in joined

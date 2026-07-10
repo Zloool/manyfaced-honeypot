@@ -591,33 +591,73 @@ def _render_log_section(payload: dict) -> str:
 """
 
 
+def render_payloads_rows(payload: dict) -> str:
+    """Render the Payloads panel rows (issue #368 follow-up).
+
+    Each row carries the same ``data-*`` attributes as a capture-log entry
+    (``data-ports``/``data-method``/``data-cc``/``data-ip``/``data-service``/
+    ``data-search``) so the client's existing toolbar filters (port chips,
+    method/search box, country/service/ip intel rows) match Payloads rows the
+    same way they match the capture log, instead of the panel staying static
+    while every other control filters.
+    """
+    payloads = payload.get('payloads') or []
+    if not payloads:
+        return ''
+    total = len(payloads)
+    items = []
+    for i, p in enumerate(payloads, 1):
+        method_label, _cls = _method_badge(p.get('request_command') or '')
+        service = detected_id_name(p.get('detected_id'))
+        port = p.get('listen_port') or 0
+        text = p.get('raw') or ''
+        data_method = method_label if method_label in ('GET', 'POST') else 'OTHER'
+        search = _esc(
+            ' '.join([p.get('bot_ip') or '', p.get('bot_country') or '', service, text]).lower()
+        )
+        attrs = (
+            f'data-ports="{port}" data-method="{data_method}" '
+            f'data-cc="{_esc(p.get("bot_country"))}" data-ip="{_esc(p.get("bot_ip"))}" '
+            f'data-service="{_esc(service)}" data-search="{search}"'
+        )
+        items.append(
+            f'<div class="payload-row" {attrs}>'
+            '<div class="log-raw-meta payload-meta">'
+            f'<b>PAYLOAD {i:02d}/{total:02d}</b>'
+            f'<span>bot_ip <b>{_esc(p.get("bot_ip") or "—")}</b></span>'
+            f'<span>port <b>{port}</b></span>'
+            f'<span>{len(text)} chars</span>'
+            '</div>'
+            f'<pre class="log-raw">{_esc(text)}</pre>'
+            '</div>'
+        )
+    return ''.join(items)
+
+
 def _render_payloads_section(payload: dict) -> str:
     """Raw captured request payloads, surfaced right after the capture log.
 
     Each entry is the actual bytes an attacker sent (already truncated +
     escaped server-side). Lets operators eyeball exploit payloads (wget drops,
-    SQLi, traversal) without expanding every log row.
+    SQLi, traversal) without expanding every log row. ``#payloads-rows`` is a
+    dedicated fragment target (mirroring ``#log-rows``) so the client's
+    fetch-based refresh (IoC clicks, range switch, live poll) can replace just
+    the rows in place — the panel used to never refresh after first paint.
     """
     payloads = payload.get('payloads') or []
-    if not payloads:
-        items = '<p class="section-hint">no payloads captured yet</p>'
-    else:
-        total = len(payloads)
-        items = ''.join(
-            f"""<div class="payload-row">
-  <div class="log-raw-meta payload-meta"><b>PAYLOAD {i:02d}/{total:02d}</b><span>{len(p)} chars</span></div>
-  <pre class="log-raw">{_esc(p)}</pre>
-</div>"""
-            for i, p in enumerate(payloads, 1)
-        )
+    rows_html = render_payloads_rows(payload)
+    empty_hidden = ' hidden' if payloads else ''
     return f"""
 <section id="payloads" class="section">
   <div class="section-head">
     <div class="section-title">PAYLOADS</div>
     <div class="rule"></div>
-    <div class="section-hint">raw captured request bytes ({len(payloads)} shown)</div>
+    <div class="section-hint" id="payloads-summary" data-full="raw captured request bytes ({len(payloads)} shown)">raw captured request bytes ({len(payloads)} shown)</div>
   </div>
-  <div class="payloads-box">{items}</div>
+  <div class="payloads-box">
+    <div id="payloads-rows">{rows_html}</div>
+    <div id="payloads-empty" class="log-empty"{empty_hidden}>// no payloads match the current filters</div>
+  </div>
 </section>
 """
 
@@ -700,7 +740,7 @@ def render_fragment(payload: dict) -> bytes:
         'ioc': _render_ioc_section(payload),
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
-        'payloads': _render_payloads_section(payload),
+        'payloads-rows': render_payloads_rows(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]

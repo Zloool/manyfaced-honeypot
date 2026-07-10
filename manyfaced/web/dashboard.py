@@ -283,12 +283,18 @@ def _is_payload_noise(row: dict) -> bool:
 _SEV_RANK = {'crit': 2, 'warn': 1, 'info': 0}
 
 
-def _build_payloads(rows: list[dict]) -> list[str]:
+def _build_payloads(rows: list[dict]) -> list[dict]:
     """Shape interesting raw rows into truncated display payloads (issue #362).
 
     Drops benign-scanner rows (already excluded in SQL) plus favicon/noise
     probes, then ranks survivors by severity (crit > warn > info) and recency
     and truncates the top ``_PAYLOADS_LIMIT`` for display.
+
+    Each returned dict carries ``raw`` (truncated text) plus ``bot_ip`` /
+    ``listen_port`` / ``bot_country`` / ``request_command`` / ``detected_id``
+    so the dashboard's toolbar filters (port/country/service/method/search)
+    can match Payloads panel rows the same way they match capture-log rows
+    (issue #368) instead of leaving the panel static.
     """
     survivors = [
         r for r in rows if r.get('classification') != 'benign' and not _is_payload_noise(r)
@@ -297,7 +303,17 @@ def _build_payloads(rows: list[dict]) -> list[str]:
         key=lambda r: (_SEV_RANK.get(_data.severity_for(r), 0), r.get('raw') or ''),
         reverse=True,
     )
-    return [_truncate_payload(r['raw']) for r in survivors[:_PAYLOADS_LIMIT]]
+    return [
+        {
+            'raw': _truncate_payload(r.get('raw') or ''),
+            'bot_ip': r.get('bot_ip') or '',
+            'listen_port': _data.display_port(r.get('listen_port')),
+            'bot_country': r.get('bot_country') or '',
+            'request_command': r.get('request_command') or '',
+            'detected_id': r.get('detected_id'),
+        }
+        for r in survivors[:_PAYLOADS_LIMIT]
+    ]
 
 
 def _build_payload(
@@ -373,7 +389,14 @@ def _build_payload(
         # (wget drops, SQLi, traversal) without expanding each log entry.
         # fetch_interesting_raws drops benign scanners + favicon noise and ranks
         # survivors by severity; the SQL keeps it confined to URL-bearing rows.
-        interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_LIMIT * 20)
+        # Stays all-time (since=None) by design — it's a standing top-severity
+        # list, not tied to the volume/log range picker — but ip/host DO scope
+        # it, so clicking an IoC entry filters Payloads along with the capture
+        # log instead of leaving it showing unrelated all-time findings
+        # (issue #368).
+        interesting = store.fetch_interesting_raws(
+            since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host
+        )
         payloads = _build_payloads(interesting)
 
         configured_ports = _config.settings.resolve_ports()

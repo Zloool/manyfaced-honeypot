@@ -311,7 +311,13 @@ class StorageBackend(ABC):
         """
         raise NotImplementedError('fetch_request_raws not implemented by this backend')
 
-    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+    def fetch_interesting_raws(
+        self,
+        since: str | None = None,
+        limit: int = 20000,
+        ip: str | None = None,
+        host: str | None = None,
+    ) -> list[dict]:
         """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
 
         Unlike :meth:`fetch_request_raws` (which returns bare ``request_raw``
@@ -319,8 +325,10 @@ class StorageBackend(ABC):
         benign scanner noise and rank survivors by severity. Each row is a dict
         with keys ``raw`` (the ``request_raw`` text), ``classification``, and
         ``detected_id``, plus ``request_path`` / ``request_command`` / ``login``
-        so callers can feed the row to :func:`manyfaced.web.dashboard_data.
-        severity_for` without a second round-trip.
+        / ``bot_ip`` / ``listen_port`` / ``bot_country`` so callers can feed the
+        row to :func:`manyfaced.web.dashboard_data.severity_for` without a
+        second round-trip and can filter/label the Payloads panel by the same
+        attacker metadata the capture log shows.
 
         The ``(classification IS NULL OR classification != 'benign')`` predicate
         excludes known research scanners (Shodan/Censys/Rapid7/Shadowserver,
@@ -328,6 +336,11 @@ class StorageBackend(ABC):
         ``LIKE '%://%'`` predicate keeps the read confined to payload-bearing
         rows. Rows are returned newest-first (``ORDER BY timestamp DESC``); the
         caller re-ranks by severity. ``limit`` bounds the work.
+
+        ``ip``/``host`` mirror :meth:`recent_records` (issue #366/#368) — scope
+        the Payloads panel to the same attacker IP or C2/download host clicked
+        from the IoC panel, so the panel isn't stuck showing all-time findings
+        once an IoC filter is active.
 
         Concrete subclasses override this; the base raises.
         """
@@ -1125,12 +1138,19 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading request_raw payloads from SQLite storage')
             return []
 
-    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+    def fetch_interesting_raws(
+        self,
+        since: str | None = None,
+        limit: int = 20000,
+        ip: str | None = None,
+        host: str | None = None,
+    ) -> list[dict]:
         """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
 
         See the base-class docstring. Mirrors :meth:`fetch_request_raws` but
         returns rows (dicts) so the dashboard can drop benign noise and rank by
         severity, and filters ``classification = 'benign'`` out up front.
+        ``ip``/``host`` mirror :meth:`recent_records`'s IoC scoping (issue #368).
         """
         if self._conn is None:
             return []
@@ -1142,10 +1162,17 @@ class SQLiteStorage(StorageBackend):
         if since is not None:
             clauses.append('timestamp >= ?')
             params.append(since)
+        if ip is not None:
+            clauses.append('bot_ip = ?')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw LIKE ?')
+            params.append('%' + host + '%')
         where = ' WHERE ' + ' AND '.join(clauses)
         sql = (
             f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608
-            f'request_command, login FROM honeypot_bears{where} '
+            f'request_command, login, bot_ip, listen_port, bot_country '
+            f'FROM honeypot_bears{where} '
             'ORDER BY timestamp DESC LIMIT ?'
         )
         try:
@@ -1158,6 +1185,9 @@ class SQLiteStorage(StorageBackend):
                 request_path,
                 request_command,
                 login,
+                bot_ip,
+                listen_port,
+                bot_country,
             ) in rows:
                 if not request_raw:
                     continue
@@ -1169,6 +1199,9 @@ class SQLiteStorage(StorageBackend):
                         'request_path': request_path,
                         'request_command': request_command,
                         'login': login,
+                        'bot_ip': bot_ip,
+                        'listen_port': listen_port,
+                        'bot_country': bot_country,
                     }
                 )
             return out
@@ -1726,12 +1759,19 @@ class PostgreSQLStorage(StorageBackend):
                 logger.exception('Error reading request_raw payloads from PostgreSQL storage')
                 return []
 
-    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+    def fetch_interesting_raws(
+        self,
+        since: str | None = None,
+        limit: int = 20000,
+        ip: str | None = None,
+        host: str | None = None,
+    ) -> list[dict]:
         """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
 
         See the base-class docstring. Mirrors :meth:`fetch_request_raws` but
         returns rows (dicts) so the dashboard can drop benign noise and rank by
         severity, and filters ``classification = 'benign'`` out up front.
+        ``ip``/``host`` mirror :meth:`recent_records`'s IoC scoping (issue #368).
         """
         if self._conn is None and not self._ensure_connected():
             return []
@@ -1743,10 +1783,17 @@ class PostgreSQLStorage(StorageBackend):
         if since is not None:
             clauses.append('timestamp >= %s')
             params.append(since)
+        if ip is not None:
+            clauses.append('bot_ip = %s')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw ILIKE %s')
+            params.append('%' + host + '%')
         where = ' WHERE ' + ' AND '.join(clauses)
         sql = (
             f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608
-            f'request_command, login FROM honeypot_bears{where} '
+            f'request_command, login, bot_ip, listen_port, bot_country '
+            f'FROM honeypot_bears{where} '
             'ORDER BY timestamp DESC LIMIT %s'
         )
         try:
@@ -1778,6 +1825,9 @@ class PostgreSQLStorage(StorageBackend):
                 request_path,
                 request_command,
                 login,
+                bot_ip,
+                listen_port,
+                bot_country,
             ) in rows:
                 if not request_raw:
                     continue
@@ -1789,6 +1839,9 @@ class PostgreSQLStorage(StorageBackend):
                         'request_path': request_path,
                         'request_command': request_command,
                         'login': login,
+                        'bot_ip': bot_ip,
+                        'listen_port': listen_port,
+                        'bot_country': bot_country,
                     }
                 )
             return out
