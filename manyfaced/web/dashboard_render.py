@@ -602,9 +602,13 @@ def _render_payloads_section(payload: dict) -> str:
     if not payloads:
         items = '<p class="section-hint">no payloads captured yet</p>'
     else:
+        total = len(payloads)
         items = ''.join(
-            f'<div class="payload-row"><pre class="payload-pre">{_esc(p)}</pre></div>'
-            for p in payloads
+            f"""<div class="payload-row">
+  <div class="log-raw-meta payload-meta"><b>PAYLOAD {i:02d}/{total:02d}</b><span>{len(p)} chars</span></div>
+  <pre class="log-raw">{_esc(p)}</pre>
+</div>"""
+            for i, p in enumerate(payloads, 1)
         )
     return f"""
 <section id="payloads" class="section">
