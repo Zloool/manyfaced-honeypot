@@ -86,6 +86,7 @@ _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 # Capture-log page size (issue #316) — one page is rendered server-side per
 # request; older rows are reached via the paginator (offset-based).
 _LOG_PAGE_SIZE = 50
+_PAYLOADS_LIMIT = 25
 
 
 def _token_valid(token: str | None) -> bool:
@@ -171,20 +172,55 @@ def _shape_volume_bars(volume_raw: list[dict], range_str: str) -> list[dict]:
 _C2_RAW_SCAN_LIMIT = 20000
 _C2_TOP_N = 15
 
-# Hosts embedded in request_raw URLs. We want bare hosts only (no scheme, path,
-# port, or credentials) so the panel reads as a blocklist, not raw payload text.
-_C2_HOST_RE = re.compile(r'https?://([^/\s\'"<>]+)')
+# C2 / malware-download hosts. We want bare hosts only (no scheme, path, port,
+# or credentials) so the panel reads as a blocklist, not raw payload text.
+#
+# False-positive guard (operator feedback): the raw request contains MANY
+# benign URLs — the honeypot's own response links, attacker-referenced legit
+# sites, reflected `Host:`/`Referer` headers, etc. So we DO NOT match every
+# `http(s)://host`. We only count a host when it appears in a *download*
+# context — preceded by a fetch tool (wget/curl/tftp/ftp/busybox) or command
+# substitution (`$(...)` / backticks), which is exactly how Mirai-style router
+# RCE drops its payload. Everything else is noise and is ignored.
+_C2_HOST_RE = re.compile(
+    r'(?:'
+    r'(?:\$\(|`|\b(?:wget|curl|tftp|ftp|busybox|tftpget|nc)\b[^\\n]{0,80}?)'
+    r'https?://([0-9A-Za-z.\-]+)(?::\d+)?'
+    r')',
+    re.IGNORECASE,
+)
+
+# Hosts that are never real C2 drop targets — skip them so the panel isn't
+# polluted by the honeypot's own infra or private/reserved space.
+_C2_IGNORE_HOSTS = frozenset(
+    {
+        'localhost',
+        '127.0.0.1',
+        '0.0.0.0',
+        '::1',
+    }
+)
+
+
+def _is_plausible_c2_host(host: str) -> bool:
+    if not host or host.lower() in _C2_IGNORE_HOSTS:
+        return False
+    # Drop private / loopback / link-local / reserved IP ranges.
+    if re.fullmatch(r'(10|127|172\.(1[6-9]|2\d|3[01])|192\.168|169\.254)\.\d{1,3}\.\d{1,3}', host):
+        return False
+    if host.lower().endswith(('.local', '.internal', '.example', '.invalid', '.test')):
+        return False
+    return True
 
 
 def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> list[dict]:
     """Rank C2 / malware-download hosts found inside ``request_raw`` payloads.
 
-    The honeypot captures raw bytes (``wget http://<host>/...`` injected into a
-    D-Link/Tenda CGI RCE, etc.) but has no dedicated column for the drop host,
-    so we scan ``request_raw`` text for ``http(s)://host`` patterns and rank by
-    mention frequency. ``store.fetch_request_raws`` already confines the read to
-    URL-bearing rows and bounds it by ``since`` + a row limit, so this stays
-    cheap on a multi-million-row DB.
+    Only hosts seen in a *download* context (a fetch tool or command
+    substitution immediately before the URL) are counted — this filters out the
+    benign URLs that otherwise flood the panel (the honeypot's own links,
+    reflected attacker URLs, `Host:`/`Referer` headers, etc.). Hosts in
+    private/reserved space or on the ignore list are dropped too.
     """
     try:
         rows = store.fetch_request_raws(since=since, limit=_C2_RAW_SCAN_LIMIT)
@@ -194,8 +230,24 @@ def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> 
     counts: Counter[str] = Counter()
     for raw in rows:
         for m in _C2_HOST_RE.finditer(raw or ''):
-            counts[m.group(1)] += 1
+            host = m.group(1)
+            if _is_plausible_c2_host(host):
+                counts[host] += 1
     return [{'host': h, 'count': c} for h, c in counts.most_common(top_n)]
+
+
+# Cap raw payload display length so a multi-KB captured request (or a giant
+# injected string) can't blow out the Payloads panel layout.
+_PAYLOAD_PREVIEW_CHARS = 400
+
+
+def _truncate_payload(raw: str) -> str:
+    """Return a display-safe, length-bounded copy of a raw request payload."""
+    raw = (raw or '').replace('\r\n', '\n').replace('\r', '\n')
+    if len(raw) > _PAYLOAD_PREVIEW_CHARS:
+        raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
+        raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
+    return raw
 
 
 def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
@@ -253,6 +305,13 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         raw_recent = store.recent_records(limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset)
         log_rows = _data.group_log_rows(raw_recent)
 
+        # Raw captured payloads (issue #350 follow-up): surface the actual
+        # attacker request bytes in a dedicated "Payloads" panel right after the
+        # capture log, so operators can eyeball exploit payloads (wget drops,
+        # SQLi, traversal) without expanding each log entry. Bounded + cheap.
+        raw_payloads = store.fetch_request_raws(since=None, limit=_PAYLOADS_LIMIT)
+        payloads = [_truncate_payload(r) for r in raw_payloads if r]
+
         configured_ports = _config.settings.resolve_ports()
         # Weight keyed by EXTERNAL port (resolve_display_ports returns external
         # ports, and by_port keys are the bound ports the captures were stored
@@ -302,6 +361,7 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         'ioc_since': overview_since,
         'volume_bars': volume_bars,
         'log_rows': log_rows,
+        'payloads': payloads,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
     }
 

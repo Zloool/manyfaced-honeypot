@@ -591,6 +591,33 @@ def _render_log_section(payload: dict) -> str:
 """
 
 
+def _render_payloads_section(payload: dict) -> str:
+    """Raw captured request payloads, surfaced right after the capture log.
+
+    Each entry is the actual bytes an attacker sent (already truncated +
+    escaped server-side). Lets operators eyeball exploit payloads (wget drops,
+    SQLi, traversal) without expanding every log row.
+    """
+    payloads = payload.get('payloads') or []
+    if not payloads:
+        items = '<p class="section-hint">no payloads captured yet</p>'
+    else:
+        items = ''.join(
+            f'<div class="payload-row"><pre class="payload-pre">{_esc(p)}</pre></div>'
+            for p in payloads
+        )
+    return f"""
+<section id="payloads" class="section">
+  <div class="section-head">
+    <div class="section-title">PAYLOADS</div>
+    <div class="rule"></div>
+    <div class="section-hint">raw captured request bytes ({len(payloads)} shown)</div>
+  </div>
+  <div class="payloads-box">{items}</div>
+</section>
+"""
+
+
 # ---------------------------------------------------------------------------
 # Full page + fragment entry points
 # ---------------------------------------------------------------------------
@@ -618,7 +645,7 @@ def render_page(payload: dict) -> str:
 <nav class="top">
   <a href="#top" class="brand">MANYFACED<span class="brand-dim">_HONEYPOT</span></a>
   <div class="nav-links">
-    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#ioc">IOC</a><a href="#log">LOG</a>
+    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#ioc">IOC</a><a href="#log">LOG</a><a href="#payloads">PAYLOADS</a>
   </div>
   <div class="nav-right">
     <span class="live-pill"><span class="dot"></span>LIVE</span>
@@ -633,6 +660,7 @@ def render_page(payload: dict) -> str:
 {_render_intel_section(payload)}
 {_render_ioc_section(payload)}
 {_render_log_section(payload)}
+{_render_payloads_section(payload)}
 <div class="footer">MANYFACED HONEYPOT &middot; read-only, token-gated &middot; generated {generated}</div>
 </main>
 <script>window.__MFD__ = {bootstrap};</script>
@@ -668,6 +696,7 @@ def render_fragment(payload: dict) -> bytes:
         'ioc': _render_ioc_section(payload),
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
+        'payloads': _render_payloads_section(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]

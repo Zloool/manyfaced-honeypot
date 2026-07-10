@@ -115,7 +115,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-card{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:15px 16px}
 .intel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .intel-title{font-size:12px;letter-spacing:1px;color:#d3ffe4;text-transform:uppercase}
-.intel-row{display:grid;grid-template-columns:20px 1fr 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
+.intel-row{display:grid;grid-template-columns:20px minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
 .intel-row.active{background:rgba(120,255,170,.09)}
 .intel-rank{font-size:11px;color:#2f5c40;text-align:right}
 .intel-label-row{display:flex;align-items:baseline;gap:8px}
@@ -129,8 +129,8 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-fill.danger{background:#ff6b74}
 .intel-count{font-size:12px;color:#83f5ae;text-align:right;font-variant-numeric:tabular-nums}
 
-.ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-.ioc-row{display:grid;grid-template-columns:1fr 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
+.ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.ioc-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
   border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace}
 .ioc-row .ioc-value{font-size:12px;color:#ffcf5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ioc-row .intel-count{color:#ff9aa0}
@@ -142,6 +142,10 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   color:#d3ffe4;font-size:12px;padding:8px 11px 8px 26px;outline:none}
 
 .log-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden}
+.payloads-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto}
+.payload-row{border-bottom:1px solid rgba(120,255,170,.07);padding:8px 12px}
+.payload-row:last-child{border-bottom:none}
+.payload-pre{margin:0;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;color:#8fe6ac;text-transform:none}
 .log-head-row{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
   border-bottom:1px solid rgba(120,255,170,.14);font-size:10px;letter-spacing:1px;color:#2f5c40;text-transform:uppercase}
 .log-empty{padding:34px;text-align:center;color:#3f7a55;font-size:13px}
@@ -196,6 +200,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   .nav-right{margin-left:auto;gap:10px;flex-wrap:wrap;justify-content:flex-end}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
+  /* Intel / IoC grids: single column so the 260px min never exceeds the
+     viewport, and long host/IP values wrap instead of forcing horizontal
+     overflow (the "hive telemetry too wide on mobile" report, issue #359b). */
+  .intel-grid,.ioc-grid{grid-template-columns:1fr}
+  .ioc-row .ioc-value{white-space:normal;word-break:break-all;overflow:visible;text-overflow:clip}
+  .hero-canvas-wrap{height:300px}
 }
 """
 

