@@ -198,6 +198,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   .brand{font-size:20px}
   .nav-links{gap:12px;order:3;width:100%;justify-content:flex-start}
   .nav-right{margin-left:auto;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .hero-title{font-size:34px}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
   /* Intel / IoC grids: single column so the 260px min never exceeds the
