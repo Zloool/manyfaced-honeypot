@@ -450,3 +450,147 @@ def is_http_port(listen_port: int | None) -> bool:
         return False
     ext = _ports.external_port(listen_port)
     return int(ext) in (80, 443, 8080, 8443, 5000, 7001, 7002, 8888, 9090)
+
+
+# ---------------------------------------------------------------------------
+# UDP face registry (issue #388)
+#
+# SIP (5060) and SNMP (161) are the #3 / top-10 most-targeted protocols in the
+# Jan-2026 honeypot landscape yet are UDP, so they were invisible until the UDP
+# transport was added. The TCP FACE_REGISTRY above is untouched; UDP faces live
+# in their own registry keyed by external UDP port and are dispatched by the
+# UDP listener in client.py. They reuse the same FaceSpec shape (server-first
+# greet on accept / client-first reply to each datagram). For UDP, "greeting"
+# is unused (no connection prelude) and "respond" is called per datagram.
+# ---------------------------------------------------------------------------
+
+from manyfaced.common.status import UNKNOWN_SIP, UNKNOWN_SNMP  # noqa: E402
+
+
+def _sip_respond(raw: bytes, bot_ip: str) -> bytes:
+    """Answer a SIP datagram with a minimal but plausible SIP reply.
+
+    - OPTIONS  -> 200 OK (with Allow + a Server header naming a common PBX)
+    - REGISTER -> 401 Unauthorized (challenges with a WWW-Authenticate so
+                  credential-stuffing bots keep talking / reveal digests)
+    - INVITE   -> 100 Trying then 401 (don't complete the call; toll-fraud
+                  destination is logged by the capture layer, not answered)
+    - anything else -> 200 OK
+    """
+    text = raw.decode('latin-1', errors='replace')
+    method = text.split(None, 1)[0].upper() if text.strip() else ''
+    server = b'Server: Asterisk PBX 18.23.0\r\n'
+    if method == 'REGISTER':
+        return (
+            b'SIP/2.0 401 Unauthorized\r\n'
+            + server
+            + b'WWW-Authenticate: Digest realm="manyfaced", nonce="a1b2c3d4e5", algorithm=MD5\r\n'
+            b'Content-Length: 0\r\n\r\n'
+        )
+    if method == 'INVITE':
+        return b'SIP/2.0 100 Trying\r\n' + server + b'Content-Length: 0\r\n\r\n'
+    # OPTIONS / SUBSCRIBE / NOTIFY / default
+    allow = b'Allow: INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, SUBSCRIBE, INFO\r\n'
+    return b'SIP/2.0 200 OK\r\n' + server + allow + b'Content-Length: 0\r\n\r\n'
+
+
+def _snmp_respond(raw: bytes, bot_ip: str) -> bytes:
+    """Answer an SNMP GET/GETNEXT for the `public` community with sysDescr.
+
+    Returns a valid SNMPv1 response identifying as a common router/switch so
+    recon scanners get a believable device fingerprint. For non-`public`
+    communities or unparseable PDUs, returns an empty reply (stay quiet).
+    """
+    if not raw.startswith(b'\x30'):
+        return b''
+    try:
+        i = 1  # skip SEQUENCE tag
+        i += 1  # length
+        if i >= len(raw):
+            return b''
+        if raw[i : i + 3] != b'\x02\x01\x00' and raw[i : i + 3] != b'\x02\x01\x01':
+            return b''
+        i += 3
+        if raw[i] != 0x04:  # OCTET STRING (community)
+            return b''
+        i += 1
+        clen = raw[i]
+        i += 1
+        community = raw[i : i + clen]
+        if community != b'public':
+            return b''
+    except IndexError:
+        return b''
+
+    sysdescr = b'Manyfaced Router Software, Version 15.1(4)M, RELEASE SOFTWARE'
+    oid = bytes([0x06, 0x09, 0x2B, 0x06, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00])
+    val = bytes([0x04]) + bytes([len(sysdescr)]) + sysdescr
+    varbind = bytes([0x30, len(oid) + len(val)]) + oid + val
+    varbind_list = bytes([0x30, len(varbind)]) + varbind
+    req_id = raw[3:6] if len(raw) > 5 else b'\x01\x00\x00'
+    pdu = (
+        bytes([0xA2])
+        + bytes([2 + 3 + 3 + len(varbind_list)])
+        + req_id
+        + b'\x02\x01\x00'  # error-status 0
+        + b'\x02\x01\x00'  # error-index 0
+        + varbind_list
+    )
+    resp = (
+        bytes([0x30])
+        + bytes([len(pdu)])
+        + b'\x02\x01\x00'
+        + bytes([0x04, len(community)])
+        + community
+        + pdu
+    )
+    return resp
+
+
+# UDP face table: external_udp_port -> (detected_id, name, respond_fn, capture_creds)
+_UDP_FACE_DEFS: dict[int, tuple] = {
+    5060: (UNKNOWN_SIP, 'sip', _sip_respond, True),
+    161: (UNKNOWN_SNMP, 'snmp', _snmp_respond, False),
+}
+
+
+def _build_udp_registry() -> dict[int, FaceSpec]:
+    """Compose UDP_FACE_REGISTRY from the canonical UDP port tables."""
+    reg: dict[int, FaceSpec] = {}
+    for ext_port, (detected_id, name, respond_fn, cap) in _UDP_FACE_DEFS.items():
+        reg[ext_port] = FaceSpec(
+            name=name,
+            detected_id=detected_id,
+            direction=CLIENT_FIRST,
+            greeting=b'',
+            respond=respond_fn,
+            capture_creds=cap,
+        )
+    return reg
+
+
+UDP_FACE_REGISTRY: dict[int, FaceSpec] = _build_udp_registry()
+
+
+def get_udp_face(listen_port: int | None) -> FaceSpec | None:
+    """Resolve a UDP face spec from the port the datagram arrived on.
+
+    Args:
+        listen_port: the bound (high) UDP port the honeypot accepted on.
+
+    Returns:
+        The matching UDP ``FaceSpec`` (by external port) or ``None`` if the port
+        is not a UDP face.
+    """
+    if not listen_port:
+        return None
+    ext = _ports.external_udp_port(listen_port)
+    return UDP_FACE_REGISTRY.get(int(ext))
+
+
+def is_udp_port(listen_port: int | None) -> bool:
+    """True when ``listen_port`` is a UDP face the UDP listener owns."""
+    if not listen_port:
+        return False
+    ext = _ports.external_udp_port(listen_port)
+    return int(ext) in _UDP_FACE_DEFS

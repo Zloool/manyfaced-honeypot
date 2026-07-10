@@ -44,6 +44,20 @@ _PROTOCOL_SIGNATURES = [
         re.compile(rb'^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n'),
         b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n',
     ),
+    # SIP (UDP) — request-line verbs or a SIP/2.0 status line. SIP runs over
+    # UDP 5060; detected here so UDP payloads can be classified even though the
+    # UDP face dispatch is port-keyed (issue #388/#389). Placed BEFORE the DNS
+    # signature because some SIP packets can otherwise trip the loose DNS check.
+    (
+        'sip',
+        re.compile(
+            rb'^(INVITE|ACK|BYE|CANCEL|OPTIONS|REGISTER|SUBSCRIBE|NOTIFY|PUBLISH|MESSAGE|INFO|REFER|PRACK|SIP/2\.0)'
+        ),
+        b'OPTIONS sip:manyfaced SIP/2.0',
+    ),
+    # SNMP (UDP) — version byte + community string. SNMPv1/v2c: 0x30 (SEQUENCE)
+    # 0x02 0x01 0x00/0x01 (version) ... then 0x04 (OCTET STRING = community).
+    ('snmp', re.compile(rb'^\x30.{1,8}\x02\x01[\x00\x01]\x04'), None),
     # DNS-over-TCP: conservative detection requiring valid domain label structure.
     # After 12-byte DNS header, require a label length byte (0x01-0x3f) followed by
     # alphanumeric or hyphen — excludes HTTP/2 PRI and other noise.

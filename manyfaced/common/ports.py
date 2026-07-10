@@ -60,6 +60,74 @@ DEFAULT_TOP_PORTS = [
 PORT_MODES = ('single', 'top', 'all')
 
 
+# ── UDP faces (issue #388) ──────────────────────────────────────────────────
+# The honeypot was TCP-only before the UDP transport work. SIP (5060) and SNMP
+# (161) are the #3 / top-10 most-targeted protocols in the Jan-2026 honeypot
+# landscape yet are UDP, so they were invisible. These are the UDP analogues of
+# DEFAULT_TOP_PORTS / PRIVILEGED_PORT_REDIRECTS, kept SEPARATE so the TCP
+# dispatch logic (iptables redirect → bound high port) is never disturbed.
+DEFAULT_UDP_PORTS = [
+    161,  # SNMP
+    5060,  # SIP
+    53,  # DNS (UDP side; already in TCP top-ports but also served over UDP)
+    123,  # NTP
+    69,  # TFTP
+    1900,  # SSDP / UPnP
+    5353,  # mDNS
+    500,  # IKE / ISAKMP (VPN)
+    1194,  # OpenVPN
+    3478,  # STUN / TURN (WebRTC / VoIP)
+    4500,  # IPsec NAT-T
+    514,  # Syslog
+    1812,  # RADIUS
+    1813,  # RADIUS accounting
+    9201,  # Elasticsearch transport (UDP side)
+]
+
+
+# Privileged UDP ports (<1024) can't be bound by the non-root honeypot user, so
+# they are redirected (via an iptables/nft REDIRECT or the same mechanism as the
+# TCP PRIVILEGED_PORT_REDIRECTS) to a high bound port. This dict mirrors that
+# mapping for UDP. External (attacker-visible) -> bound (honeypot-listened) port.
+UDP_PRIVILEGED_PORT_REDIRECTS: dict[int, int] = {
+    161: 10161,  # SNMP
+    53: 10053,  # DNS (UDP)
+    123: 10123,  # NTP
+    69: 10069,  # TFTP
+    500: 10500,  # IKE
+    514: 10514,  # Syslog
+    1812: 11812,  # RADIUS auth
+    1813: 11813,  # RADIUS acct
+    1900: 11900,  # SSDP
+    5353: 15353,  # mDNS
+    3478: 13478,  # STUN
+    4500: 14500,  # IPsec NAT-T
+}
+
+
+# high (bound) -> priv (external) for UDP, generated inverse; used for display.
+UDP_HIGH_TO_PRIV: dict[int, int] = {
+    high: priv for priv, high in UDP_PRIVILEGED_PORT_REDIRECTS.items()
+}
+
+
+def external_udp_port(port: int | None) -> int:
+    """Map a bound (high) UDP port back to the external privileged port.
+
+    Returns ``port`` unchanged when it is not a known UDP redirect target.
+    """
+    if not port:
+        return 0
+    return UDP_HIGH_TO_PRIV.get(int(port), int(port))
+
+
+def is_udp_redirected(port: int | None) -> bool:
+    """True if ``port`` is a honeypot-bound high UDP port behind a redirect."""
+    if not port:
+        return False
+    return int(port) in UDP_HIGH_TO_PRIV
+
+
 # ── iptables PREROUTING REDIRECT mapping (issue #320) ───────────────────────
 # The honeypot runs as a non-root user, so it cannot bind privileged ports
 # (<1024). On the droplet, iptables PREROUTING REDIRECT rules map each

@@ -605,6 +605,8 @@ def main(args, update_event):
         logger.warning('Listening on ALL 65535 ports – this may take time to start')
         print('WARNING: Listening on all 65535 TCP ports...')
         create_multiport_server(args, update_event, ports)
+        # UDP faces (SIP/SNMP/…) ride along in 'all' mode (issue #388).
+        create_multiport_udp_server(args, update_event, None)
     elif port_mode == 'top':
         if top_ports:
             try:
@@ -620,6 +622,200 @@ def main(args, update_event):
         else:
             ports = _DEFAULT_TOP_PORTS
         create_multiport_server(args, update_event, ports)
+        # UDP faces (SIP/SNMP/…) ride along in 'top' mode (issue #388).
+        create_multiport_udp_server(args, update_event, None)
     else:
         port = args.client
         create_server(args, update_event, port)
+
+
+# ---------------------------------------------------------------------------
+# UDP transport (issue #388)
+#
+# SIP (5060) and SNMP (161) are UDP yet were completely invisible because the
+# honeypot only opened SOCK_STREAM listeners. This adds a parallel UDP datagram
+# path that mirrors the TCP non-HTTP face model: resolve the face by port, call
+# its respond() per datagram, send the reply, and record a capture via the same
+# enrichment pipeline used by the TCP faces.
+# ---------------------------------------------------------------------------
+
+
+def _setup_udp_socket(port: int) -> 'SocketType | None':
+    """Create and bind a UDP server socket on the given port.
+
+    Args:
+        port: Port number to listen on (UDP).
+
+    Returns:
+        Bound UDP socket, or None if binding failed.
+    """
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server_socket.bind(('', port))
+    except PermissionError:
+        logger.warning(
+            'Permission denied binding to UDP port %d (try running as root or use a higher port)',
+            port,
+        )
+        return None
+    except OSError as e:
+        logger.warning('Failed to bind to UDP port %d: %s', port, e)
+        return None
+    return server_socket
+
+
+def _handle_udp_datagram(
+    server_socket: 'socket.socket',
+    data: bytes,
+    bot_addr: tuple,
+    args,
+    listen_port: int,
+) -> None:
+    """Process one UDP datagram against a UDP face and reply + record.
+
+    Args:
+        server_socket: The UDP server socket (used to sendto the reply).
+        data: The raw datagram payload bytes.
+        bot_addr: Tuple of (ip, port) of the sender.
+        args: CLI arguments namespace.
+        listen_port: The UDP port the datagram arrived on.
+    """
+    from manyfaced.common.faces import get_udp_face  # noqa: PLC0415
+    from manyfaced.common.metrics import incr  # noqa: PLC0415
+
+    bot_ip = bot_addr[0] if bot_addr else '127.0.0.1'
+    if bot_ip in _INTERNAL_IPS:
+        return
+
+    incr('bot_connections')
+    spec = get_udp_face(listen_port)
+    if spec is None:
+        # Not a known UDP face — drop silently (no spoofed service).
+        return
+
+    # For SIP, capture any credentials/INVITE destination offered in the payload
+    # before replying (the 401 challenge is what makes bots reveal digests).
+    creds = None
+    if spec.capture_creds:
+        try:
+            text = data.decode('latin-1', errors='replace')
+            creds = _parse_plaintext_credentials(text)
+            # SIP REGISTER often carries Authorization: Digest username="...";
+            # also surface INVITE toll-fraud destinations for the capture record.
+            import re as _re  # noqa: PLC0415
+
+            _inv = _re.search(r'INVITE\s+sip:([^\s@]+)', text)
+            if _inv and not creds:
+                creds = f'invite_dst={_inv.group(1)}'
+        except Exception as e:  # never let a parse blow up the UDP loop
+            logger.debug('udp %s parse error: %s', spec.name, e)
+
+    reply = b''
+    try:
+        if spec.respond is not None:
+            reply = spec.respond(data, bot_ip) or b''
+    except Exception as e:  # never let a handler blow up the UDP loop
+        logger.debug('udp face %s respond error: %s', spec.name, e)
+
+    if reply:
+        try:
+            server_socket.sendto(reply, bot_addr)
+        except socket.error:
+            pass
+
+    # Record the capture (greeting-only / no-credential exchanges too).
+    from manyfaced.handlers.http_handler import (  # noqa: PLC0415
+        _build_bear_storage,
+        _enrich_and_send_bear,
+    )
+
+    bs = _build_bear_storage(bot_ip, spec, data, listen_port)
+    if creds:
+        bs.login = creds if isinstance(creds, str) else str(creds)
+    _enrich_and_send_bear(bs, bot_ip)
+
+
+def create_udp_server(args, update_event: _MpEvent, port: int) -> bool:
+    """Create a single-port UDP honeypot server.
+
+    Args:
+        args: CLI arguments namespace.
+        update_event: Event to signal shutdown.
+        port: UDP port number to listen on.
+
+    Returns:
+        True if the server started, False otherwise.
+    """
+    server_socket = _setup_udp_socket(port)
+    if server_socket is None:
+        return False
+
+    logger.info('Client honeypot (UDP) listening on port %d', port)
+    if args.verbose:
+        print(f'Serving UDP honey on port {port}')
+
+    try:
+        while True:
+            if update_event.is_set():
+                break
+            try:
+                server_socket.settimeout(1.0)
+                data, bot_addr = server_socket.recvfrom(65535)
+            except socket.timeout:
+                continue
+            except (OSError, ConnectionError):
+                break
+            if not data:
+                continue
+            t = threading.Thread(
+                target=_handle_udp_datagram,
+                args=(server_socket, data, bot_addr, args, port),
+                name=f'udp-{bot_addr[0]}:{bot_addr[1]}' if bot_addr else 'udp-?',
+                daemon=True,
+            )
+            t.start()
+    finally:
+        server_socket.close()
+    return True
+
+
+def create_multiport_udp_server(args, update_event: _MpEvent, ports: 'list[int] | None') -> None:
+    """Start UDP honeypot servers on many ports, one thread per port.
+
+    Args:
+        ports: Ports to bind. When None, the canonical DEFAULT_UDP_PORTS are used.
+    """
+    from manyfaced.common.ports import DEFAULT_UDP_PORTS  # noqa: PLC0415
+
+    ports = list(ports or DEFAULT_UDP_PORTS)
+    threads: list[threading.Thread] = []
+    successful_ports: list[int] = []
+    failed_ports: list[int] = []
+
+    def _udp_port_worker(port: int) -> None:
+        if create_udp_server(args, update_event, port):
+            successful_ports.append(port)
+        else:
+            failed_ports.append(port)
+
+    for port in ports:
+        t = threading.Thread(
+            target=_udp_port_worker,
+            args=(port,),
+            name=f'udp-honeyport-{port}',
+            daemon=True,
+        )
+        threads.append(t)
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    if successful_ports:
+        logger.info(
+            'Client honeypot (UDP) listening on %d ports: %s',
+            len(successful_ports),
+            ', '.join(str(p) for p in successful_ports),
+        )
