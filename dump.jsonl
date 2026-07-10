@@ -1,4 +1,0 @@
-"hostname: honeybee\r\nIP: 9.9.9.9\r\ntimestamp: 2026-07-10 11:29:32.360797\r\nUser-Agent: \r\ndetected: 4294967288\r\npath: /\r\ncommand: REDIS\r\nversion: \r\ncountry: United States\r\nDetected: Yes\r\n"
-"hostname: honeybee\r\nIP: 9.9.9.9\r\ntimestamp: 2026-07-10 11:29:32.670499\r\nUser-Agent: \r\ndetected: 4294967292\r\npath: /\r\ncommand: MEMCACHED\r\nversion: \r\ncountry: United States\r\nDetected: No\r\n"
-"hostname: honeybee\r\nIP: 9.9.9.9\r\ntimestamp: 2026-07-10 11:29:32.979271\r\nUser-Agent: \r\ndetected: 4294967292\r\npath: /\r\ncommand: ELASTICSEARCH\r\nversion: \r\ncountry: United States\r\nDetected: No\r\n"
-"hostname: honeybee\r\nIP: 9.9.9.9\r\ntimestamp: 2026-07-10 11:29:32.982570\r\nUser-Agent: \r\ndetected: 4294967293\r\npath: /\r\ncommand: SSH\r\nversion: \r\ncountry: United States\r\nDetected: Yes\r\n"
