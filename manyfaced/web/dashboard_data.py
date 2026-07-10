@@ -118,23 +118,30 @@ def display_port(port: int | None) -> int:
 _MAX_HERO_PORTS = 42
 
 
-def resolve_display_ports(configured_ports: list[int], by_port: list[dict]) -> list[int]:
+def resolve_display_ports(
+    active_external_ports: list[int], configured_ports: list[int]
+) -> list[int]:
     """Return the ports to surface on the dashboard, sorted by port number.
 
-    Every port with at least one historical capture (from ``by_port``) is
-    shown — resolved to its EXTERNAL (attacker-visible) port and de-duplicated
-    — so the display reflects real activity, not a curated guess. Only when
-    nothing has been captured yet do we fall back to the configured listening
-    ports (capped) so the panel isn't empty on a fresh honeypot.
+    Every port that has taken at least one hit from a non-benign sender is
+    shown — resolved to its EXTERNAL (attacker-visible) port and
+    de-duplicated — so the display reflects real malicious activity, never a
+    curated/configured guess and never ports kept "warm" only by benign
+    research scanners (Shodan/Censys/Rapid7/Shadowserver — see
+    :mod:`manyfaced.common.classification`). ``active_external_ports`` is the
+    already-resolved, de-duplicated list of external ports that have a real
+    non-benign capture (built by the caller from
+    :func:`manyfaced.db.storage.nonbenign_ports`).
+
+    Only when nothing has been hit by a non-benign sender do we fall back to
+    the configured listening ports (external view, capped at ``_MAX_HERO_PORTS``)
+    so a brand-new honeypot whose first traffic was all benign doesn't show an
+    empty panel.
     """
-    hit_ports = {int(row['key']) for row in by_port if row.get('key')}
-    if hit_ports:
-        # Resolve bound high ports back to the external privileged port, then
-        # show every active port sorted by number.
-        active = {_ports.external_port(p) for p in hit_ports}
-        return sorted(active)
-    # No activity yet: show the configured listening ports (external view),
-    # capped so an "all" (1-65535) config doesn't explode the panel.
+    if active_external_ports:
+        return sorted(set(active_external_ports))
+    # No non-benign activity yet: show the configured listening ports (external
+    # view), capped so an "all" (1-65535) config doesn't explode the panel.
     fallback = sorted({_ports.external_port(p) for p in configured_ports})
     return fallback[:_MAX_HERO_PORTS]
 

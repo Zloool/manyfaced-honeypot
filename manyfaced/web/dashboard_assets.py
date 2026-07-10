@@ -47,6 +47,10 @@ nav.top{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:22p
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:12px}
 .live-pill{display:inline-flex;align-items:center;gap:7px;color:#83f5ae}
 .dot{width:8px;height:8px;border-radius:50%;background:#3dff88;box-shadow:0 0 9px #3dff88;animation:blink 1.4s infinite;display:inline-block}
+/* Liveness states (issue #409): green=online, amber=quiet (stale but recent),
+   red=offline/stale. Offline stops blinking so it reads as a fault, not a pulse. */
+.dot.quiet{background:#ffcf5c;box-shadow:0 0 9px #ffcf5c;animation:none}
+.dot.offline{background:#ff5c5c;box-shadow:0 0 9px #ff5c5c;animation:none}
 .clock{color:#d3ffe4;font-variant-numeric:tabular-nums;min-width:74px;text-align:right;display:inline-block}
 .btn{font-size:11px;letter-spacing:.5px;padding:5px 11px;border-radius:4px;background:#0c160d;color:#83f5ae;border:1px solid rgba(120,255,170,.25)}
 
@@ -66,6 +70,8 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   overflow:hidden;background:radial-gradient(ellipse at 50% 40%, #0a160d, #050905)}
 .hero-canvas-wrap canvas{width:100%;height:100%;display:block}
 .hero-flag{position:absolute;top:12px;left:14px;font-size:11px;letter-spacing:1px;color:#3dff88;display:flex;align-items:center;gap:7px}
+.hero-flag.quiet{color:#ffcf5c}
+.hero-flag.offline{color:#ff5c5c}
 .hero-legend{position:absolute;bottom:12px;left:14px;display:flex;gap:16px;font-size:11px;color:#4e8768}
 .hero-legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -316,6 +322,54 @@ JS = r"""
     }
     // Keep the pager state in sync with the rendered page (issue #316).
     if (meta.logPage != null) state.page = meta.logPage;
+    // Real liveness: drive the hero "SYSTEM ONLINE" badge + nav LIVE pill off
+    // the last capture time instead of a fixed hard-coded green (issue #409).
+    refreshAlive(meta.lastCapture);
+  }
+
+  // ---------------- liveness (issue #409) ----------------
+  // Stale thresholds: <15m ago => green/online; 15m-2h => amber/quiet;
+  // older / no data => red/offline. The honeypot is a quiet sensor, so the
+  // amber window is generous — only genuinely stale gaps flag as offline.
+  var ALIVE_GREEN_MS = 15 * 60 * 1000;
+  var ALIVE_AMBER_MS = 2 * 60 * 60 * 1000;
+  function _relTime(ms){
+    var s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (d > 0) return d + 'd ' + (h % 24) + 'h ago';
+    if (h > 0) return h + 'h ' + (m % 60) + 'm ago';
+    if (m > 0) return m + 'm ' + (s % 60) + 's ago';
+    return s + 's ago';
+  }
+  function refreshAlive(lastCapture){
+    var flags = $all('.hero-flag');
+    var pill = $('#live-pill');
+    // parse the ISO timestamp (handles ' ' or 'T' separators, with/without frac)
+    var ts = lastCapture ? Date.parse(lastCapture.replace(' ', 'T')) : NaN;
+    var now = Date.now();
+    var label, cls, rel;
+    if (!lastCapture || isNaN(ts)){
+      label = 'NO DATA'; cls = 'offline'; rel = '';
+    } else {
+      var age = now - ts;
+      if (age < ALIVE_GREEN_MS){ label = 'SYSTEM ONLINE'; cls = 'online'; }
+      else if (age < ALIVE_AMBER_MS){ label = 'QUIET'; cls = 'quiet'; }
+      else { label = 'STALE'; cls = 'offline'; }
+      rel = ' · last ' + _relTime(age);
+    }
+    flags.forEach(function(f){
+      var dot = f.querySelector('.dot');
+      var txt = f.querySelector('.hero-flag-text');
+      if (dot) dot.className = 'dot ' + cls;
+      f.className = 'hero-flag ' + cls;
+      if (txt) txt.textContent = label + rel;
+      f.setAttribute('data-last', lastCapture || '');
+    });
+    if (pill){
+      var pd = pill.querySelector('.dot');
+      var pt = pill.querySelector('.live-text');
+      if (pd) pd.className = 'dot ' + cls;
+      if (pt) pt.textContent = (cls === 'online' ? 'LIVE' : cls === 'quiet' ? 'QUIET' : cls === 'offline' ? 'OFFLINE' : 'NO DATA');
+    }
   }
 
   // ---------------- range / port controls ----------------
@@ -728,6 +782,7 @@ JS = r"""
     try { ports = JSON.parse(wrap.getAttribute('data-ports') || '[]'); } catch(e){ ports = []; }
     var mult = Number(wrap.getAttribute('data-mult')) || 6;
     heroRph = wrap.getAttribute('data-rph') || '0';
+    var bcount = Number(wrap.getAttribute('data-bcount')) || ports.length;
     if (!ports.length) return;
 
     var state2 = { ports: ports.map(function(p){ return {p:p.p, s:p.s, w:Math.max(1,p.w), glow:0, flash:0}; }), pulses:[], W:0, H:0 };
@@ -843,7 +898,10 @@ JS = r"""
       }
       ctx.font="14px 'VT323', monospace"; ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
       ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
-      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+heroRph+'/h', ch.x+ch.w-18, ch.y+22);
+      ctx.textAlign='right'; ctx.fillStyle='#3dff88';
+      // Re-read the ports-lit count live so a live-tick refresh updates it.
+      var liveBcount = Number(wrap.getAttribute('data-bcount')) || bcount;
+      ctx.fillText('● '+heroRph+'/h · '+liveBcount+' ports', ch.x+ch.w-18, ch.y+22);
       ctx.textAlign='left';
       ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ch.y+38); ctx.lineTo(ch.x+ch.w-14,ch.y+38); ctx.stroke();
 
@@ -923,7 +981,12 @@ JS = r"""
   // ---------------- notes-less footer / init ----------------
   document.addEventListener('DOMContentLoaded', function(){
     wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero();
+    var hflag = document.getElementById('hero-flag');
+    refreshAlive(hflag ? hflag.getAttribute('data-last') || '' : '');
   });
-  if (document.readyState !== 'loading'){ wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero(); }
+  if (document.readyState !== 'loading'){ wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero();
+    var hflag = document.getElementById('hero-flag');
+    refreshAlive(hflag ? hflag.getAttribute('data-last') || '' : '');
+  }
 })();
 """
