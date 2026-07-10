@@ -300,7 +300,13 @@ def _build_payloads(rows: list[dict]) -> list[str]:
     return [_truncate_payload(r['raw']) for r in survivors[:_PAYLOADS_LIMIT]]
 
 
-def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
+def _build_payload(
+    range_str: str,
+    token: str,
+    page: int = 1,
+    ip: str | None = None,
+    host: str | None = None,
+) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
     ``range_str`` scopes the volume chart + capture log candidate set. The
@@ -309,7 +315,11 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
     not tied to the volume section's local picker (matches the original
     prototype's always-accumulating aggregate).
 
-    ``page`` is the 1-based capture-log page (issue #316).
+    ``page`` is the 1-based capture-log page (issue #316). ``ip``/``host``
+    optionally scope the *capture log* to a single attacker IP or to
+    requests that carried a C2/download host — the server-side pivot from
+    an IoC panel entry to the actual requests it was extracted from
+    (issue #366). Passed through to ``count_recent``/``recent_records``.
     """
     range_str = range_str if range_str in _VOLUME_RANGES else '24h'
     page = max(1, int(page or 1))
@@ -350,9 +360,11 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         # hold far more than one rendered page. We count the whole window once
         # (cheap, index-bound) and page the raw rows by offset so older
         # captures stay reachable.
-        window_total = store.count_recent(since=vol_since)
+        window_total = store.count_recent(since=vol_since, ip=ip, host=host)
         log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
-        raw_recent = store.recent_records(limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset)
+        raw_recent = store.recent_records(
+            limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
+        )
         log_rows = _data.group_log_rows(raw_recent)
 
         # Raw captured payloads (issue #350 follow-up, refined by #362): surface
@@ -469,8 +481,16 @@ def _refresh_cache(token: str) -> None:
             _HTML_CACHE[r] = (now, html_bytes)
 
 
-def _cache_key(range_str: str, page: int) -> str:
-    return f'{range_str}#p{page}'
+def _cache_key(range_str: str, page: int, ip: str | None = None, host: str | None = None) -> str:
+    # Include the IoC scoping filters (issue #366) so a cached payload built
+    # for one IP/host is never served to a different filter (or to the
+    # unfiltered log).
+    scope = ''
+    if ip:
+        scope += f'#ip={ip}'
+    if host:
+        scope += f'#host={host}'
+    return f'{range_str}#p{page}{scope}'
 
 
 def _start_refresher(token: str) -> None:
@@ -542,12 +562,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         port_filter = int(port_raw) if port_raw.isdigit() else None
         page_raw = (qs.get('page') or [''])[0]
         page = int(page_raw) if page_raw.isdigit() and int(page_raw) >= 1 else 1
+        # IoC-panel scoping (issue #366): an IP or C2 host clicked in the
+        # dashboard re-queries the capture log server-side for that indicator.
+        ip_filter = (qs.get('ip') or [None])[0] or None
+        host_filter = (qs.get('host') or [None])[0] or None
 
         try:
             if fmt == 'fragment':
-                key = _cache_key(range_str, page)
+                key = _cache_key(range_str, page, ip_filter, host_filter)
                 cached = _get_cached(_PAYLOAD_CACHE, key)
-                payload = cached or _build_payload(range_str, token or '', page=page)
+                payload = cached or _build_payload(
+                    range_str, token or '', page=page, ip=ip_filter, host=host_filter
+                )
                 if not cached:
                     with _CACHE_LOCK:
                         _PAYLOAD_CACHE[key] = (time.time(), payload)
@@ -559,14 +585,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
             if page > 1:
                 # Deeper pages aren't pre-cached; build on demand.
-                payload = _build_payload(range_str, token or '', page=page)
+                payload = _build_payload(
+                    range_str, token or '', page=page, ip=ip_filter, host=host_filter
+                )
                 body = _render.render_page(payload).encode('utf-8')
                 self._send(body, 'text/html; charset=utf-8')
                 return
 
             body = _get_cached(_HTML_CACHE, range_str)
             if body is None:
-                payload = _build_payload(range_str, token or '', page=1)
+                payload = _build_payload(
+                    range_str, token or '', page=1, ip=ip_filter, host=host_filter
+                )
                 body = _render.render_page(payload).encode('utf-8')
                 with _CACHE_LOCK:
                     _HTML_CACHE[range_str] = (time.time(), body)

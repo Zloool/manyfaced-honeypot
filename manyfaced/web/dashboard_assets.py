@@ -221,7 +221,7 @@ JS = r"""
   'use strict';
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
-                window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
+                host: null, window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
   // Hero canvas readout (real requests/hour, fed from payload.stats.hour_total
   // and refreshed on each live tick). Module-level so applyMeta can update it.
   var heroRph = '0';
@@ -251,10 +251,12 @@ JS = r"""
   // chunks. The boundary can't be predicted ahead of time by anything that
   // ends up embedded in <content> (e.g. attacker-controlled capture text),
   // so it can't be used to forge a fake section split.
-  function fetchFragment(range, port, page){
+  function fetchFragment(range, port, page, ip, host){
     var url = '?token='+encodeURIComponent(CFG.token)+'&format=fragment&range='+encodeURIComponent(range);
     if (port != null) url += '&port='+encodeURIComponent(port);
     if (page != null) url += '&page='+encodeURIComponent(page);
+    if (ip != null) url += '&ip='+encodeURIComponent(ip);
+    if (host != null) url += '&host='+encodeURIComponent(host);
     return fetch(url, {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(text){
       var nl = text.indexOf('\n');
       if (nl < 0) return {};
@@ -409,9 +411,12 @@ JS = r"""
     });
   }
 
-  // ---------------- IoC / C2 panel (issue #361) ----------------
-  // Mirrors wireIntelRows, but IP rows filter the log by data-ip while host
-  // rows copy the candidate to the clipboard AND set the log search grep.
+  // ---------------- IoC / C2 panel (issue #361, fixed by #366) ----------------
+  // Clicking an entry re-queries the capture log SERVER-SIDE for that
+  // indicator across the whole window (not just the ~50 visible rows):
+  // IP rows scope the log to bot_ip; host rows scope to the requests that
+  // carried that C2/download host (request_raw LIKE %host%). Host click also
+  // copies the value to the clipboard for blocklisting.
   function wireIocRows(){
     var iocSection = $('#ioc');
     if (!iocSection || iocSection.__wired) return;
@@ -423,10 +428,12 @@ JS = r"""
       var value = row.getAttribute('data-ioc-value');
       if (type === 'ip'){
         state.ip = (state.ip === value) ? null : value;
+        state.host = null;
         $all('.ioc-row[data-ioc-type="ip"]').forEach(function(r){
           r.classList.toggle('active', r.getAttribute('data-ioc-value') === state.ip);
         });
-        applyFilters();
+        $all('.ioc-row[data-ioc-type="host"]').forEach(function(r){ r.classList.remove('active'); });
+        refreshLog();
       } else if (type === 'host'){
         // Copy the C2/download host for blocklisting (graceful fallback if
         // the async clipboard API is unavailable / not focused).
@@ -443,10 +450,26 @@ JS = r"""
         } catch(_) { /* clipboard blocked — search below still works */ }
         row.classList.add('copied');
         setTimeout(function(){ row.classList.remove('copied'); }, 900);
-        state.search = value.toLowerCase();
-        applyFilters();
+        state.host = (state.host === value) ? null : value;
+        state.ip = null;
+        state.search = '';
+        if (searchInput) searchInput.value = '';
+        $all('.ioc-row[data-ioc-type="host"]').forEach(function(r){
+          r.classList.toggle('active', r.getAttribute('data-ioc-value') === state.host);
+        });
+        $all('.ioc-row[data-ioc-type="ip"]').forEach(function(r){ r.classList.remove('active'); });
+        refreshLog();
       }
     });
+  }
+
+  // Re-fetch the capture-log sections from the server with the current
+  // ip/host scope (issue #366). Reuses the fragment machinery so the log
+  // rows, pager, and filter chips all refresh in place.
+  function refreshLog(){
+    state.page = 1;
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host)
+      .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager']); });
   }
 
   // ---------------- log toolbar ----------------
@@ -506,6 +529,7 @@ JS = r"""
     if (state.country) entries.push(['country', 'country '+state.country]);
     if (state.service) entries.push(['service', 'service '+state.service]);
     if (state.ip) entries.push(['ip', 'ip '+state.ip]);
+    if (state.host) entries.push(['host', 'host '+state.host]);
     if (state.window) entries.push(['window', 'window '+state.window.label]);
     if (state.method !== 'ALL') entries.push(['method', 'method '+state.method]);
     if (state.search) entries.push(['search', 'grep "'+state.search+'"']);
@@ -529,7 +553,8 @@ JS = r"""
     if (kind === 'port') return setPortFilter(null);
     if (kind === 'country') state.country = null;
     if (kind === 'service') state.service = null;
-    if (kind === 'ip') state.ip = null;
+    if (kind === 'ip'){ state.ip = null; refreshLog(); return; }
+    if (kind === 'host'){ state.host = null; refreshLog(); return; }
     if (kind === 'window') state.window = null;
     if (kind === 'method'){ state.method = 'ALL'; setActive(methodRow, 'data-method', 'ALL'); }
     if (kind === 'search'){ state.search = ''; if (searchInput) searchInput.value = ''; }
@@ -540,7 +565,7 @@ JS = r"""
   }
 
   function clearAllFilters(){
-    state.port = null; state.country = null; state.service = null; state.ip = null;
+    state.port = null; state.country = null; state.service = null; state.ip = null; state.host = null;
     state.window = null; state.method = 'ALL'; state.search = ''; state.page = 1;
     if (searchInput) searchInput.value = '';
     if (methodRow) setActive(methodRow, 'data-method', 'ALL');
