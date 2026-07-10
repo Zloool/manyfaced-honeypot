@@ -60,6 +60,13 @@ _SERVICE_INFO: dict[str, tuple[str, str, str]] = {
     'zabbix': ('Zabbix', '6.4.0', 'Running (v6.4.0)'),
     'laravel': ('Laravel', '10.48.0', 'Running (v10.48.0)'),
     'thinkphp': ('ThinkPHP', '8.0.0', 'Running (v8.0.0)'),
+    'joomla': ('Joomla CMS', '5.1.0', 'Running (v5.1.0)'),
+    'langflow': ('Langflow', '1.0.0', 'Running (v1.0.0)'),
+    'coldfusion': ('Adobe ColdFusion', '2023.0.0', 'Running (v2023.0.0)'),
+    'fortinet': ('Fortinet FortiGate', '7.4.0', 'Running (v7.4.0)'),
+    'citrix': ('Citrix NetScaler', '13.1', 'Running (v13.1)'),
+    'sharepoint': ('Microsoft SharePoint', '2019', 'Running (v2019)'),
+    'splunk': ('Splunk Enterprise', '9.2.0', 'Running (v9.2.0)'),
 }
 
 # Representative paths per service – mirrors the route table for display
@@ -93,6 +100,13 @@ _SERVICE_PATHS: dict[str, list[str]] = {
     'zabbix': ['/zc', '/evox/about', '/zabbix.php'],
     'laravel': ['/laravel', '/_ignition', '/storage/logs/laravel.log'],
     'thinkphp': ['/index.php', '/public/index.php', '/thinkphp'],
+    'joomla': ['/administrator/', '/index.php', '/components'],
+    'langflow': ['/login', '/api/v1/run', '/api/v1/flows'],
+    'coldfusion': ['/cfide/administrator/', '/administrator/', '/cfusion/'],
+    'fortinet': ['/remote/login', '/remote/logincheck', '/jsonrpc'],
+    'citrix': ['/vpn/index.html', '/cgi/login', '/logon/LogonPoint/'],
+    'sharepoint': ['/_layouts/', '/_api/', '/login'],
+    'splunk': ['/en-US/', '/services/auth/login', '/services/search/jobs'],
 }
 
 
