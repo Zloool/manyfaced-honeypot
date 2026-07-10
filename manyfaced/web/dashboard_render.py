@@ -19,9 +19,11 @@ from __future__ import annotations
 import html
 import json
 import secrets
+from collections import Counter
 from typing import Any
 
 from manyfaced.db.storage import detected_id_name
+from manyfaced.web import dashboard_data as _data
 from manyfaced.web.dashboard_assets import CSS, JS
 from manyfaced.web.dashboard_data import port_service_name
 
@@ -53,6 +55,9 @@ def fmt_k(n: float) -> str:
 
 def _render_stat_cards(payload: dict) -> str:
     s = payload['stats']
+    # by_classification is a list of {key, count} (same shape as by_country);
+    # fold it into a {classification: count} map for the split card.
+    cls = {row['key']: row['count'] for row in payload.get('by_classification', []) if 'key' in row}
     cards = [
         ('stat-total', 'Total Captures', fmt_k(s['total']), 'all-time reports', '#d3ffe4'),
         ('stat-day', 'Captures / 24h', fmt(s['day']), 'rolling window', '#83f5ae'),
@@ -66,10 +71,17 @@ def _render_stat_cards(payload: dict) -> str:
         ),
         (
             'stat-rate',
-            'Requests/min',
-            f'{s.get("recent_total", round(s["recent_rate"] * 60))}',
-            'last 60s, real',
+            'Requests/hour',
+            f'{s.get("hour_total", 0)}',
+            'last 60m, real',
             '#3dff88',
+        ),
+        (
+            'stat-benign',
+            'Benign / Unknown',
+            f'{cls.get("benign", 0)} / {cls.get("unknown", 0)}',
+            'known-benign vs unidentified (issue #271)',
+            '#5cc8ff',
         ),
     ]
     out = []
@@ -98,11 +110,11 @@ def _render_hero(payload: dict) -> str:
     </div>
     <div class="hero-mult">
       <div>PACKET STREAM &times;{payload['mult']}</div>
-      <div class="dim">amplified for visibility (real hit-rate weighted)</div>
+      <div class="dim">amplified for visibility &middot; rate shown is real</div>
     </div>
   </div>
 
-  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}">
+  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}" data-rph="{payload['stats'].get('hour_total', 0)}">
     <canvas id="srv-canvas"></canvas>
     <div class="hero-flag"><span class="dot"></span>SYSTEM ONLINE</div>
     <div class="hero-legend">
@@ -236,7 +248,15 @@ def _repeat_offender(row: dict, all_rows: list[dict]) -> bool:
 
 
 def render_intel_grid(payload: dict) -> str:
-    port_rows = [{'key': int(r['key']), 'count': r['count']} for r in payload['by_port']]
+    # Top Ports must show the *external* attacker-facing port, not the
+    # container-internal bound port (issue #329). And because external_port()
+    # is many-to-one (a port hit both directly and via redirect both map to the
+    # same external port), re-aggregate by the resolved port and sum counts, so
+    # e.g. listen_port=22 (direct) + 10022 (redirected) merge into one row.
+    port_resolved: Counter[int] = Counter()
+    for r in payload['by_port']:
+        port_resolved[_data.display_port(int(r['key']))] += r['count']
+    port_rows = [{'key': k, 'count': c} for k, c in port_resolved.items()]
     return ''.join(
         [
             _intel_card(
@@ -274,6 +294,65 @@ def render_intel_grid(payload: dict) -> str:
             ),
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# IoC (issue #351)
+# ---------------------------------------------------------------------------
+
+
+def _render_ioc_section(payload: dict) -> str:
+    """Indicators of Compromise: top attacker IPs + C2/download hosts.
+
+    Top attacker IPs reuse the existing ``by_ip`` aggregate (already in the
+    payload). The country is resolved from ``by_country`` when the same IP
+    appears there (it usually won't — by_country is keyed by country, not IP —
+    so we fall back to '' and the column stays blank). C2 / download hosts are
+    the ``request_raw``-extracted hosts ranked by mention count — blocklist
+    candidates.
+    """
+    ip_rows = payload.get('by_ip', [])[:15]
+    c2_rows = payload.get('c2_hosts', [])[:15]
+
+    ip_items = []
+    for r in ip_rows:
+        ip_items.append(
+            '<div class="ioc-row" data-ioc-type="ip" data-ioc-value="'
+            f'{_esc(r["key"])}"><span class="ioc-value">{_esc(r["key"])}</span>'
+            f'<span class="intel-count">{fmt_k(r["count"])}</span></div>'
+        )
+    ip_body = ''.join(ip_items) if ip_items else '<p class="section-hint">no data</p>'
+
+    c2_items = []
+    for r in c2_rows:
+        c2_items.append(
+            '<div class="ioc-row" data-ioc-type="host" data-ioc-value="'
+            f'{_esc(r["host"])}"><span class="ioc-value">{_esc(r["host"])}</span>'
+            f'<span class="intel-count">{fmt_k(r["count"])}</span></div>'
+        )
+    c2_body = ''.join(c2_items) if c2_items else '<p class="section-hint">no data</p>'
+
+    since = payload.get('ioc_since')
+    since_label = f'window: {_esc(since)}' if since else 'window: all-time'
+    return f"""
+<section id="ioc" class="section">
+  <div class="section-head">
+    <div class="section-title">INDICATORS OF COMPROMISE</div>
+    <div class="rule"></div>
+    <div class="section-hint">{since_label} &middot; candidates for blocklisting</div>
+  </div>
+  <div class="ioc-grid">
+    <div class="intel-card" data-key="ioc-ips">
+      <div class="intel-head"><div class="intel-title">TOP ATTACKER IPS</div></div>
+      <div class="intel-list">{ip_body}</div>
+    </div>
+    <div class="intel-card" data-key="ioc-c2">
+      <div class="intel-head"><div class="intel-title">C2 / DOWNLOAD HOSTS</div></div>
+      <div class="intel-list">{c2_body}</div>
+    </div>
+  </div>
+</section>
+"""
 
 
 def _render_intel_section(payload: dict) -> str:
@@ -512,6 +591,33 @@ def _render_log_section(payload: dict) -> str:
 """
 
 
+def _render_payloads_section(payload: dict) -> str:
+    """Raw captured request payloads, surfaced right after the capture log.
+
+    Each entry is the actual bytes an attacker sent (already truncated +
+    escaped server-side). Lets operators eyeball exploit payloads (wget drops,
+    SQLi, traversal) without expanding every log row.
+    """
+    payloads = payload.get('payloads') or []
+    if not payloads:
+        items = '<p class="section-hint">no payloads captured yet</p>'
+    else:
+        items = ''.join(
+            f'<div class="payload-row"><pre class="payload-pre">{_esc(p)}</pre></div>'
+            for p in payloads
+        )
+    return f"""
+<section id="payloads" class="section">
+  <div class="section-head">
+    <div class="section-title">PAYLOADS</div>
+    <div class="rule"></div>
+    <div class="section-hint">raw captured request bytes ({len(payloads)} shown)</div>
+  </div>
+  <div class="payloads-box">{items}</div>
+</section>
+"""
+
+
 # ---------------------------------------------------------------------------
 # Full page + fragment entry points
 # ---------------------------------------------------------------------------
@@ -539,7 +645,7 @@ def render_page(payload: dict) -> str:
 <nav class="top">
   <a href="#top" class="brand">MANYFACED<span class="brand-dim">_HONEYPOT</span></a>
   <div class="nav-links">
-    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#log">LOG</a>
+    <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#ioc">IOC</a><a href="#log">LOG</a><a href="#payloads">PAYLOADS</a>
   </div>
   <div class="nav-right">
     <span class="live-pill"><span class="dot"></span>LIVE</span>
@@ -552,7 +658,9 @@ def render_page(payload: dict) -> str:
 {_render_hero(payload)}
 {_render_volume_section(payload)}
 {_render_intel_section(payload)}
+{_render_ioc_section(payload)}
 {_render_log_section(payload)}
+{_render_payloads_section(payload)}
 <div class="footer">MANYFACED HONEYPOT &middot; read-only, token-gated &middot; generated {generated}</div>
 </main>
 <script>window.__MFD__ = {bootstrap};</script>
@@ -576,7 +684,7 @@ def render_fragment(payload: dict) -> bytes:
         'day': fmt(s['day']),
         'uniq': fmt(s['unique_ips']),
         'activePorts': payload['listening_count'],
-        'rate': str(s.get('recent_total', round(s['recent_rate'] * 60))),
+        'rate': str(s.get('hour_total', 0)),
         'summary': payload['log_summary'],
         'logPage': payload['page'],
         'logPageSize': payload['log_page_size'],
@@ -585,8 +693,10 @@ def render_fragment(payload: dict) -> bytes:
     sections = {
         'vol-box': render_vol_box(payload),
         'intel-grid': render_intel_grid(payload),
+        'ioc': _render_ioc_section(payload),
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
+        'payloads': _render_payloads_section(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]

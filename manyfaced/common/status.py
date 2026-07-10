@@ -10,6 +10,9 @@ UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 UNKNOWN_TELNET = 4294967285  # Telnet probe
 UNKNOWN_RDP = 4294967284  # RDP probe
 UNKNOWN_VNC = 4294967283  # VNC probe
+FINGERPRINT_PROBE = (
+    4294967282  # High-entropy random-path honeypot-fingerprinting probe (issue #324)
+)
 
 # HTTP service-specific detected IDs (for routing to service handlers)
 WORDPRESS_HTTP = 1001
@@ -53,3 +56,6 @@ DBADMIN_HTTP = 1033
 # Env / config disclosure face (issue #272) — scaffold omitted this constant;
 # added here so the env_disc handler can import its detected-id per the task spec.
 ENV_DISC_HTTP = 1034
+# Exploit-scanner honeypot faces (issue #350): D-Link/Tenda CGI RCE (router
+# command-injection -> wget malware-drop), pearcmd LFI/RCE, path traversal.
+EXPLOIT_CGI_HTTP = 1035

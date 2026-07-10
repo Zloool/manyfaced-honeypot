@@ -115,7 +115,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-card{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:15px 16px}
 .intel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .intel-title{font-size:12px;letter-spacing:1px;color:#d3ffe4;text-transform:uppercase}
-.intel-row{display:grid;grid-template-columns:20px 1fr 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
+.intel-row{display:grid;grid-template-columns:20px minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;cursor:pointer}
 .intel-row.active{background:rgba(120,255,170,.09)}
 .intel-rank{font-size:11px;color:#2f5c40;text-align:right}
 .intel-label-row{display:flex;align-items:baseline;gap:8px}
@@ -129,6 +129,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .intel-fill.danger{background:#ff6b74}
 .intel-count{font-size:12px;color:#83f5ae;text-align:right;font-variant-numeric:tabular-nums}
 
+.ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.ioc-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
+  border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace}
+.ioc-row .ioc-value{font-size:12px;color:#ffcf5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ioc-row .intel-count{color:#ff9aa0}
+
 .log-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .search-wrap{position:relative;flex:1;min-width:220px}
 .search-prompt{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#2f5c40;font-size:12px}
@@ -136,6 +142,10 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   color:#d3ffe4;font-size:12px;padding:8px 11px 8px 26px;outline:none}
 
 .log-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden}
+.payloads-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto}
+.payload-row{border-bottom:1px solid rgba(120,255,170,.07);padding:8px 12px}
+.payload-row:last-child{border-bottom:none}
+.payload-pre{margin:0;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;color:#8fe6ac;text-transform:none}
 .log-head-row{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
   border-bottom:1px solid rgba(120,255,170,.14);font-size:10px;letter-spacing:1px;color:#2f5c40;text-transform:uppercase}
 .log-empty{padding:34px;text-align:center;color:#3f7a55;font-size:13px}
@@ -191,6 +201,12 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   .hero-title{font-size:34px}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
+  /* Intel / IoC grids: single column so the 260px min never exceeds the
+     viewport, and long host/IP values wrap instead of forcing horizontal
+     overflow (the "hive telemetry too wide on mobile" report, issue #359b). */
+  .intel-grid,.ioc-grid{grid-template-columns:1fr}
+  .ioc-row .ioc-value{white-space:normal;word-break:break-all;overflow:visible;text-overflow:clip}
+  .hero-canvas-wrap{height:300px}
 }
 """
 
@@ -204,6 +220,9 @@ JS = r"""
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
                 window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
+  // Hero canvas readout (real requests/hour, fed from payload.stats.hour_total
+  // and refreshed on each live tick). Module-level so applyMeta can update it.
+  var heroRph = '0';
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
@@ -271,6 +290,7 @@ JS = r"""
 
   function applyMeta(meta){
     if (!meta) return;
+    heroRph = meta.rate;  // refresh hero canvas readout on each live tick
     var map = {'stat-total':meta.total,'stat-day':meta.day,'stat-uniq':meta.uniq,
                'stat-ports':meta.activePorts,'stat-rate':meta.rate};
     Object.keys(map).forEach(function(id){
@@ -581,6 +601,7 @@ JS = r"""
     var ports;
     try { ports = JSON.parse(wrap.getAttribute('data-ports') || '[]'); } catch(e){ ports = []; }
     var mult = Number(wrap.getAttribute('data-mult')) || 6;
+    heroRph = wrap.getAttribute('data-rph') || '0';
     if (!ports.length) return;
 
     var state2 = { ports: ports.map(function(p){ return {p:p.p, s:p.s, w:Math.max(1,p.w), glow:0, flash:0}; }), pulses:[], W:0, H:0 };
@@ -677,7 +698,6 @@ JS = r"""
       }
       var cut = nowp-1000;
       while (spawns.length && spawns[0]<cut) spawns.shift();
-      rps = spawns.length;
       ctx.clearRect(0,0,state2.W,state2.H);
       ctx.strokeStyle = 'rgba(60,140,90,0.06)'; ctx.lineWidth = 1;
       for (var x=0;x<state2.W;x+=34){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,state2.H); ctx.stroke(); }
@@ -697,7 +717,7 @@ JS = r"""
       }
       ctx.font="14px 'VT323', monospace"; ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
       ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
-      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+rps+' pkt/s', ch.x+ch.w-18, ch.y+22);
+      ctx.textAlign='right'; ctx.fillStyle='#3dff88'; ctx.fillText('● '+heroRph+'/h', ch.x+ch.w-18, ch.y+22);
       ctx.textAlign='left';
       ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ch.y+38); ctx.lineTo(ch.x+ch.w-14,ch.y+38); ctx.stroke();
 

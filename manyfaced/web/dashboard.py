@@ -41,15 +41,18 @@ from __future__ import annotations
 
 import hmac
 import logging
+import re
 import socket
 import threading
 import time
+from collections import Counter
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from manyfaced.common import config as _config
+from manyfaced.common import ports as _ports
 from manyfaced.db import storage as _storage
 from manyfaced.web import dashboard_data as _data
 from manyfaced.web import dashboard_render as _render
@@ -83,6 +86,7 @@ _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 # Capture-log page size (issue #316) — one page is rendered server-side per
 # request; older rows are reached via the paginator (offset-based).
 _LOG_PAGE_SIZE = 50
+_PAYLOADS_LIMIT = 25
 
 
 def _token_valid(token: str | None) -> bool:
@@ -163,6 +167,89 @@ def _shape_volume_bars(volume_raw: list[dict], range_str: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+# Bound the C2-host scan so a busy production DB can't stall the refresher
+# (issue #351). The operator ranks by frequency and decides what to blocklist.
+_C2_RAW_SCAN_LIMIT = 20000
+_C2_TOP_N = 15
+
+# C2 / malware-download hosts. We want bare hosts only (no scheme, path, port,
+# or credentials) so the panel reads as a blocklist, not raw payload text.
+#
+# False-positive guard (operator feedback): the raw request contains MANY
+# benign URLs — the honeypot's own response links, attacker-referenced legit
+# sites, reflected `Host:`/`Referer` headers, etc. So we DO NOT match every
+# `http(s)://host`. We only count a host when it appears in a *download*
+# context — preceded by a fetch tool (wget/curl/tftp/ftp/busybox) or command
+# substitution (`$(...)` / backticks), which is exactly how Mirai-style router
+# RCE drops its payload. Everything else is noise and is ignored.
+_C2_HOST_RE = re.compile(
+    r'(?:'
+    r'(?:\$\(|`|\b(?:wget|curl|tftp|ftp|busybox|tftpget|nc)\b[^\\n]{0,80}?)'
+    r'https?://([0-9A-Za-z.\-]+)(?::\d+)?'
+    r')',
+    re.IGNORECASE,
+)
+
+# Hosts that are never real C2 drop targets — skip them so the panel isn't
+# polluted by the honeypot's own infra or private/reserved space.
+_C2_IGNORE_HOSTS = frozenset(
+    {
+        'localhost',
+        '127.0.0.1',
+        '0.0.0.0',  # nosec B104 - ignore-list entry, not a bind address
+        '::1',
+    }
+)
+
+
+def _is_plausible_c2_host(host: str) -> bool:
+    if not host or host.lower() in _C2_IGNORE_HOSTS:
+        return False
+    # Drop private / loopback / link-local / reserved IP ranges.
+    if re.fullmatch(r'(10|127|172\.(1[6-9]|2\d|3[01])|192\.168|169\.254)\.\d{1,3}\.\d{1,3}', host):
+        return False
+    if host.lower().endswith(('.local', '.internal', '.example', '.invalid', '.test')):
+        return False
+    return True
+
+
+def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> list[dict]:
+    """Rank C2 / malware-download hosts found inside ``request_raw`` payloads.
+
+    Only hosts seen in a *download* context (a fetch tool or command
+    substitution immediately before the URL) are counted — this filters out the
+    benign URLs that otherwise flood the panel (the honeypot's own links,
+    reflected attacker URLs, `Host:`/`Referer` headers, etc.). Hosts in
+    private/reserved space or on the ignore list are dropped too.
+    """
+    try:
+        rows = store.fetch_request_raws(since=since, limit=_C2_RAW_SCAN_LIMIT)
+    except Exception:  # noqa: BLE001 — never let the IoC scan break the dashboard
+        logger.exception('C2 host extraction failed')
+        return []
+    counts: Counter[str] = Counter()
+    for raw in rows:
+        for m in _C2_HOST_RE.finditer(raw or ''):
+            host = m.group(1)
+            if _is_plausible_c2_host(host):
+                counts[host] += 1
+    return [{'host': h, 'count': c} for h, c in counts.most_common(top_n)]
+
+
+# Cap raw payload display length so a multi-KB captured request (or a giant
+# injected string) can't blow out the Payloads panel layout.
+_PAYLOAD_PREVIEW_CHARS = 400
+
+
+def _truncate_payload(raw: str) -> str:
+    """Return a display-safe, length-bounded copy of a raw request payload."""
+    raw = (raw or '').replace('\r\n', '\n').replace('\r', '\n')
+    if len(raw) > _PAYLOAD_PREVIEW_CHARS:
+        raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
+        raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
+    return raw
+
+
 def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
@@ -181,6 +268,12 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
         overview = store.aggregate_stats(since=overview_since, bucket='day')
 
+        # Indicators of Compromise (issue #351): top attacker IPs come straight
+        # from `overview['by_ip']` (already aggregated in aggregate_stats); the
+        # C2 / download hosts are scanned out of request_raw text and ranked by
+        # frequency. Both surfaces are blocklist candidates for the operator.
+        c2_hosts = _extract_c2_hosts(store, since=overview_since)
+
         # Genuinely unbounded — the "Total Captures" card claims "all-time",
         # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
         # Affordable here because it's computed by the 30s background
@@ -191,8 +284,11 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         day_since, _b = _parse_window('24h')
         day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
 
-        recent_since = (datetime.now() - timedelta(seconds=60)).strftime('%Y-%m-%d %H:%M:%S.%f')
-        recent_total = store.aggregate_stats(since=recent_since, bucket='hour')['total']
+        # Real per-hour request rate: raw capture count over the last 60
+        # minutes (issue #328). A stable, readable number that reconciles with
+        # Captures/24h ÷ 24, replacing the dead-looking per-60s "Requests/min".
+        hour_since = (datetime.now() - timedelta(seconds=3600)).strftime('%Y-%m-%d %H:%M:%S.%f')
+        hour_total = store.aggregate_stats(since=hour_since, bucket='hour')['total']
 
         vol_since = _volume_window(range_str)
         volume_raw = store.volume_series(
@@ -208,6 +304,13 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
         raw_recent = store.recent_records(limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset)
         log_rows = _data.group_log_rows(raw_recent)
+
+        # Raw captured payloads (issue #350 follow-up): surface the actual
+        # attacker request bytes in a dedicated "Payloads" panel right after the
+        # capture log, so operators can eyeball exploit payloads (wget drops,
+        # SQLi, traversal) without expanding each log entry. Bounded + cheap.
+        raw_payloads = store.fetch_request_raws(since=None, limit=_PAYLOADS_LIMIT)
+        payloads = [_truncate_payload(r) for r in raw_payloads if r]
 
         configured_ports = _config.settings.resolve_ports()
         # Weight keyed by EXTERNAL port (resolve_display_ports returns external
@@ -247,29 +350,37 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
             'total': all_time_total,
             'day': day_total,
             'unique_ips': overview['unique_ips'],
-            'recent_rate': recent_total / 60.0,
+            'hour_total': hour_total,
         },
         'by_port': overview['by_port'],
         'by_country': overview['by_country'],
         'by_service': overview['by_service'],
         'by_ip': overview['by_ip'],
+        'by_classification': overview.get('by_classification', {}),
+        'c2_hosts': c2_hosts,
+        'ioc_since': overview_since,
         'volume_bars': volume_bars,
         'log_rows': log_rows,
+        'payloads': payloads,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
-        # recent_total is the raw last-60s hit count, surfaced as "Requests/min"
-        # (issue #313): a sub-1 decimal requests/s is unreadable at real honeypot
-        # traffic, a whole-per-minute number is.
-        'recent_total': recent_total,
     }
 
 
 def _payload_with_port(payload: dict, port_filter: int) -> dict:
-    """Cheap on-request override: recompute just the volume bars for one port."""
+    """Cheap on-request override: recompute just the volume bars for one port.
+
+    ``port_filter`` is the EXTERNAL port a user clicked (from the volume chip's
+    ``data-port``). Resolve it through :func:`internal_ports` so redirected
+    privileged ports also count the traffic stored under their bound high port
+    (issue #330).
+    """
     store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
     try:
         vol_since = _volume_window(payload['range'])
         volume_raw = store.volume_series(
-            since=vol_since, bucket=_VOLUME_BUCKETS[payload['range']], port=port_filter
+            since=vol_since,
+            bucket=_VOLUME_BUCKETS[payload['range']],
+            port=_ports.internal_ports(port_filter),
         )
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by

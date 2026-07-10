@@ -8,12 +8,13 @@ Covers:
 - run() with both --client and --server
 """
 
-import fcntl
 import os
 import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Ensure project root is importable
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -73,6 +74,7 @@ class TestLockfile(unittest.TestCase):
 
     def test_acquire_lockfile(self):
         """Test that _acquire_lockfile creates a lockfile and acquires the lock."""
+        pytest.importorskip('fcntl')  # lockfile enforcement is POSIX-only
         from manyfaced.mfh import _acquire_lockfile, _release_lockfile
 
         with tempfile.NamedTemporaryFile(suffix='.lock', delete=False) as tmp:
@@ -100,6 +102,7 @@ class TestLockfile(unittest.TestCase):
 
     def test_acquire_lockfile_blocks_when_held(self):
         """Test that _acquire_lockfile exits when another instance holds the lock."""
+        fcntl = pytest.importorskip('fcntl')
         from manyfaced.mfh import _acquire_lockfile, _release_lockfile
 
         with tempfile.NamedTemporaryFile(suffix='.lock', delete=False) as tmp:

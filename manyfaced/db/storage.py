@@ -12,6 +12,7 @@ import os
 import sqlite3
 import time
 from abc import ABC, abstractmethod
+from collections import Counter
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
@@ -51,6 +52,7 @@ _DETECTED_ID_NAMES: dict[int, str] = {
     _status.UNKNOWN_TELNET: 'telnet',
     _status.UNKNOWN_RDP: 'rdp',
     _status.UNKNOWN_VNC: 'vnc',
+    _status.FINGERPRINT_PROBE: 'fingerprint_probe',
 }
 # Service IDs (matched handlers) are "detected"; the sentinel range is not.
 _DETECTED_SERVICE_MAX = _status.CONFIG_DISCLOSURE_HTTP
@@ -216,6 +218,17 @@ class StorageBackend(ABC):
         """Close any connections / resources held by the backend."""
         ...
 
+    @property
+    def connection(self):
+        """Public access to the backend's underlying DB connection (read/write).
+
+        Operational scripts (e.g. ``scripts/enrich_historical.py``) use this to
+        run ad-hoc SQL without reaching into protected internals. Subclasses
+        return their native connection object (psycopg2 connection for
+        PostgreSQL, the sqlite3 connection for SQLite).
+        """
+        raise NotImplementedError
+
     # -- read API (issue #234 dashboard) ------------------------------------
     # Not declared @abstractmethod: the existing abstract contract for storage
     # backends is insert/close only (see test_storage). Concrete subclasses
@@ -259,15 +272,33 @@ class StorageBackend(ABC):
         raise NotImplementedError('aggregate_stats not implemented by this backend')
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         """Return a request-volume time series, optionally scoped to one port.
 
         Used by the volume chart, which is filtered independently of the
         (unfiltered) top-lists in :meth:`aggregate_stats`. ``bucket`` is one
         of ``'minute5'`` (1H range), ``'hour'`` (24H) or ``'day'`` (7D/30D).
+
+        ``port`` may be a single port or a list of ports (e.g. an external port
+        plus its iptables-redirect target) — see :func:`manyfaced.common.ports.
+        internal_ports` (issue #330).
         """
         raise NotImplementedError('volume_series not implemented by this backend')
+
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads that embed a URL (``://``), bounded by ``since``.
+
+        Used by the dashboard's Indicators-of-Compromise panel (issue #351) to
+        surface C2 / malware-download hosts that are only reachable by
+        scanning ``request_raw`` text (there is no dedicated column for them).
+        The ``://`` filter keeps the scan confined to payload-bearing rows, and
+        ``limit`` bounds the work on a busy production DB — the operator ranks
+        by frequency and decides what to blocklist.
+
+        Concrete subclasses override this; the base raises.
+        """
+        raise NotImplementedError('fetch_request_raws not implemented by this backend')
 
 
 # ---------------------------------------------------------------------------
@@ -926,13 +957,20 @@ class SQLiteStorage(StorageBackend):
                 rows = conn.execute(q, (*params, top)).fetchall()
                 return [{'key': r[0], 'count': r[1]} for r in rows]
 
-            # Service grouping maps detected_id -> friendly name.
+            # Service grouping maps detected_id -> friendly name. Because the
+            # friendly name is many-to-one (every detected_id not in
+            # _DETECTED_ID_NAMES collapses to 'unknown'), group by the *mapped*
+            # label and sum, so e.g. multiple distinct unmapped ids merge into a
+            # single 'unknown' row (issue #331).
             svc_rows = conn.execute(
                 f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY detected_id ORDER BY c DESC',
                 params,
             ).fetchall()
-            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in svc_rows]
+            svc_counts: Counter[str] = Counter()
+            for detected_id, c in svc_rows:
+                svc_counts[detected_id_name(detected_id)] += c
+            by_service = [{'key': k, 'count': c} for k, c in svc_counts.most_common()]
 
             vol_rows = conn.execute(
                 f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
@@ -960,7 +998,7 @@ class SQLiteStorage(StorageBackend):
             return _empty_stats()
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         if self._conn is None:
             return []
@@ -971,8 +1009,13 @@ class SQLiteStorage(StorageBackend):
             clauses.append('timestamp >= ?')
             params.append(cutoff)
         if port is not None:
-            clauses.append('listen_port = ?')
-            params.append(port)
+            if isinstance(port, int):
+                clauses.append('listen_port = ?')
+                params.append(port)
+            else:
+                placeholders = ', '.join('?' for _ in port)
+                clauses.append(f'listen_port IN ({placeholders})')
+                params.extend(port)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         bucket_expr = _sqlite_bucket_expr(bucket)
         try:
@@ -984,6 +1027,33 @@ class SQLiteStorage(StorageBackend):
             return [{'bucket': r[0], 'count': r[1]} for r in rows]
         except (sqlite3.Error, sqlite3.OperationalError):
             logger.exception('Error reading volume series from SQLite storage')
+            return []
+
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
+
+        See the base-class docstring for the rationale (issue #351). The
+        ``LIKE '%://%'`` predicate confines the read to payload-bearing rows so
+        a multi-million-row DB stays cheap to scan; ``limit`` caps the rows
+        pulled into Python for frequency ranking.
+        """
+        if self._conn is None:
+            return []
+        clauses = ["request_raw LIKE '%://%'"]
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT ?'
+        )
+        try:
+            rows = self._conn.execute(sql, (*params, int(limit))).fetchall()
+            return [row[0] for row in rows if row[0]]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading request_raw payloads from SQLite storage')
             return []
 
     def __del__(self) -> None:
@@ -1002,6 +1072,7 @@ class SQLiteStorage(StorageBackend):
 
 from manyfaced.db.sql_builder import (  # noqa: E402, F401
     CREATE_TABLE_PG_SQL as _CREATE_TABLE_PG_SQL,
+    CREATE_INDEXES_PG_SQL as _CREATE_INDEXES_PG_SQL,
     INSERT_PG_SQL as _INSERT_PG_SQL,
 )
 
@@ -1016,6 +1087,18 @@ class PostgreSQLStorage(StorageBackend):
     process-wide ``_STORAGE_LOCK`` (not the per-instance lock) serializes the
     writer process's inserts against the single shared connection.
     """
+
+    @property
+    def connection(self):
+        """Public access to the underlying psycopg2 connection.
+
+        Used by operational scripts (e.g. ``scripts/enrich_historical.py``) that
+        need to run ad-hoc SQL against the live backend without reaching into the
+        protected ``_conn``. The connection is the process-wide singleton reused
+        for inserts; callers must commit/rollback their own transactions.
+        """
+        self._ensure_connected()
+        return self._conn
 
     def __init__(
         self,
@@ -1106,6 +1189,14 @@ class PostgreSQLStorage(StorageBackend):
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN bot_org VARCHAR(255)')
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN classification VARCHAR(16)')
                     cur.execute('ALTER TABLE honeypot_bears ADD COLUMN benign_source VARCHAR(64)')
+                # Issue #347: create the dashboard aggregate indexes (timestamp
+                # btree most importantly). Each is CREATE INDEX IF NOT EXISTS so
+                # a missing/skipped index cannot break startup and re-runs are
+                # cheap no-ops on an already-indexed DB.
+                try:
+                    cur.execute(_CREATE_INDEXES_PG_SQL)
+                except psycopg2.Error:  # noqa: BLE001
+                    logger.exception('Failed to create PostgreSQL dashboard indexes')
             self._conn.commit()
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('Failed to initialise PostgreSQL storage')
@@ -1348,12 +1439,18 @@ class PostgreSQLStorage(StorageBackend):
                 cur.execute(q, [*params, top])
                 return [{'key': r[0], 'count': r[1]} for r in cur.fetchall()]
 
+            # Service grouping maps detected_id -> friendly name. The friendly
+            # name is many-to-one, so group by the *mapped* label and sum
+            # (issue #331).
             cur.execute(
                 f'SELECT detected_id, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                 'GROUP BY detected_id ORDER BY c DESC',
                 params,
             )
-            by_service = [{'key': detected_id_name(r[0]), 'count': r[1]} for r in cur.fetchall()]
+            svc_counts: Counter[str] = Counter()
+            for detected_id, c in cur.fetchall():
+                svc_counts[detected_id_name(detected_id)] += c
+            by_service = [{'key': k, 'count': c} for k, c in svc_counts.most_common()]
 
             cur.execute(
                 f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
@@ -1395,7 +1492,7 @@ class PostgreSQLStorage(StorageBackend):
                 return _empty_stats()
 
     def volume_series(
-        self, since: str | None = None, bucket: str = 'hour', port: int | None = None
+        self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
         if self._conn is None:
             return []
@@ -1405,8 +1502,13 @@ class PostgreSQLStorage(StorageBackend):
             clauses.append('timestamp >= %s')
             params.append(since)
         if port is not None:
-            clauses.append('listen_port = %s')
-            params.append(port)
+            if isinstance(port, int):
+                clauses.append('listen_port = %s')
+                params.append(port)
+            else:
+                placeholders = ', '.join('%s' for _ in port)
+                clauses.append(f'listen_port IN ({placeholders})')
+                params.extend(port)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         bucket_expr = _pg_bucket_expr(bucket)
         try:
@@ -1434,6 +1536,45 @@ class PostgreSQLStorage(StorageBackend):
                     return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error reading volume series from PostgreSQL storage')
+                return []
+
+    def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
+
+        See the base-class docstring for the rationale (issue #351). The
+        ``ILIKE '%://%'`` predicate confines the read to payload-bearing rows,
+        ``limit`` caps the rows pulled into Python, and the retry-on-error path
+        mirrors :meth:`volume_series` (dead conn -> reconnect once).
+        """
+        if self._conn is None and not self._ensure_connected():
+            return []
+        clauses = ['request_raw ILIKE %s']
+        params: list = ['%://%']
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT %s'
+        )
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (*params, int(limit)))
+                return [row[0] for row in cur.fetchall() if row[0]]
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            logger.warning(
+                'PostgreSQL fetch_request_raws error; rolling back and reconnecting once'
+            )
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, (*params, int(limit)))
+                    return [row[0] for row in cur.fetchall() if row[0]]
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading request_raw payloads from PostgreSQL storage')
                 return []
 
     # -- data lifecycle (issue #243 #4) --------------------------------------

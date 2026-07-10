@@ -340,6 +340,7 @@ if os.path.exists(args_file):
 _OPTIONAL_DEP_BUILD_ONLY: set[str] = {
     'pytest',
     'pytest-cov',
+    'pytest-timeout',  # pytest plugin (configured via addopts), imported by pytest itself, never by manyfaced/
     'basedpyright',
     'ruff',
     'build',
