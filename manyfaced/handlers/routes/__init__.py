@@ -84,6 +84,13 @@ from manyfaced.handlers.routes.routes_elastic import ROUTES as _elastic_routes  
 from manyfaced.handlers.routes.routes_env_disc import ROUTES as _env_disc_routes  # noqa: E402
 from manyfaced.handlers.routes.routes_nginx import ROUTES as _nginx_routes
 from manyfaced.handlers.routes.routes_phpunit import ROUTES as _phpunit_routes
+from manyfaced.handlers.routes.routes_splunk import ROUTES as _splunk_routes
+from manyfaced.handlers.routes.routes_sharepoint import ROUTES as _sharepoint_routes
+from manyfaced.handlers.routes.routes_citrix import ROUTES as _citrix_routes
+from manyfaced.handlers.routes.routes_fortinet import ROUTES as _fortinet_routes
+from manyfaced.handlers.routes.routes_coldfusion import ROUTES as _coldfusion_routes
+from manyfaced.handlers.routes.routes_langflow import ROUTES as _langflow_routes
+from manyfaced.handlers.routes.routes_joomla import ROUTES as _joomla_routes
 from manyfaced.handlers.fingerprint import HighEntropyPath, NotFoundHandler  # noqa: E402
 
 # Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
@@ -130,6 +137,17 @@ ROUTES: list[Route] = (
     + list(_env_disc_routes)
     + list(_nginx_routes)
     + list(_phpunit_routes)
+    # New threat-intel faces (issues #391-#397): Joomla, Langflow, ColdFusion,
+    # Fortinet, Citrix, SharePoint, Splunk. Concatenated last (before the
+    # fingerprint-deflection + monster-page catch-all) so they coexist with the
+    # existing framework handlers without shadowing them.
+    + list(_joomla_routes)
+    + list(_langflow_routes)
+    + list(_coldfusion_routes)
+    + list(_fortinet_routes)
+    + list(_citrix_routes)
+    + list(_sharepoint_routes)
+    + list(_splunk_routes)
     # Fingerprint-deflection layer (issue #324): high-entropy random paths and
     # a missing /favicon.ico get a realistic Apache 404 *before* the monster-page
     # catch-all, so we don't answer-everything-with-200 (a classic honeypot tell).
