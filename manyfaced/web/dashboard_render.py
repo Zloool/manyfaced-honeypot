@@ -595,7 +595,7 @@ def _render_log_section(payload: dict) -> str:
     <div id="log-rows">{rows_html}</div>
     <div id="log-empty" class="log-empty"{empty_hidden}>// no captures match the current filters</div>
   </div>
-  <div id="log-pager-wrap">{pager_html}</div>
+  <div id="log-pager">{pager_html}</div>
 </section>
 """
 
