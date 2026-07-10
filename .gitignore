@@ -124,3 +124,6 @@ actionlint
 # AI coding assistant directories
 .claude/
 .cursor/
+
+# Runtime capture dump (manyfaced.common.utils.dump_file default cwd path)
+dump.jsonl
