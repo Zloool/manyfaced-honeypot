@@ -6,7 +6,7 @@ prove the core contract from the #377 RFC:
 
 * server-first faces send their greeting BEFORE the client speaks;
 * client-first faces read the client frame and reply with a protocol-correct,
-  non-empty response;
+  non-empty response that actually reaches the client socket;
 * the capture (BearStorage) is built with the right detected_id + raw bytes.
 """
 
@@ -14,11 +14,18 @@ from __future__ import annotations
 
 import socket
 import threading
+from types import SimpleNamespace
 
 import pytest
 
+from manyfaced.client.client import _handle_non_http_connection
 from manyfaced.common import faces as face_module
 from manyfaced.common.faces import FACE_REGISTRY, FaceSpec, get_face
+from manyfaced.handlers.http_handler import set_enrich_args
+
+# CRLF as a bytes constant built without backslash escapes (keeps the test
+# source free of literal control chars that confuse editors/diff).
+CRLF = bytes([13, 10])
 
 
 # ---------------------------------------------------------------------------
@@ -71,25 +78,13 @@ def test_get_face_resolves_via_external_port():
 # ---------------------------------------------------------------------------
 
 
-def _pump(client_sock, server_sock, client_says: bytes | None, wait_for: int):
-    """Server side: optionally send greeting first, then read client frame."""
-    if server_sock is not None:
-        # For server-first, the greeting must be sent before reading.
-        pass
-
-
-def _server_first_probe(name: str, client_says: bytes | None = None, timeout: float = 2.0):
-    """Open a socketpair; send the face greeting from the 'server' side, then
-    read whatever the 'client' side would have received. Returns server greeting
-    bytes (proving it is emitted before any client data)."""
-    a, b = socket.socketpair()
+def _server_first_greeting(name):
     spec = next(s for s in FACE_REGISTRY.values() if s.name == name)
+    a, b = socket.socketpair()
     try:
-        a.settimeout(timeout)
-        # Server emits greeting immediately (prelude) — no recv first.
+        a.settimeout(2)
         greeting = spec.greeting
         a.sendall(greeting)
-        # The 'client' (b) should receive it without having spoken.
         got = b.recv(4096)
         return got, greeting
     finally:
@@ -97,14 +92,12 @@ def _server_first_probe(name: str, client_says: bytes | None = None, timeout: fl
         b.close()
 
 
-def _client_first_probe(name: str, client_says: bytes, timeout: float = 2.0):
-    """Open a socketpair; 'client' (b) sends client_says; 'server' (a) runs
-    spec.respond and sends the reply back. Returns the reply bytes."""
-    a, b = socket.socketpair()
+def _client_first_reply(name, client_says):
     spec = next(s for s in FACE_REGISTRY.values() if s.name == name)
+    a, b = socket.socketpair()
     try:
-        b.settimeout(timeout)
-        a.settimeout(timeout)
+        b.settimeout(2)
+        a.settimeout(2)
         b.sendall(client_says)
         reply = spec.respond(client_says, '127.0.0.1')
         if reply:
@@ -132,13 +125,13 @@ def _client_first_probe(name: str, client_says: bytes, timeout: float = 2.0):
         ('imap', b'* OK'),
         ('vnc', b'RFB '),
         ('rdp', b'\x03\x00'),
-        ('mysql', b'\x0a'),  # protocol version byte
-        ('mssql', b'\x12'),  # TDS prelogin
+        ('mysql', b'\x0a'),
+        ('mssql', b'\x12'),
         ('amqp', b'AMQP'),
     ],
 )
 def test_server_first_greeting_emitted_first(name, needle):
-    got, greeting = _server_first_probe(name)
+    got, greeting = _server_first_greeting(name)
     assert got == greeting, f'{name}: greeting not received before client spoke'
     assert needle in greeting, f'{name}: greeting missing {needle!r}'
 
@@ -149,18 +142,19 @@ def test_server_first_greeting_emitted_first(name, needle):
 
 
 def test_redis_ping_responds_pong():
-    # RESP PING
-    reply = _client_first_probe('redis', b'*1\r\n$4\r\nPING\r\n')
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    reply = _client_first_reply('redis', ping)
     assert reply.startswith(b'+PONG'), f'redis reply was {reply!r}'
 
 
 def test_memcached_version_responds():
-    reply = _client_first_probe('memcached', b'version\r\n')
+    reply = _client_first_reply('memcached', b'version' + CRLF)
     assert reply.startswith(b'VERSION'), f'memcached reply was {reply!r}'
 
 
 def test_elasticsearch_get_responds_http():
-    reply = _client_first_probe('elasticsearch', b'GET / HTTP/1.0\r\n\r\n')
+    req = b'GET / HTTP/1.0' + CRLF + CRLF
+    reply = _client_first_reply('elasticsearch', req)
     assert reply.startswith(b'HTTP/1.1 200'), f'es reply was {reply!r}'
 
 
@@ -172,23 +166,19 @@ def test_postgres_startup_gets_auth_request():
         + struct.pack('!ii', 96, 196608)
         + (b'user\x00postgres\x00database\x00postgres\x00\x00')
     )
-    reply = _client_first_probe('postgres', pkt)
-    # AuthRequest message type 'R' with method 5 (MD5)
+    reply = _client_first_reply('postgres', pkt)
     assert reply[:1] == b'R', f'postgres reply was {reply!r}'
 
 
 def test_mongodb_hello_responds():
-    # ismaster/hello op
-    reply = _client_first_probe(
-        'mongodb', b'\x3d\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-    )
+    hello = bytes([0x3D]) + bytes(23)
+    reply = _client_first_reply('mongodb', hello)
     assert b'isWritablePrimary' in reply or len(reply) > 16, f'mongo reply was {reply!r}'
 
 
 def test_zookeeper_connect_responds():
-    reply = _client_first_probe(
-        'zookeeper', b'\x00\x00\x00\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-    )
+    req = bytes([0, 0, 0, 0x0B]) + bytes(8)
+    reply = _client_first_reply('zookeeper', req)
     assert len(reply) >= 4, f'zookeeper reply was {reply!r}'
 
 
@@ -202,8 +192,83 @@ def test_build_bear_storage_detected_id():
     from manyfaced.common.status import UNKNOWN_REDIS
 
     spec = get_face(6379)
-    bs = _build_bear_storage('1.2.3.4', spec, b'*1\r\n$4\r\nPING\r\n', 6379)
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    bs = _build_bear_storage('1.2.3.4', spec, ping, 6379)
     assert bs.isDetected == UNKNOWN_REDIS
     assert bs.ip == '1.2.3.4'
     assert 'PING' in bs.raw_request
     assert bs.listen_port == 6379
+
+
+# ---------------------------------------------------------------------------
+# Full dispatch: drive _handle_non_http_connection over a real socketpair so we
+# prove the reply actually reaches the client (catches the #377 ordering bug
+# where a client-first reply was sent only AFTER a blocking credential read,
+# causing the client to time out with an empty response).
+# ---------------------------------------------------------------------------
+
+
+def _dispatch(make_spec, client_says, server_port):
+    """Run the real dispatch against a real localhost TCP listener (not a
+    socketpair — socketpair on this platform misbehaves when the same fd both
+    recv()s and then send()s). Returns what the client received."""
+    import socket as _sock
+
+    args = SimpleNamespace(server=19999, server_host='127.0.0.1')
+    set_enrich_args(args)
+    spec = make_spec()
+
+    # Real ephemeral listener -> accept one connection, hand it to the dispatch.
+    lsn = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    lsn.bind(('127.0.0.1', 0))
+    lsn.listen(1)
+    real_port = lsn.getsockname()[1]
+
+    client = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    client.connect(('127.0.0.1', real_port))
+    srv_sock, _ = lsn.accept()
+
+    def server_side():
+        try:
+            _handle_non_http_connection(srv_sock, args, '9.9.9.9', None, server_port, spec)
+        finally:
+            srv_sock.close()
+
+    t = threading.Thread(target=server_side, daemon=True)
+    t.start()
+    try:
+        if client_says:
+            client.settimeout(4)
+            client.sendall(client_says)
+        client.settimeout(4)
+        return client.recv(4096)
+    except Exception as e:
+        return f'ERR:{e!r}'.encode()
+    finally:
+        client.close()
+        lsn.close()
+        t.join(timeout=3)
+
+
+def test_dispatch_redis_reply_reaches_client():
+    # Redis is client-first AND capture_creds=True -- the +PONG must arrive
+    # before any credential-capture read, or the client times out.
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    got = _dispatch(lambda: get_face(6379), ping, 6379)
+    assert got.startswith(b'+PONG'), f'client got {got!r} (reply not delivered)'
+
+
+def test_dispatch_memcached_reply_reaches_client():
+    got = _dispatch(lambda: get_face(11211), b'version' + CRLF, 11211)
+    assert got.startswith(b'VERSION'), f'client got {got!r}'
+
+
+def test_dispatch_elasticsearch_reply_reaches_client():
+    req = b'GET / HTTP/1.0' + CRLF + CRLF
+    got = _dispatch(lambda: get_face(9200), req, 9200)
+    assert got.startswith(b'HTTP/1.1 200'), f'client got {got!r}'
+
+
+def test_dispatch_ssh_banner_reaches_client_before_speaking():
+    got = _dispatch(lambda: get_face(10022), None, 10022)
+    assert got.startswith(b'SSH-2.0-'), f'client got {got!r}'

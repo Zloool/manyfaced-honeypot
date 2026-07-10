@@ -352,6 +352,60 @@ class TestReceiveTimeout:
         assert result == 'hello world'
 
 
-# ===================================================================
-# config.py  –  Config.load / generate_config_file / _find_config_file / _load_toml / _resolve
-# ===================================================================
+class TestReceiveFirstFrame:
+    """Tests for receive_first_frame (issue #377 client-first fix).
+
+    Unlike receive_timeout, this must return as soon as the peer's frame is
+    read (short idle gap), not block until the connection idles/closes.
+    """
+
+    def test_returns_frame_and_does_not_block_for_idle(self):
+        """A single recv that returns data should return promptly, NOT wait
+        the full timeout for the connection to go idle (that was the bug that
+        made client-first faces time out before replying)."""
+        from socket import timeout as socket_timeout
+
+        from manyfaced.common.utils import RECVLINE_IDLE, receive_first_frame
+
+        # recv returns one chunk, then idles (timeout) -> frame complete.
+        mock_socket = MagicMock()
+        mock_socket.recv.side_effect = [b'PING', socket_timeout('idle')]
+
+        result = receive_first_frame(mock_socket, timeout=5.0)
+
+        assert result == 'PING'
+        # Only the first recv waits the full timeout; trailing recvs use RECVLINE_IDLE.
+        assert mock_socket.recv.call_count == 2
+        # Second recv uses the short idle timeout, not the full 5s.
+        idle_calls = [
+            c
+            for c in mock_socket.settimeout.call_args_list
+            if c.args and c.args[0] == RECVLINE_IDLE
+        ]
+        assert idle_calls, 'idle recv did not switch to RECVLINE_IDLE'
+
+    def test_coalesces_multi_segment_frame(self):
+        """Trailing bytes that arrive within the idle window are kept."""
+        from socket import timeout as socket_timeout
+
+        from manyfaced.common.utils import receive_first_frame
+
+        mock_socket = MagicMock()
+        # chunk1, chunk2 (within idle), then idle.
+        CRLF = bytes([13, 10])
+        mock_socket.recv.side_effect = [b'*1' + CRLF, b'$4' + CRLF, socket_timeout('idle')]
+
+        result = receive_first_frame(mock_socket, timeout=5.0)
+
+        crlf = chr(13) + chr(10)
+        assert result == '*1' + crlf + '$4' + crlf
+
+    def test_empty_when_peer_closes_immediately(self):
+        from manyfaced.common.utils import receive_first_frame
+
+        mock_socket = MagicMock()
+        mock_socket.recv.side_effect = [b'']  # peer closed
+
+        result = receive_first_frame(mock_socket, timeout=1.0)
+
+        assert result == ''

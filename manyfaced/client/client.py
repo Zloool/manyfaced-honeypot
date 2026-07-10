@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
 from manyfaced.common.status import BOT_TIMEOUT
-from manyfaced.common.utils import receive_timeout
+from manyfaced.common.utils import receive_first_frame, receive_timeout
 from manyfaced.handlers.http_handler import (
     HTTPHandler,
     _build_bear_storage,
@@ -350,8 +350,11 @@ def _handle_non_http_connection(
         except socket.error:
             return
 
-    # ── EXCHANGE: read the client's frame (auth / request) ─────────────────
-    message = receive_timeout(connection_socket, BOT_TIMEOUT)
+    # ── EXCHANGE: read the client's request/response frame ──────────────────
+    # Use receive_first_frame (not receive_timeout) so we reply as soon as the
+    # peer's frame is read, instead of blocking until the connection idles
+    # (which made client-first faces time out before ever sending a reply).
+    message = receive_first_frame(connection_socket, BOT_TIMEOUT)
     raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
 
     reply = b''
@@ -362,7 +365,8 @@ def _handle_non_http_connection(
             logger.debug('face %s respond error: %s', spec.name, e)
             reply = b''
 
-    # ── SSH: drive the binary credential capture after the banner ──────────
+    # ── SSH: banner already sent in PRELUDE; drive binary credential capture,
+    #    then record. SSH has no follow-up reply to send. ───────────────────
     if spec.name == 'ssh':
         creds = _capture_credentials(connection_socket, bot_ip, spec.greeting)
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
@@ -371,23 +375,31 @@ def _handle_non_http_connection(
         _enrich_and_send_bear(bs, bot_ip)
         return
 
-    # ── Interactive (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL) credential capture
-    if spec.capture_creds and reply:
-        creds = _capture_credentials(connection_socket, bot_ip, reply)
-        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
-        if creds:
-            bs.login = creds
-        _enrich_and_send_bear(bs, bot_ip)
-        return
-
-    # ── Client-first reply (Redis/Memcached/MongoDB/Zookeeper/Postgres/ES) ──
+    # ── REPLY: send the protocol response (if any) BEFORE any blocking
+    #    credential-capture read, so the client actually receives it.
+    #    Critical for client-first faces (Redis +PONG, Memcached VERSION,
+    #    ES 200, Postgres AuthRequest, …) which would otherwise time out
+    #    waiting on the capture read. ─────────────────────────────────────
     if reply:
         try:
             connection_socket.sendall(reply)
         except socket.error:
             pass
 
-    # Always record the probe (greeting-only / no-credential exchanges too).
+    # ── Interactive credential capture (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL/
+    #    Redis/…) — runs AFTER the reply so the connection stays responsive.
+    #    Reads the client's subsequent auth frame(s); a no-data timeout just
+    #    means no creds were offered. ───────────────────────────────────────
+    creds = None
+    if spec.capture_creds:
+        creds = _capture_credentials(connection_socket, bot_ip, reply)
+    if creds:
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs.login = creds
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Record the probe (greeting-only / no-credential exchanges too) ─────
     bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
     _enrich_and_send_bear(bs, bot_ip)
 

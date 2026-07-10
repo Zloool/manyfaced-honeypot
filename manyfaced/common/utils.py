@@ -8,6 +8,14 @@ from manyfaced.common.status import CLIENT_TIMEOUT
 
 logger = get_logger(__name__)
 
+# --- non-HTTP exchange timing -------------------------------------------------
+# How long to wait for the first byte of a client-first request frame.
+EXCHANGE_TIMEOUT = 5.0
+# After the first chunk, how long to keep draining trailing bytes of the same
+# frame before deciding the frame is complete (request/response protocols,
+# where the server must reply promptly rather than wait for idle/close).
+RECVLINE_IDLE = 0.3
+
 # Default JSONL dump path – overridable via settings.DUMP_FILE or env var
 _DUMP_FILE = os.environ.get('MANYFACED_DUMP_FILE', 'dump.jsonl')
 
@@ -26,6 +34,45 @@ def dump_file(data):
         pass
     with open(path, 'a') as f:
         f.write(json.dumps(data, default=str) + '\n')
+
+
+def receive_first_frame(the_socket, timeout=EXCHANGE_TIMEOUT):
+    """Read a single client frame for a request/response (non-HTTP) exchange.
+
+    Unlike :func:`receive_timeout` (which loops until the connection goes idle
+    or closes — appropriate for HTTP requests and SSH credential capture), this
+    returns as soon as the peer's frame has been read, so the server can reply
+    promptly. It reads the first chunk, then keeps draining any immediately
+    following chunks with a short idle timeout (to coalesce a frame that
+    arrived in multiple TCP segments) and stops on the first idle gap.
+
+    Args:
+        the_socket: The client socket.
+        timeout: Max time to wait for the first byte.
+
+    Returns:
+        The decoded frame (``str``) or ``b''`` / ``''`` if nothing arrived.
+    """
+    the_socket.settimeout(timeout)
+    chunks: list[bytes] = []
+    try:
+        while True:
+            try:
+                data = the_socket.recv(8192)
+            except socket_timeout:
+                break  # idle gap → frame complete (or no data at all)
+            if not data:
+                break  # peer closed
+            chunks.append(data)
+            # After the first chunk, only wait a brief moment for trailing bytes
+            # of the same frame; a longer idle means the frame is finished.
+            the_socket.settimeout(RECVLINE_IDLE)
+    except socket_error:
+        pass
+    finally:
+        the_socket.settimeout(None)  # reset to blocking for the reply
+    raw = b''.join(chunks)
+    return raw.decode('utf-8', errors='replace')
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
