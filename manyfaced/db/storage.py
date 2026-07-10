@@ -218,6 +218,17 @@ class StorageBackend(ABC):
         """Close any connections / resources held by the backend."""
         ...
 
+    @property
+    def connection(self):
+        """Public access to the backend's underlying DB connection (read/write).
+
+        Operational scripts (e.g. ``scripts/enrich_historical.py``) use this to
+        run ad-hoc SQL without reaching into protected internals. Subclasses
+        return their native connection object (psycopg2 connection for
+        PostgreSQL, the sqlite3 connection for SQLite).
+        """
+        raise NotImplementedError
+
     # -- read API (issue #234 dashboard) ------------------------------------
     # Not declared @abstractmethod: the existing abstract contract for storage
     # backends is insert/close only (see test_storage). Concrete subclasses
@@ -1076,6 +1087,18 @@ class PostgreSQLStorage(StorageBackend):
     process-wide ``_STORAGE_LOCK`` (not the per-instance lock) serializes the
     writer process's inserts against the single shared connection.
     """
+
+    @property
+    def connection(self):
+        """Public access to the underlying psycopg2 connection.
+
+        Used by operational scripts (e.g. ``scripts/enrich_historical.py``) that
+        need to run ad-hoc SQL against the live backend without reaching into the
+        protected ``_conn``. The connection is the process-wide singleton reused
+        for inserts; callers must commit/rollback their own transactions.
+        """
+        self._ensure_connected()
+        return self._conn
 
     def __init__(
         self,
