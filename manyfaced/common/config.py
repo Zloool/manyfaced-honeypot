@@ -362,7 +362,11 @@ class Config:
                 base = Path(xdg) if xdg else Path(os.path.expanduser('~'))
             path = base / '.config' / 'manyfaced' / 'config.toml'
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        # Restrict the parent directory on fresh creation (mode only applies
+        # when the dir is actually created; exist_ok=True keeps it a no-op
+        # when it already exists). 0o700 keeps the secret-bearing config
+        # readable only by the owning user (issue #410).
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         def _toml_str(value: str) -> str:
             # TOML basic strings escape backslashes; on Windows a raw Path str
@@ -452,6 +456,12 @@ class Config:
         # em dash in the [security] comment above into a byte tomllib's strict
         # UTF-8 decode then rejects on load, crashing every future Config.load().
         path.write_text('\n'.join(lines), encoding='utf-8')
+        # Restrict the generated config file to 0o600 so the embedded secrets
+        # (DASHBOARD_SECRET, hivepass, pg_password, default_key) are not
+        # world-readable (issue #410). chmod is a POSIX concept; guard it so a
+        # Windows dev run does not crash if the platform lacks it.
+        if hasattr(os, 'chmod'):
+            os.chmod(path, 0o600)
         return path
 
     def _generated_dashboard_secret(self) -> str:
