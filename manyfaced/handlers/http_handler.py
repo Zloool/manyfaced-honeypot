@@ -373,3 +373,95 @@ class HTTPHandler:
         if parts and len(parts) >= 1:
             return parts[0].upper()
         return 'GET'
+
+
+def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int):
+    """Build a ``BearStorage`` for a non-HTTP face probe (issue #377).
+
+    Shared by the new port-keyed non-HTTP dispatch so every face records a
+    consistent capture (protocol, detected_id, raw bytes, listen port), instead
+    of being silently dropped when no client data arrives.
+
+    Args:
+        bot_ip: Source IP of the bot.
+        spec: The resolved ``FaceSpec`` from ``manyfaced.common.faces``.
+        raw_bytes: The client's frame (may be empty for greeting-only probes).
+        listen_port: The bound port the client connected to.
+    """
+    from manyfaced.common.faces import FaceSpec  # noqa: PLC0415
+
+    assert isinstance(spec, FaceSpec)
+    request_time = str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f'))
+
+    class _ParsedNonHTTP:
+        command = spec.name.upper()
+        path = '/'
+        version = ''
+        headers: dict[str, str] = {}
+        user_agent = spec.name
+
+    bs = BearStorage(
+        bot_ip,
+        raw_bytes.decode('latin-1', errors='replace'),
+        request_time,
+        _ParsedNonHTTP(),
+        spec.detected_id,
+        settings.HIVELOGIN,
+    )
+    if listen_port:
+        bs.listen_port = listen_port
+    return bs
+
+
+def _enrich_and_send_bear(bs, bot_ip: str) -> None:
+    """Resolve geo/DNS + classify + queue the report for a BearStorage (issue #377).
+
+    Equivalent to ``HTTPHandler._enrich_and_send`` but callable without an
+    ``HTTPHandler`` instance, so the non-HTTP dispatch path can reuse the exact
+    same enrichment pipeline (geo, DNS, benign classification, report queue).
+    """
+    try:
+        bs.dns_name = bs.resolve_dns_name(bot_ip, timeout=1.0)
+    except Exception:
+        logger.debug('DNS resolution failed for %s', bot_ip)
+    try:
+        bs.resolve_geo(bot_ip, timeout=2.0)
+    except Exception:
+        logger.debug('Geo resolution failed for %s', bot_ip)
+    try:
+        bs.classification, bs.benign_source = classify(
+            reverse_dns=bs.dns_name,
+            org=bs.org,
+            asn=bs.asn,
+            user_agent=bs.ua,
+        )
+        from manyfaced.common.metrics import incr
+
+        incr(f'classification.{bs.classification}')
+    except Exception:
+        logger.debug('Classification failed for %s', bot_ip)
+
+    server_host = getattr(_ENRICH_ARGS, 'server_host', '127.0.0.1')
+    server_port = getattr(_ENRICH_ARGS, 'server', None)
+    if server_port is not None:
+        q = _get_report_queue()
+        from manyfaced.client.report_sender import send_report  # noqa: PLC0415
+
+        q.put(
+            (
+                send_report,
+                (bs, bot_ip, settings.HIVEPASS, server_host, server_port, settings.HIVELOGIN),
+            )
+        )
+
+
+# Args namespace captured once at startup so non-HTTP enrichment can reach the
+# report server host/port without threading an HTTPHandler instance through.
+_ENRICH_ARGS = None
+
+
+def set_enrich_args(args) -> None:
+    """Register the parsed CLI args so ``_enrich_and_send_bear`` can reach the
+    report server host/port (issue #377). Called once from the client main."""
+    global _ENRICH_ARGS
+    _ENRICH_ARGS = args
