@@ -52,8 +52,18 @@ VENV="${CURRENT_TARGET}/venv/bin/python3"
 [ -x "$VENV" ] || VENV="/opt/manyfaced/venv/bin/python3"
 
 # 1) Reconcile schema (non-destructive; only adds missing columns).
+#    SQLite-only: PostgreSQLStorage self-manages its schema at connect time
+#    (CREATE TABLE IF NOT EXISTS + ALTER COLUMN for each new column in
+#    _init_db), so running the SQLite migrate_db.py against Postgres is both
+#    pointless and broken -- it would try to open a non-existent .sqlite
+#    file. Skipping it for postgresql also removes the disk-full ENOSPC risk
+#    that broke deploys (issue: 2026-07 disk-full deploy fail).
 echo "== Reconciling schema =="
-"$VENV" "${CURRENT_TARGET}/scripts/migrate_db.py"
+if [ "$BACKEND" = "postgresql" ]; then
+  echo "OK: backend is postgresql -- schema is self-managed by PostgreSQLStorage; skipping SQLite migrate"
+else
+  "$VENV" "${CURRENT_TARGET}/scripts/migrate_db.py"
+fi
 
 # 2) Prove a write lands through the real storage path.
 echo "== Verifying a record can be written =="
