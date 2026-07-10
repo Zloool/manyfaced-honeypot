@@ -145,9 +145,9 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 
 .log-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden}
 .payloads-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;overflow:hidden;max-height:520px;overflow-y:auto}
-.payload-row{border-bottom:1px solid rgba(120,255,170,.07);padding:8px 12px}
+.payload-row{border-bottom:1px solid rgba(120,255,170,.07);padding:12px 14px}
 .payload-row:last-child{border-bottom:none}
-.payload-pre{margin:0;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;color:#8fe6ac;text-transform:none}
+.log-raw-meta.payload-meta{justify-content:space-between;gap:14px;margin:0 0 6px}
 .log-head-row{display:grid;grid-template-columns:82px 92px 1fr 132px 92px 26px;gap:10px;padding:9px 14px;
   border-bottom:1px solid rgba(120,255,170,.14);font-size:10px;letter-spacing:1px;color:#2f5c40;text-transform:uppercase}
 .log-empty{padding:34px;text-align:center;color:#3f7a55;font-size:13px}
