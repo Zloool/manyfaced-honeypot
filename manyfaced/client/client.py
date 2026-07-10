@@ -357,14 +357,6 @@ def _handle_non_http_connection(
     message = receive_first_frame(connection_socket, BOT_TIMEOUT)
     raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
 
-    reply = b''
-    if raw_bytes and spec.respond is not None:
-        try:
-            reply = spec.respond(raw_bytes, bot_ip) or b''
-        except Exception as e:  # never let a handler blow up the dispatch loop
-            logger.debug('face %s respond error: %s', spec.name, e)
-            reply = b''
-
     # ── SSH: banner already sent in PRELUDE; drive binary credential capture,
     #    then record. SSH has no follow-up reply to send. ───────────────────
     if spec.name == 'ssh':
@@ -374,6 +366,66 @@ def _handle_non_http_connection(
             bs.login = creds
         _enrich_and_send_bear(bs, bot_ip)
         return
+
+    # ── Client-first faces (Redis/Memcached/Mongo/Postgres/ES/Zookeeper): a
+    #    real client issues a *sequence* of commands (e.g. redis-py does
+    #    HELLO → PING → SET), so run a request/reply loop until the client
+    #    stops sending or the connection idles. Each frame is replied to
+    #    promptly; credentials offered on any frame are captured. ──────────
+    if spec.direction == 'client-first':
+        creds: object = None
+        # Process the first (prelude) frame.
+        if raw_bytes and spec.respond is not None:
+            try:
+                reply = spec.respond(raw_bytes, bot_ip) or b''
+            except Exception as e:  # never let a handler blow up the loop
+                logger.debug('face %s respond error: %s', spec.name, e)
+                reply = b''
+            if reply:
+                try:
+                    connection_socket.sendall(reply)
+                except socket.error:
+                    return
+        if spec.capture_creds and spec.extract_creds is not None:
+            c = spec.extract_creds(raw_bytes)
+            creds = creds or c
+        # Loop for subsequent frames (bounded by idle timeout + sane iteration cap).
+        for _ in range(64):
+            frame = receive_first_frame(connection_socket, BOT_TIMEOUT)
+            if not frame:
+                break
+            raw2 = frame.encode('utf-8') if isinstance(frame, str) else frame
+            if not raw2:
+                break
+            if spec.capture_creds and spec.extract_creds is not None:
+                c = spec.extract_creds(raw2)
+                creds = creds or c
+            if spec.respond is not None:
+                try:
+                    reply2 = spec.respond(raw2, bot_ip) or b''
+                except Exception as e:
+                    logger.debug('face %s respond error: %s', spec.name, e)
+                    reply2 = b''
+                if reply2:
+                    try:
+                        connection_socket.sendall(reply2)
+                    except socket.error:
+                        break
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        if creds:
+            bs.login = creds if isinstance(creds, str) else str(creds)
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Server-first interactive (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL/…):
+    #    single reply, then blocking credential capture, then record. ───────
+    reply = b''
+    if raw_bytes and spec.respond is not None:
+        try:
+            reply = spec.respond(raw_bytes, bot_ip) or b''
+        except Exception as e:  # never let a handler blow up the dispatch loop
+            logger.debug('face %s respond error: %s', spec.name, e)
+            reply = b''
 
     # ── REPLY: send the protocol response (if any) BEFORE any blocking
     #    credential-capture read, so the client actually receives it.
