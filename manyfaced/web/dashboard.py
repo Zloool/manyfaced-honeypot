@@ -196,7 +196,7 @@ _C2_IGNORE_HOSTS = frozenset(
     {
         'localhost',
         '127.0.0.1',
-        '0.0.0.0',
+        '0.0.0.0',  # nosec B104 - ignore-list entry, not a bind address
         '::1',
     }
 )
