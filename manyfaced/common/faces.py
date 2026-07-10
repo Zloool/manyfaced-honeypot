@@ -95,6 +95,10 @@ class FaceSpec:
     greeting: bytes
     respond: Callable[[bytes, str], bytes | None]
     capture_creds: bool = False
+    # Optional credential extractor called on each client frame during the
+    # client-first exchange loop so creds offered across multiple commands
+    # (e.g. Redis AUTH after HELLO) are captured. ``None`` = no extraction.
+    extract_creds: Callable[[bytes], object] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +205,12 @@ def _mysql_greeting() -> bytes:
 
 def _redis_respond(raw: bytes, bot_ip: str) -> bytes:
     return _redis_resp(raw, bot_ip) or b''
+
+
+def _redis_extract(raw: bytes):
+    from manyfaced.handlers.redis_handler import extract_redis_credentials
+
+    return extract_redis_credentials(raw)
 
 
 def _mongo_respond(raw: bytes, bot_ip: str) -> bytes:
@@ -321,8 +331,8 @@ def _no_reply(raw: bytes, bot_ip: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 # External port -> (name, detected_id, direction, greeting-fn, respond-fn,
-# capture_creds). Only non-HTTP faces are listed; HTTP ports resolve to None
-# and fall through to the existing HTTP path.
+# capture_creds, extract_creds-or-None). Only non-HTTP faces are listed; HTTP
+# ports resolve to None and fall through to the existing HTTP path.
 _FACE_DEFS: dict[int, tuple] = {
     22: (
         SSH_CLIENT,
@@ -330,33 +340,41 @@ _FACE_DEFS: dict[int, tuple] = {
         _ssh_greeting,
         None,
         True,
+        None,
     ),  # SSH: client.py drives after greeting
-    23: (UNKNOWN_TELNET, SERVER_FIRST, _telnet_greeting, _telnet_respond, True),
-    21: (UNKNOWN_NON_HTTP, SERVER_FIRST, _ftp_greeting, _ftp_respond, True),
-    25: (UNKNOWN_NON_HTTP, SERVER_FIRST, _smtp_greeting, _smtp_respond, False),
-    110: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3_greeting, _pop3_respond, True),
-    143: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imap_greeting, _imap_respond, True),
-    5900: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False),
-    5901: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False),
-    3389: (UNKNOWN_RDP, SERVER_FIRST, _rdp_greeting, _rdp_respond, True),
-    1433: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mssql_greeting, _greeting_only_respond, True),
-    3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _greeting_only_respond, True),
-    5672: (UNKNOWN_NON_HTTP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False),
+    23: (UNKNOWN_TELNET, SERVER_FIRST, _telnet_greeting, _telnet_respond, True, None),
+    21: (UNKNOWN_NON_HTTP, SERVER_FIRST, _ftp_greeting, _ftp_respond, True, None),
+    25: (UNKNOWN_NON_HTTP, SERVER_FIRST, _smtp_greeting, _smtp_respond, False, None),
+    110: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3_greeting, _pop3_respond, True, None),
+    143: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imap_greeting, _imap_respond, True, None),
+    5900: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False, None),
+    5901: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False, None),
+    3389: (UNKNOWN_RDP, SERVER_FIRST, _rdp_greeting, _rdp_respond, True, None),
+    1433: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mssql_greeting, _greeting_only_respond, True, None),
+    3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _greeting_only_respond, True, None),
+    5672: (UNKNOWN_NON_HTTP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False, None),
     # client-first faces (high ports, no privilege redirect needed)
-    6379: (UNKNOWN_REDIS, CLIENT_FIRST, lambda: b'', _redis_respond, True),
-    27017: (UNKNOWN_MONGODB, CLIENT_FIRST, lambda: b'', _mongo_respond, False),
-    11211: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _memcached_respond, False),
-    2181: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _zookeeper_respond, False),
-    5432: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _postgres_respond, False),
-    9200: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False),
-    15672: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False),
+    6379: (UNKNOWN_REDIS, CLIENT_FIRST, lambda: b'', _redis_respond, True, _redis_extract),
+    27017: (UNKNOWN_MONGODB, CLIENT_FIRST, lambda: b'', _mongo_respond, False, None),
+    11211: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _memcached_respond, False, None),
+    2181: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _zookeeper_respond, False, None),
+    5432: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _postgres_respond, False, None),
+    9200: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
+    15672: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
 }
 
 
 def _build_registry() -> dict[int, FaceSpec]:
     """Compose FACE_REGISTRY from the canonical port tables."""
     reg: dict[int, FaceSpec] = {}
-    for ext_port, (detected_id, direction, greet_fn, respond_fn, cap) in _FACE_DEFS.items():
+    for ext_port, (
+        detected_id,
+        direction,
+        greet_fn,
+        respond_fn,
+        cap,
+        extract,
+    ) in _FACE_DEFS.items():
         # The SSH face reuses the SSH banner greeting; its respond path is the
         # SSH binary credential parse, handled specially in client.py, so we set
         # an empty respond here (client.py drives SSH after the greeting).
@@ -373,6 +391,7 @@ def _build_registry() -> dict[int, FaceSpec]:
             greeting=greet_fn(),
             respond=respond,
             capture_creds=cap,
+            extract_creds=extract,
         )
     return reg
 
