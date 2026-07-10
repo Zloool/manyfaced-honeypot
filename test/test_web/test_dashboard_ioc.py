@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 
 import pytest
 
@@ -740,3 +741,26 @@ def test_js_wires_log_pager():
     assert "$('#log-pager')" in _JS
     assert "$('#log-pager-wrap')" not in _JS
     assert 'function wireLogPager' in _JS
+
+
+def test_js_wires_log_pager_on_page_load():
+    # Regression #416 (second half): the pager must be wired on initial page
+    # load, not only lazily via applyFragment() (which only fires once some
+    # other fragment refresh happens to include 'log-pager'). If wireLogPager()
+    # is missing from the DOMContentLoaded/readyState init block, the pager has
+    # no click listener on a fresh load and pagination looks dead until the
+    # first 20s live-poll tick — the original "fix" that only changed the
+    # container id passed the string-level tests but left this broken.
+    from manyfaced.web.dashboard_assets import JS as _JS
+
+    # Both init paths (DOMContentLoaded listener + immediate readyState run)
+    # must route through a single initWire() that calls wireLogPager().
+    assert 'function initWire' in _JS
+    assert re.search(r'initWire\(\)', _JS) is not None
+    # The init wiring must actually invoke the pager wirer.
+    assert 'wireLogPager()' in _JS
+    # It must NOT rely solely on applyFragment() to wire the pager on load:
+    # the init block's wire calls must list wireLogPager explicitly, between
+    # wireIocRows() and applyFilters().
+    init_block = _JS[_JS.index('function initWire') :]
+    assert 'wireIocRows(); wireLogPager(); applyFilters()' in init_block
