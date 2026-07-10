@@ -10,6 +10,12 @@ UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 UNKNOWN_TELNET = 4294967285  # Telnet probe
 UNKNOWN_RDP = 4294967284  # RDP probe
 UNKNOWN_VNC = 4294967283  # VNC probe
+# SIP/SNMP are UDP-only probes — the honeypot had no UDP transport before the
+# UDP face work (issue #388), so these IDs are added there. The next free
+# descending values below FINGERPRINT_PROBE (4294967282) are used to keep the
+# high non-HTTP ID space contiguous.
+UNKNOWN_SIP = 4294967281  # SIP (Session Initiation Protocol) UDP probe
+UNKNOWN_SNMP = 4294967280  # SNMP (Simple Network Management Protocol) UDP probe
 FINGERPRINT_PROBE = (
     4294967282  # High-entropy random-path honeypot-fingerprinting probe (issue #324)
 )
