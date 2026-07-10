@@ -1196,3 +1196,69 @@ class TestIssue366IocLogScoping:
             assert storage.count_recent(ip='1.2.3.4', host='evil.example') == 0
         finally:
             storage.close()
+
+
+class TestNonbenignPortsAndLiveness:
+    """Issue #409: hero ports + liveness come from real non-benign activity.
+
+    nonbenign_ports() must exclude ports that only benign research scanners
+    (Shodan/Censys/...) hit; last_capture_ts() must return the real MAX
+    timestamp (or None on an empty table).
+    """
+
+    def _storage(self, db_path):
+        # Default init_schema=True creates the table + classification columns.
+        return SQLiteStorage(db_path=db_path)
+
+    def _seed_row(self, cur, port, ts, classification):
+        cur.execute(
+            'INSERT INTO honeypot_bears '
+            '(bot_ip, hostname, timestamp, request_raw, listen_port, classification) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            ('203.0.113.9', 'hive', ts, 'GET / HTTP/1.1', port, classification),
+        )
+
+    def test_nonbenign_ports_excludes_benign_only(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'nb.db'))
+        try:
+            cur = storage._conn.cursor()
+            # 22 hit only by a benign scanner; 80 hit by a real (unknown) sender;
+            # 443 hit by neither -> must not appear.
+            self._seed_row(cur, 22, '2026-07-10 10:00:00.000000', 'benign')
+            self._seed_row(cur, 80, '2026-07-10 10:05:00.000000', 'unknown')
+            storage._conn.commit()
+            ports = storage.nonbenign_ports()
+            assert 80 in ports
+            assert 22 not in ports  # benign-only -> excluded
+            assert 443 not in ports
+        finally:
+            storage.close()
+
+    def test_nonbenign_ports_null_classification_counts(self, tmp_path):
+        # Pre-#271 rows (classification NULL) must still count as non-benign.
+        storage = self._storage(str(tmp_path / 'nbnull.db'))
+        try:
+            cur = storage._conn.cursor()
+            self._seed_row(cur, 3306, '2026-07-10 09:00:00.000000', None)
+            storage._conn.commit()
+            assert 3306 in storage.nonbenign_ports()
+        finally:
+            storage.close()
+
+    def test_last_capture_ts_returns_max(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'lc.db'))
+        try:
+            cur = storage._conn.cursor()
+            self._seed_row(cur, 80, '2026-07-10 08:00:00.000000', 'unknown')
+            self._seed_row(cur, 22, '2026-07-10 11:30:00.000000', 'unknown')
+            storage._conn.commit()
+            assert storage.last_capture_ts() == '2026-07-10 11:30:00.000000'
+        finally:
+            storage.close()
+
+    def test_last_capture_ts_empty_is_none(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'lcempty.db'))
+        try:
+            assert storage.last_capture_ts() is None
+        finally:
+            storage.close()

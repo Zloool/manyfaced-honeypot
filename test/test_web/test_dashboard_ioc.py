@@ -241,11 +241,120 @@ class _FakeAggregateStore:
     def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
         return []
 
+    def nonbenign_ports(self):  # noqa: ANN001, ANN002
+        # Mirror aggregate_stats.by_port but strip benign-only ports. The fake's
+        # only port (23) has benign=0 in by_classification, so it counts.
+        return [r['key'] for r in [{'key': 23}] if r['key']]
+
+    def last_capture_ts(self):  # noqa: ANN001, ANN002
+        return '2026-07-09 23:59:59.000000'
+
     def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
         return 0
 
     def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
         return []
+
+
+class _FakeBenignOnlyStore(_FakeAggregateStore):
+    """Like _FakeAggregateStore but every captured hit is benign.
+
+    by_port says 23/80/443 were hit, but nonbenign_ports() returns nothing —
+    so the hero must fall back to configured ports, never surface the
+    benign-warmed ports as "active" (issue #409).
+    """
+
+    def nonbenign_ports(self):  # noqa: ANN001, ANN002
+        return []
+
+    def last_capture_ts(self):  # noqa: ANN001, ANN002
+        return '2026-07-10 11:00:00.000000'
+
+
+def test_build_payload_excludes_benign_only_ports_from_hero(monkeypatch):
+    store = _FakeBenignOnlyStore()
+    monkeypatch.setattr(_dash_mod._storage, 'get_storage', lambda **kw: store)
+    monkeypatch.setattr(
+        type(_dash_mod._config.settings), 'resolve_ports', lambda self: [22, 80, 443]
+    )
+    payload = _dash_mod._build_payload('24h', token='tok', page=1)
+    # by_port had 23/80/443, but they were all benign -> the benign-warmed
+    # port 23 must NOT appear as an active port.
+    active = [p for p, _w in payload['display_ports']]
+    assert 23 not in active
+    # With no non-benign activity, the panel falls back to the configured
+    # listening ports (22/80/443) so it isn't empty.
+    assert active == [22, 80, 443]
+    assert payload['nonbenign_active_count'] == 3
+    # last_capture flows through for the liveness badge.
+    assert payload['last_capture'] == '2026-07-10 11:00:00.000000'
+
+
+def test_build_payload_surfaces_real_nonbenign_ports(monkeypatch):
+    store = _FakeAggregateStore()  # nonbenign_ports() -> [23]
+    monkeypatch.setattr(_dash_mod._storage, 'get_storage', lambda **kw: store)
+    monkeypatch.setattr(
+        type(_dash_mod._config.settings), 'resolve_ports', lambda self: [22, 80, 443]
+    )
+    payload = _dash_mod._build_payload('24h', token='tok', page=1)
+    active = [p for p, _w in payload['display_ports']]
+    assert 23 in active  # the one port with a real (non-benign) hit
+    # Configured-but-unhit ports do NOT pad the hero.
+    assert 22 not in active and 80 not in active and 443 not in active
+    assert payload['nonbenign_active_count'] == 1
+
+
+def test_render_hero_sub_reports_real_active_count():
+    payload = {
+        'hostname': 'hive-01',
+        'mult': 6,
+        'display_ports': [(23, 5), (443, 2)],
+        'nonbenign_active_count': 2,
+        'listening_count': 9,
+        'last_capture': '2026-07-10 11:00:00.000000',
+        'stats': {'hour_total': 7, 'total': 42, 'day': 10, 'unique_ips': 5},
+    }
+    html = _render_mod._render_hero(payload)
+    # Sub-line reports the real non-benign count, not the configured count.
+    assert '<b>2</b> ports hit' in html
+    assert 'by non-benign senders' in html
+    # The live liveness badge carries the real last-seen timestamp.
+    assert 'data-last="2026-07-10 11:00:00.000000"' in html
+    # Hero canvas gets the ports-lit count.
+    assert 'data-bcount="2"' in html
+
+
+def test_render_fragment_meta_includes_last_capture():
+    payload = {
+        'hostname': 'hive-01',
+        'mult': 6,
+        'display_ports': [],
+        'nonbenign_active_count': 0,
+        'listening_count': 1,
+        'last_capture': '2026-07-10 11:00:00.000000',
+        'stats': {'total': 0, 'day': 0, 'unique_ips': 0, 'hour_total': 0},
+        'by_port': [],
+        'by_country': [],
+        'by_service': [],
+        'by_ip': [],
+        'by_classification': [],
+        'c2_hosts': [],
+        'ioc_since': None,
+        'volume_bars': [],
+        'log_rows': [],
+        'payloads': [],
+        'log_window_total': 0,
+        'log_page_size': 50,
+        'page': 1,
+        'range': '24h',
+        'token': 'tok',
+        'log_summary': 'no captures',
+    }
+    frag = _render_mod.render_fragment(payload)
+    frag = frag.decode('utf-8') if isinstance(frag, bytes) else frag
+    # The live-tick meta block exposes lastCapture so the badge can refresh.
+    assert 'lastCapture' in frag
+    assert '2026-07-10 11:00:00.000000' in frag
 
 
 def test_build_payload_includes_ioc_keys(monkeypatch):

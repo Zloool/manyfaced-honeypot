@@ -282,6 +282,34 @@ class StorageBackend(ABC):
         """
         raise NotImplementedError('aggregate_stats not implemented by this backend')
 
+    def nonbenign_ports(self) -> list[int]:
+        """Return the distinct local ``listen_port`` values that have at least
+        one capture that was NOT classified ``benign``.
+
+        Used by the dashboard hero panel (issue #409): it must surface every
+        port that has taken a real hit from a non-benign sender, never a
+        curated/configured guess and never ports kept "warm" only by benign
+        research scanners (Shodan/Censys/Rapid7/Shadowserver — see
+        :mod:`manyfaced.common.classification`). Rows with ``classification``
+        ``NULL`` (pre-classification data / not yet scanned) are treated as
+        *non-benign* so historical captures still count — only an explicit
+        ``'benign'`` tag excludes a port. The caller resolves local ports to
+        their external (attacker-visible) port via
+        :func:`manyfaced.common.ports.external_port`.
+        """
+        raise NotImplementedError('nonbenign_ports not implemented by this backend')
+
+    def last_capture_ts(self) -> str | None:
+        """Return the ISO timestamp of the most recent captured request, or
+        ``None`` if the table is empty.
+
+        Drives the dashboard's "SYSTEM ONLINE" badge (issue #409) so the live
+        light reflects the real last-seen time instead of a fixed hard-coded
+        string. Cheap: single indexed ``MAX(timestamp)`` over the timestamp
+        column.
+        """
+        raise NotImplementedError('last_capture_ts not implemented by this backend')
+
     def volume_series(
         self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
     ) -> list[dict]:
@@ -1111,6 +1139,34 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading volume series from SQLite storage')
             return []
 
+    def nonbenign_ports(self) -> list[int]:
+        if self._conn is None:
+            return []
+        # Keep a port only if it has at least one NON-benign capture. NULL
+        # classification (pre-#271 data / not yet scanned) counts as
+        # non-benign so historical captures still light up the panel.
+        sql = (
+            'SELECT DISTINCT listen_port FROM honeypot_bears '
+            'WHERE listen_port IS NOT NULL AND listen_port != 0 '
+            "AND (classification IS NULL OR classification != 'benign')"
+        )
+        try:
+            rows = self._conn.execute(sql).fetchall()
+            return [int(r[0]) for r in rows if r[0]]
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading non-benign ports from SQLite storage')
+            return []
+
+    def last_capture_ts(self) -> str | None:
+        if self._conn is None:
+            return None
+        try:
+            row = self._conn.execute('SELECT MAX(timestamp) FROM honeypot_bears').fetchone()
+            return row[0] if row and row[0] else None
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading last capture timestamp from SQLite storage')
+            return None
+
     def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
         """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
 
@@ -1672,6 +1728,53 @@ class PostgreSQLStorage(StorageBackend):
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error aggregating stats from PostgreSQL storage')
                 return _empty_stats()
+
+    def nonbenign_ports(self) -> list[int]:
+        if self._conn is None and not self._ensure_connected():
+            return []
+        sql = (
+            'SELECT DISTINCT listen_port FROM honeypot_bears '
+            'WHERE listen_port IS NOT NULL AND listen_port <> 0 '
+            'AND (classification IS NULL OR classification <> %s)'
+        )
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, ('benign',))
+                return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
+        except psycopg2.Error:  # noqa: BLE001
+            logger.warning('PostgreSQL nonbenign_ports error; reconnecting once')
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, ('benign',))
+                    return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading non-benign ports from PostgreSQL storage')
+                return []
+
+    def last_capture_ts(self) -> str | None:
+        if self._conn is None and not self._ensure_connected():
+            return None
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')
+                row = cur.fetchone()
+                return row[0] if row and row[0] else None
+        except psycopg2.Error:  # noqa: BLE001
+            logger.warning('PostgreSQL last_capture_ts error; reconnecting once')
+            self._reset_conn()
+            if not self._ensure_connected():
+                return None
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')
+                    row = cur.fetchone()
+                    return row[0] if row and row[0] else None
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception('Error reading last capture timestamp from PostgreSQL storage')
+                return None
 
     def volume_series(
         self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None

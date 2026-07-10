@@ -65,8 +65,8 @@ def _render_stat_cards(payload: dict) -> str:
         (
             'stat-ports',
             'Active Ports',
-            str(payload['listening_count']),
-            'faces listening',
+            str(payload.get('nonbenign_active_count', len(payload.get('display_ports', [])))),
+            'hit by non-benign senders',
             '#ffcf5c',
         ),
         (
@@ -100,13 +100,22 @@ def _render_hero(payload: dict) -> str:
             [{'p': p, 's': port_service_name(p), 'w': w} for p, w in payload['display_ports']]
         )
     )
+    # Real liveness: the last capture time across the whole DB, so the
+    # "SYSTEM ONLINE" badge (and the nav LIVE pill) reflect actual honeypot
+    # activity instead of a hard-coded string (issue #409). `last_capture` is
+    # an ISO timestamp or None; the client decides green/amber/stale.
+    last_capture = payload.get('last_capture')
+    alive_json = _esc('' if not last_capture else last_capture)
+    # Ports that have taken a real non-benign hit — drives the hero sub-line
+    # and the canvas "ports lit" readout.
+    nonbenign_active = payload.get('nonbenign_active_count', len(payload['display_ports']))
     return f"""
 <section id="top" class="hero">
   <div class="hero-head">
     <div>
       <div class="hero-title">HIVE&nbsp;TELEMETRY<span class="blink-cursor">_</span></div>
-      <div class="hero-sub">node <b>{_esc(payload['hostname'])}</b> &nbsp;·&nbsp; listening on
-        <b>{payload['listening_count']}</b> ports</div>
+      <div class="hero-sub">node <b>{_esc(payload['hostname'])}</b> &nbsp;·&nbsp; <b>{nonbenign_active}</b> ports hit
+        by non-benign senders &middot; <b>{payload['listening_count']}</b> faces listening</div>
     </div>
     <div class="hero-mult">
       <div>PACKET STREAM &times;{payload['mult']}</div>
@@ -114,15 +123,15 @@ def _render_hero(payload: dict) -> str:
     </div>
   </div>
 
-  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}" data-rph="{payload['stats'].get('hour_total', 0)}">
+  <div class="hero-canvas-wrap" id="hero-canvas-wrap" data-ports='{port_json}' data-mult="{payload['mult']}" data-rph="{payload['stats'].get('hour_total', 0)}" data-bcount="{nonbenign_active}">
     <canvas id="srv-canvas"></canvas>
-    <div class="hero-flag"><span class="dot"></span>SYSTEM ONLINE</div>
+    <div class="hero-flag" id="hero-flag" data-last="{alive_json}"><span class="dot"></span><span class="hero-flag-text">SYSTEM ONLINE</span></div>
     <div class="hero-legend">
       <span><i class="sw probe"></i>probe</span>
       <span><i class="sw scan"></i>scan</span>
       <span><i class="sw exploit"></i>exploit</span>
     </div>
-    <div class="hero-hint">green port = open &middot; flare = incoming hit</div>
+    <div class="hero-hint">green port = hit by non-benign traffic &middot; flare = incoming hit</div>
   </div>
 
   <div class="stat-grid" id="stat-grid">{_render_stat_cards(payload)}</div>
@@ -704,7 +713,7 @@ def render_page(payload: dict) -> str:
     <a href="#top">OVERVIEW</a><a href="#volume">VOLUME</a><a href="#intel">INTEL</a><a href="#ioc">IOC</a><a href="#log">LOG</a><a href="#payloads">PAYLOADS</a>
   </div>
   <div class="nav-right">
-    <span class="live-pill"><span class="dot"></span>LIVE</span>
+    <span class="live-pill" id="live-pill"><span class="dot"></span><span class="live-text">LIVE</span></span>
     <span id="clock" class="clock">--:--:--</span>
     <button id="pause-btn" class="btn">&#10074;&#10074; PAUSE</button>
   </div>
@@ -739,8 +748,9 @@ def render_fragment(payload: dict) -> bytes:
         'total': fmt_k(s['total']),
         'day': fmt(s['day']),
         'uniq': fmt(s['unique_ips']),
-        'activePorts': payload['listening_count'],
+        'activePorts': payload.get('nonbenign_active_count', len(payload.get('display_ports', []))),
         'rate': str(s.get('hour_total', 0)),
+        'lastCapture': payload.get('last_capture') or '',
         'summary': payload['log_summary'],
         'logPage': payload['page'],
         'logPageSize': payload['log_page_size'],

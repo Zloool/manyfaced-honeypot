@@ -407,21 +407,31 @@ def _build_payload(
         payloads = _build_payloads(interesting)
 
         configured_ports = _config.settings.resolve_ports()
+        # Hero / port chips: surface every port that has taken a real hit from
+        # a non-benign sender (issue #409). `nonbenign_ports` already filters
+        # benign research scanners out of the `by_port` aggregate; we resolve
+        # each bound high port to its EXTERNAL (attacker-visible) port and
+        # de-duplicate so e.g. direct 22 + redirected 10022 collapse to one
+        # port. Falls back to the configured listening ports only when no
+        # non-benign traffic has been seen yet.
+        nonbenign_local = store.nonbenign_ports()
+        active_external = sorted({_ports.external_port(p) for p in nonbenign_local if p})
         # Weight keyed by EXTERNAL port (resolve_display_ports returns external
-        # ports, and by_port keys are the bound ports the captures were stored
-        # on — map them through display_port so weights line up).
+        # ports; by_port keys are the bound ports the captures were stored on —
+        # map them through display_port so weights line up with the hero LEDs).
         weight_by_port = {
             _data.display_port(int(r['key'])): r['count']
             for r in overview['by_port']
             if r.get('key') is not None
         }
-        # Show EXTERNAL (attacker-visible) ports, not the container bind ports
-        # (issue #320). Sorted by port number, every historically-active port
-        # included (issue #321).
         display_ports = [
             (p, max(1, weight_by_port.get(p, 0)))
-            for p in _data.resolve_display_ports(configured_ports, overview['by_port'])
+            for p in _data.resolve_display_ports(active_external, configured_ports)
         ]
+        # Real last-seen time across the WHOLE table (not the overview window),
+        # so the "SYSTEM ONLINE" badge reflects actual honeypot liveness
+        # instead of a hard-coded string (issue #409).
+        last_capture = store.last_capture_ts()
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by
         # the capture writer. Closing it here drops the writer's connection and
@@ -439,7 +449,9 @@ def _build_payload(
         'hostname': socket.gethostname(),
         'mult': _TRAFFIC_MULTIPLIER,
         'display_ports': display_ports,
+        'nonbenign_active_count': len(display_ports),
         'listening_count': len(configured_ports),
+        'last_capture': last_capture,
         'stats': {
             'total': all_time_total,
             'day': day_total,
