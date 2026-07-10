@@ -54,7 +54,7 @@ nav.top{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:22p
 .clock{color:#d3ffe4;font-variant-numeric:tabular-nums;min-width:74px;text-align:right;display:inline-block}
 .btn{font-size:11px;letter-spacing:.5px;padding:5px 11px;border-radius:4px;background:#0c160d;color:#83f5ae;border:1px solid rgba(120,255,170,.25)}
 
-main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
+main{max-width:1416px;margin:0 auto;padding:0 22px 90px}
 
 .hero{padding:38px 0 10px}
 .hero-head{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:16px}
@@ -66,7 +66,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 .hero-mult{text-align:right;font-size:11px;color:#3f7a55;letter-spacing:.5px}
 .hero-mult .dim{color:#2f5c40}
 
-.hero-canvas-wrap{position:relative;height:452px;border:1px solid rgba(120,255,170,.2);border-radius:9px;
+.hero-canvas-wrap{position:relative;height:588px;border:1px solid rgba(120,255,170,.2);border-radius:9px;
   overflow:hidden;background:radial-gradient(ellipse at 50% 40%, #0a160d, #050905)}
 .hero-canvas-wrap canvas{width:100%;height:100%;display:block}
 .hero-flag{position:absolute;top:12px;left:14px;font-size:11px;letter-spacing:1px;color:#3dff88;display:flex;align-items:center;gap:7px}
@@ -110,7 +110,7 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 
 .vol-box{background:#080f09;border:1px solid rgba(120,255,170,.16);border-radius:8px;padding:16px 18px;overflow-x:auto}
 .vol-chart{display:flex;align-items:flex-end;gap:6px;height:200px;padding-top:6px}
-.vol-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:14px;cursor:pointer;height:100%}
+.vol-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;flex:1 1 0;min-width:38px;cursor:pointer;height:100%}
 .vol-col.focus .vol-bar{background:linear-gradient(180deg,#1f7a49,#d3ffe4)}
 .vol-bars{flex:1 1 auto;width:100%;display:flex;align-items:flex-end;justify-content:center;min-height:0}
 .vol-bar{width:100%;max-width:46px;min-height:2px;background:linear-gradient(180deg,#1f7a49,#3dff88);box-shadow:0 0 10px rgba(61,255,136,.4);border-radius:3px 3px 0 0;transition:height .3s ease}
@@ -212,16 +212,23 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
   nav.top{gap:10px 14px;padding:10px 14px}
   .brand{font-size:20px}
   .nav-links{gap:12px;order:3;width:100%;justify-content:flex-start}
-  .nav-right{margin-left:auto;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  /* nav-right wraps to its own full-width row below ~520px (brand + nav-right no
+     longer fit side by side); the desktop margin-left:auto then right-aligns it
+     alone on that row, stranding it far from brand with a large empty gap. */
+  .nav-right{margin-left:0;gap:10px;flex-wrap:wrap;justify-content:flex-start}
   .hero-title{font-size:34px}
   .log-head-row,.log-row-main,.log-child-row{grid-template-columns:64px 70px 1fr 26px}
   .log-source,.log-sensor{display:none}
+  /* log-head-row's SOURCE/SENSOR labels are plain divs (no .log-source/.log-sensor
+     class), so the rule above doesn't reach them; hide by position instead,
+     or they'd overflow the row's 4 explicit mobile columns. */
+  .log-head-row>div:nth-child(4),.log-head-row>div:nth-child(5){display:none}
   /* Intel / IoC grids: single column so the 260px min never exceeds the
      viewport, and long host/IP values wrap instead of forcing horizontal
      overflow (the "hive telemetry too wide on mobile" report, issue #359b). */
   .intel-grid,.ioc-grid{grid-template-columns:1fr}
   .ioc-row .ioc-value{white-space:normal;word-break:break-all;overflow:visible;text-overflow:clip}
-  .hero-canvas-wrap{height:300px}
+  .hero-canvas-wrap{height:390px}
 }
 """
 
@@ -815,18 +822,31 @@ JS = r"""
       return pts[pts.length-1];
     }
     function sevCol(s){ return s==='crit'?'#ff6b74':s==='warn'?'#ffcf5c':'#3dff88'; }
+    function fitLabel(text,maxW){
+      if (ctx.measureText(text).width<=maxW) return text;
+      var t = text;
+      while (t.length>1 && ctx.measureText(t+'…').width>maxW) t = t.slice(0,-1);
+      return t+'…';
+    }
 
     function layout(){
       var rect = cv.getBoundingClientRect(); var dpr = window.devicePixelRatio || 1;
       cv.width = rect.width*dpr; cv.height = rect.height*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
       state2.W = rect.width; state2.H = rect.height;
-      var cw = Math.min(rect.width-60,720), ch = Math.min(rect.height-120,300);
+      var cw = Math.min(rect.width-60,864), ch = Math.min(rect.height-120,390);
       var cx = (rect.width-cw)/2, cy = (rect.height-ch)/2+8;
-      chassis = {x:cx,y:cy,w:cw,h:ch};
+      // Chassis height is capped, not columns — fewer columns only means more
+      // rows, which is worse when height is the tight dimension (mobile).
+      // Label overflow into neighbor columns on narrow widths is instead
+      // handled by truncating each label to its own cell width (fitLabel).
       var cols = 6, rows = Math.ceil(state2.ports.length/cols);
-      var padX=26, padTop=54, padBot=20;
+      // Below ~480px the title + live-readout header text no longer fit on one
+      // line (they used to overlap in the chassis center) — stack them instead.
+      var headerNarrow = cw < 480;
+      chassis = {x:cx,y:cy,w:cw,h:ch,headerNarrow:headerNarrow};
+      var padX=26, padTop=headerNarrow?70:54, padBot=20;
       var gw=(cw-padX*2)/cols, gh=(ch-padTop-padBot)/rows;
-      var railY = cy+40, centerX = cx+cw/2, n = state2.ports.length;
+      var railY = cy+(headerNarrow?56:40), centerX = cx+cw/2, n = state2.ports.length;
       chassis.railY = railY; chassis.railX0 = cx+16; chassis.railX1 = cx+cw-16;
       state2.ports.forEach(function(pt,i){
         var c=i%cols, r=Math.floor(i/cols);
@@ -836,7 +856,7 @@ JS = r"""
         var rowOff = Math.round((cols-rowCount)/2)*gw;
         var cellLeft = cx+padX+gw*c+rowOff;
         pt.cx = cellLeft+gw/2; pt.cy = cy+padTop+gh*r+gh/2-4;
-        pt.lw = Math.min(gw-24,60); pt.lh = 20;
+        pt.lw = Math.min(gw-24,60); pt.lh = 20; pt.labelMaxW = Math.max(20, gw-6);
         var boxTop = pt.cy-pt.lh/2;
         var gutter = (gw-pt.lw)/2;
         // every port gets its OWN trace, and the fan is mirror-symmetric about center:
@@ -896,14 +916,25 @@ JS = r"""
         ctx.beginPath(); ctx.arc(ch.x-9,ch.y+22+i*((ch.h-44)/2),1.8,0,7); ctx.fill();
         ctx.beginPath(); ctx.arc(ch.x+ch.w+9,ch.y+22+i*((ch.h-44)/2),1.8,0,7); ctx.fill();
       }
-      ctx.font="14px 'VT323', monospace"; ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
-      ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
-      ctx.textAlign='right'; ctx.fillStyle='#3dff88';
+      ctx.textBaseline='middle'; ctx.fillStyle='#8fe6ac'; ctx.textAlign='left';
       // Re-read the ports-lit count live so a live-tick refresh updates it.
       var liveBcount = Number(wrap.getAttribute('data-bcount')) || bcount;
-      ctx.fillText('● '+heroRph+'/h · '+liveBcount+' ports', ch.x+ch.w-18, ch.y+22);
+      var readout = '● '+heroRph+'/h · '+liveBcount+' ports';
+      var ruleY;
+      if (ch.headerNarrow){
+        ctx.font="12px 'VT323', monospace";
+        ctx.fillText('MANYFACED // HIVE-NODE', ch.x+14, ch.y+16);
+        ctx.fillStyle='#3dff88'; ctx.fillText(readout, ch.x+14, ch.y+34);
+        ruleY = ch.y+50;
+      } else {
+        ctx.font="14px 'VT323', monospace";
+        ctx.fillText('MANYFACED // HIVE-NODE', ch.x+18, ch.y+22);
+        ctx.textAlign='right'; ctx.fillStyle='#3dff88';
+        ctx.fillText(readout, ch.x+ch.w-18, ch.y+22);
+        ruleY = ch.y+38;
+      }
       ctx.textAlign='left';
-      ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ch.y+38); ctx.lineTo(ch.x+ch.w-14,ch.y+38); ctx.stroke();
+      ctx.strokeStyle='rgba(120,255,170,0.15)'; ctx.beginPath(); ctx.moveTo(ch.x+14,ruleY); ctx.lineTo(ch.x+ch.w-14,ruleY); ctx.stroke();
 
       function tracePath(cb){
         var p=cb.pts; ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
@@ -956,7 +987,7 @@ JS = r"""
         ctx.font="bold 13px 'JetBrains Mono', monospace"; ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillStyle = g>0.3?'#f2fff7':'#c4f5d6'; ctx.fillText(pt.p, pt.cx+4, pt.cy);
         ctx.fillStyle='rgba(150,240,185,0.55)'; ctx.font="9px 'JetBrains Mono', monospace"; ctx.textBaseline='top';
-        ctx.fillText(pt.s, pt.cx, pt.cy+pt.lh/2+3);
+        ctx.fillText(fitLabel(pt.s, pt.labelMaxW), pt.cx, pt.cy+pt.lh/2+3);
       });
 
       requestAnimationFrame(draw);
