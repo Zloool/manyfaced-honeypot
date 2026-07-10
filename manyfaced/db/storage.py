@@ -24,6 +24,44 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Issue #413: shared bounds for the dashboard's on-request-thread read API.
+# The dashboard runs these queries on the request thread (bypassing the 30s
+# warm cache), so a pathological host filter or page offset is a cheap DoS
+# vector even behind the token gate (the dashboard is publicly proxied in prod).
+# A host shorter than this — or prefixed with a wildcard by the caller — would
+# force a leading-wildcard LIKE scan the index can't satisfy; we drop the
+# clause entirely instead of scanning the whole capture table.
+_HOST_FILTER_MIN_LEN = 3
+# Hard ceiling on SQL OFFSET so a deep page can never drive an O(offset) scan.
+_MAX_OFFSET = 100_000
+
+
+def sanitize_host_filter(host: str | None) -> str | None:
+    """Issue #413: drop a host filter that would force a leading-wildcard scan.
+
+    Returns the host unchanged for a safe substring match, or ``None`` to drop
+    the ``request_raw LIKE`` clause when the value is too short
+    (< ``_HOST_FILTER_MIN_LEN``) or begins with a wildcard (``%`` / ``*``).
+    Legitimate IoC-panel hosts (e.g. ``c2.evil``) match mid-string fine; only
+    the pathological values that would scan the full table are rejected.
+    """
+    if not host:
+        return None
+    if host.startswith(('%', '*')):
+        return None
+    if len(host) < _HOST_FILTER_MIN_LEN:
+        return None
+    return host
+
+
+def clamp_offset(offset: int, limit: int) -> int:
+    """Issue #413: bound the SQL OFFSET so a deep page can't scan O(offset) rows."""
+    if offset < 0:
+        return 0
+    cap = max(_MAX_OFFSET, int(limit))
+    return min(int(offset), cap)
+
+
 # ── detected_id → human-readable service name (issue #234 dashboard) ─────────
 # Service handlers carry a `domain` (e.g. 'wordpress'); the special sentinel IDs
 # in status.py describe non-HTTP / unknown protocols. Map both to friendly
@@ -970,13 +1008,18 @@ class SQLiteStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = ?')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table LIKE scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw LIKE ?')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
         try:
-            rows = conn.execute(sql, (*params, int(limit), int(offset))).fetchall()
+            # Issue #413: bound the OFFSET so a deep page can't scan O(offset).
+            bounded_offset = clamp_offset(offset, limit)
+            rows = conn.execute(sql, (*params, int(limit), bounded_offset)).fetchall()
             cols = [d[0] for d in conn.execute('SELECT * FROM honeypot_bears LIMIT 0').description]
             return [dict(zip(cols, row)) for row in rows]
         except (sqlite3.Error, sqlite3.OperationalError):
@@ -1004,9 +1047,12 @@ class SQLiteStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = ?')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table LIKE scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw LIKE ?')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT COUNT(*) FROM honeypot_bears' + where
         try:
@@ -1221,9 +1267,12 @@ class SQLiteStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = ?')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table LIKE scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw LIKE ?')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = ' WHERE ' + ' AND '.join(clauses)
         sql = (
             f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608
@@ -1556,14 +1605,19 @@ class PostgreSQLStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = %s')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw ILIKE %s')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT %s OFFSET %s'
         try:
+            # Issue #413: bound the OFFSET so a deep page can't scan O(offset).
+            bounded_offset = clamp_offset(offset, limit)
             with self._conn.cursor() as cur:
-                cur.execute(sql, (*params, int(limit), int(offset)))
+                cur.execute(sql, (*params, int(limit), bounded_offset))
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
@@ -1575,7 +1629,7 @@ class PostgreSQLStorage(StorageBackend):
                 return []
             try:
                 with self._conn.cursor() as cur:
-                    cur.execute(sql, (*params, int(limit), int(offset)))
+                    cur.execute(sql, (*params, int(limit), bounded_offset))
                     cols = [d[0] for d in cur.description]
                     return [dict(zip(cols, row)) for row in cur.fetchall()]
             except psycopg2.Error:  # noqa: BLE001
@@ -1601,9 +1655,12 @@ class PostgreSQLStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = %s')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw ILIKE %s')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT COUNT(*) FROM honeypot_bears' + where + ''
         try:
@@ -1889,9 +1946,12 @@ class PostgreSQLStorage(StorageBackend):
         if ip is not None:
             clauses.append('bot_ip = %s')
             params.append(ip)
-        if host is not None:
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table scan (too short, or caller-supplied wildcard prefix).
+        safe_host = sanitize_host_filter(host)
+        if safe_host is not None:
             clauses.append('request_raw ILIKE %s')
-            params.append('%' + host + '%')
+            params.append('%' + safe_host + '%')
         where = ' WHERE ' + ' AND '.join(clauses)
         sql = (
             f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608

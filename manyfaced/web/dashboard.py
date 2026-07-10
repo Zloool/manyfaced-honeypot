@@ -99,6 +99,64 @@ _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 _LOG_PAGE_SIZE = 50
 _PAYLOADS_LIMIT = 25
 
+# Issue #413: cap pager depth so a page=N request can't drive an unbounded
+# OFFSET scan on the request thread (which bypasses the warm 30s cache).
+# Beyond this we clamp to the last allowed page; OFFSET stays bounded at
+# (_PAGE_MAX - 1) * _LOG_PAGE_SIZE.
+_PAGE_MAX = 100
+
+# Issue #413: minimum host-filter length / leading-wildcard guard. A host
+# shorter than this — or one the caller prefixed with a wildcard — would force
+# a leading-wildcard LIKE scan across the whole capture table; reject it so the
+# substring match stays meaningful (the IoC panel still matches real hosts).
+_HOST_FILTER_MIN_LEN = 3
+
+# Issue #411: defense-in-depth HTTP security headers. All assets are inlined
+# (CSS/JS are plain strings in dashboard_assets.py), so a tight CSP is safe: no
+# external resources, only inline style/script (already HTML-escaped) and
+# self-hosted images.
+_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'"
+_SECURITY_HEADERS = (
+    ('Content-Security-Policy', _CSP),
+    ('X-Content-Type-Options', 'nosniff'),
+    ('X-Frame-Options', 'DENY'),
+    ('Referrer-Policy', 'no-referrer'),
+)
+
+
+def _clamp_page(page: int) -> int:
+    """Issue #413: bound pager depth so OFFSET stays finite and cheap.
+
+    Callers run the capped page's query on the request thread (bypassing the
+    30s warm cache), so an unbounded OFFSET would be an O(offset) scan the
+    caller can drive to exhaustion. Any request past ``_PAGE_MAX`` is clamped to
+    the last page instead of producing an unbounded skip.
+    """
+    if page < 1:
+        return 1
+    if page > _PAGE_MAX:
+        return _PAGE_MAX
+    return page
+
+
+def _normalize_host_filter(host: str | None) -> str | None:
+    """Issue #413: keep the host filter out of a full-table LIKE scan.
+
+    Returns the host unchanged when it is a safe trailing-substring match, or
+    ``None`` (filter dropped) when it is too short (< ``_HOST_FILTER_MIN_LEN``)
+    or begins with a wildcard (``%`` / ``*``), either of which forces a
+    leading-wildcard scan that the index can't satisfy. The IoC panel always
+    sends a concrete, sufficiently long C2 host, so dropping pathological values
+    only removes the DoS vector, never a legitimate match.
+    """
+    if not host:
+        return None
+    if host.startswith(('%', '*')):
+        return None
+    if len(host) < _HOST_FILTER_MIN_LEN:
+        return None
+    return host
+
 
 def _token_valid(token: str | None) -> bool:
     """Constant-time compare of the request token against the configured secret."""
@@ -681,6 +739,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # Generic 404 — do NOT reveal that this is an auth-gated endpoint.
         self.send_response(404)
         self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        # Issue #411: apply the same defense-in-depth headers as _send().
+        for name, value in _SECURITY_HEADERS:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(b'not found')
 
@@ -689,6 +750,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        # Issue #411: defense-in-depth headers (tight CSP, nosniff, frame-deny,
+        # no referrer). All assets are inlined, so no external resource is needed.
+        for name, value in _SECURITY_HEADERS:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -712,10 +777,16 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         port_filter = int(port_raw) if port_raw.isdigit() else None
         page_raw = (qs.get('page') or [''])[0]
         page = int(page_raw) if page_raw.isdigit() and int(page_raw) >= 1 else 1
+        # Issue #413: bound pager depth so a page=N request can't drive an
+        # unbounded OFFSET scan on the request thread (which bypasses the warm
+        # 30s cache). Clamp to the last allowed page instead.
+        page = _clamp_page(page)
         # IoC-panel scoping (issue #366): an IP or C2 host clicked in the
         # dashboard re-queries the capture log server-side for that indicator.
         ip_filter = (qs.get('ip') or [None])[0] or None
-        host_filter = (qs.get('host') or [None])[0] or None
+        # Issue #413: drop a host filter that would force a leading-wildcard
+        # full-table LIKE scan (too short, or caller-supplied wildcard prefix).
+        host_filter = _normalize_host_filter((qs.get('host') or [None])[0] or None)
 
         try:
             if fmt == 'fragment':
@@ -743,12 +814,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 with _CACHE_LOCK:
                     _HTML_CACHE[range_str] = (time.time(), body)
             self._send(body, 'text/html; charset=utf-8')
-        except Exception as exc:  # noqa: BLE001 — surface as 500, never crash
+        except Exception:  # noqa: BLE001 — surface as 500, never crash
             logger.exception('Dashboard query failed')
             self.send_response(500)
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            # Issue #412: never leak the exception repr (SQL/paths/DB detail)
+            # to the client — log server-side above, return a generic body.
             self.end_headers()
-            self.wfile.write(f'dashboard error: {exc!r}'.encode())
+            self.wfile.write(b'internal error')
 
 
 def run_dashboard(args: Any, update_event: Any) -> None:
