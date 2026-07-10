@@ -447,7 +447,11 @@ class Config:
             f'time_range = {_toml_str(self.DASHBOARD_TIME_RANGE)}',
             '',
         ]
-        path.write_text('\n'.join(lines))
+        # Explicit encoding: without it, Path.write_text() uses the platform's
+        # locale-preferred encoding (cp1252 on Windows), which mangles the
+        # em dash in the [security] comment above into a byte tomllib's strict
+        # UTF-8 decode then rejects on load, crashing every future Config.load().
+        path.write_text('\n'.join(lines), encoding='utf-8')
         return path
 
     def _generated_dashboard_secret(self) -> str:

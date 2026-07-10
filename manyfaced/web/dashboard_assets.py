@@ -334,7 +334,7 @@ JS = r"""
     state.page = 1;
     setActive(rangeRow, 'data-range', state.range);
     fetchFragment(state.range, state.port).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows']);
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','payloads-rows']);
     });
   });
 
@@ -476,7 +476,7 @@ JS = r"""
   function refreshLog(){
     state.page = 1;
     fetchFragment(state.range, state.port, state.page, state.ip, state.host)
-      .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager']); });
+      .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']); });
   }
 
   // ---------------- log toolbar ----------------
@@ -580,7 +580,13 @@ JS = r"""
     $all('.intel-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.ioc-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.vol-row.focus').forEach(function(r){ r.classList.remove('focus'); });
-    fetchFragment(state.range, null).then(function(frag){ applyFragment(frag, ['vol-box']); });
+    // Re-fetch (not just re-filter) the capture log and Payloads panel — an
+    // IoC click server-side scopes both to an ip/host (issue #366/#368), and
+    // clearing state.ip/state.host client-side alone leaves that stale scoped
+    // data on screen until the server is asked again with no filter.
+    fetchFragment(state.range, null, state.page).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
+    });
   }
 
   // ---------------- log rows: toggle raw / group, filtering ----------------
@@ -601,7 +607,7 @@ JS = r"""
 
   function setLogPage(p){
     state.page = p;
-    fetchFragment(state.range, state.port, p).then(function(frag){
+    fetchFragment(state.range, state.port, p, state.ip, state.host).then(function(frag){
       applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager']);
     });
   }
@@ -623,8 +629,12 @@ JS = r"""
   }
 
   function matchesFilters(entry){
-    var ts = Number(entry.getAttribute('data-ts'));
-    if (state.window){
+    // Payload rows (issue #368) carry the same data-ports/method/cc/ip/service/
+    // search attributes as log entries but no data-ts (they aren't part of the
+    // time-bucketed volume series), so the window filter only applies when the
+    // attribute is present — everything else below matches both row kinds.
+    if (state.window && entry.hasAttribute('data-ts')){
+      var ts = Number(entry.getAttribute('data-ts'));
       var s = Number(state.window.start), en = Number(state.window.end);
       if (ts < s || ts >= en) return false;
     }
@@ -650,21 +660,44 @@ JS = r"""
 
   function applyFilters(){
     var container = $('#log-rows');
-    var empty = $('#log-empty');
-    if (!container) return;
-    var entries = $all(':scope > .log-entry', container);
-    var visible = 0;
-    entries.forEach(function(entry){
-      var ok = matchesFilters(entry);
-      entry.hidden = !ok;
-      if (ok) visible++;
-    });
-    if (empty) empty.hidden = visible > 0;
-    var summary = $('#log-summary');
-    if (summary){
-      summary.textContent = hasActiveFilters()
-        ? (visible + ' of ' + entries.length + ' rows match')
-        : (summary.getAttribute('data-full') || summary.textContent);
+    if (container){
+      var empty = $('#log-empty');
+      var entries = $all(':scope > .log-entry', container);
+      var visible = 0;
+      entries.forEach(function(entry){
+        var ok = matchesFilters(entry);
+        entry.hidden = !ok;
+        if (ok) visible++;
+      });
+      if (empty) empty.hidden = visible > 0;
+      var summary = $('#log-summary');
+      if (summary){
+        summary.textContent = hasActiveFilters()
+          ? (visible + ' of ' + entries.length + ' rows match')
+          : (summary.getAttribute('data-full') || summary.textContent);
+      }
+    }
+    // Payloads panel (issue #368): the same toolbar controls that filter the
+    // capture log (port chips, method/search box, country/service/ip intel
+    // rows, IoC ip/host clicks) now filter Payloads rows too, since they carry
+    // matching data-* attributes.
+    var payloadsContainer = $('#payloads-rows');
+    if (payloadsContainer){
+      var pEmpty = $('#payloads-empty');
+      var pRows = $all(':scope > .payload-row', payloadsContainer);
+      var pVisible = 0;
+      pRows.forEach(function(row){
+        var ok = matchesFilters(row);
+        row.hidden = !ok;
+        if (ok) pVisible++;
+      });
+      if (pEmpty) pEmpty.hidden = pVisible > 0;
+      var pSummary = $('#payloads-summary');
+      if (pSummary){
+        pSummary.textContent = hasActiveFilters()
+          ? (pVisible + ' of ' + pRows.length + ' payloads match')
+          : (pSummary.getAttribute('data-full') || pSummary.textContent);
+      }
     }
     renderChips();
   }
@@ -860,8 +893,8 @@ JS = r"""
   // ---------------- live polling ----------------
   function refreshLive(){
     if (state.paused) return;
-    fetchFragment(state.range, state.port, state.page).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows']);
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','payloads-rows']);
     }).catch(function(){ /* transient network hiccup — try again next tick */ });
   }
   setInterval(refreshLive, 20000);
