@@ -131,7 +131,9 @@ main{max-width:1180px;margin:0 auto;padding:0 22px 90px}
 
 .ioc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
 .ioc-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px;padding:5px 6px;border-radius:4px;
-  border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace}
+  border-left:2px solid #ff6b74;margin:2px 0;background:rgba(255,107,116,.05);font-family:ui-monospace,Menlo,Consolas,monospace;cursor:pointer}
+.ioc-row.active{background:rgba(120,255,170,.09)}
+.ioc-row.copied{background:rgba(61,255,136,.18);box-shadow:0 0 8px rgba(61,255,136,.45)}
 .ioc-row .ioc-value{font-size:12px;color:#ffcf5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ioc-row .intel-count{color:#ff9aa0}
 
@@ -284,6 +286,7 @@ JS = r"""
     wireLogRows();
     wireIntelRows();
     wireVolumeRows();
+    wireIocRows();
     wireLogPager();
     applyFilters();
   }
@@ -406,6 +409,46 @@ JS = r"""
     });
   }
 
+  // ---------------- IoC / C2 panel (issue #361) ----------------
+  // Mirrors wireIntelRows, but IP rows filter the log by data-ip while host
+  // rows copy the candidate to the clipboard AND set the log search grep.
+  function wireIocRows(){
+    var iocSection = $('#ioc');
+    if (!iocSection || iocSection.__wired) return;
+    iocSection.__wired = true;
+    iocSection.addEventListener('click', function(e){
+      var row = e.target.closest('.ioc-row');
+      if (!row) return;
+      var type = row.getAttribute('data-ioc-type');
+      var value = row.getAttribute('data-ioc-value');
+      if (type === 'ip'){
+        state.ip = (state.ip === value) ? null : value;
+        $all('.ioc-row[data-ioc-type="ip"]').forEach(function(r){
+          r.classList.toggle('active', r.getAttribute('data-ioc-value') === state.ip);
+        });
+        applyFilters();
+      } else if (type === 'host'){
+        // Copy the C2/download host for blocklisting (graceful fallback if
+        // the async clipboard API is unavailable / not focused).
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(value).catch(function(){ /* swallow */ });
+          } else if (window.getSelection){
+            var ta = document.createElement('textarea');
+            ta.value = value; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } catch(_) { /* swallow */ }
+            document.body.removeChild(ta);
+          }
+        } catch(_) { /* clipboard blocked — search below still works */ }
+        row.classList.add('copied');
+        setTimeout(function(){ row.classList.remove('copied'); }, 900);
+        state.search = value.toLowerCase();
+        applyFilters();
+      }
+    });
+  }
+
   // ---------------- log toolbar ----------------
   var searchInput = $('#log-search');
   if (searchInput) searchInput.addEventListener('input', function(){
@@ -491,6 +534,7 @@ JS = r"""
     if (kind === 'method'){ state.method = 'ALL'; setActive(methodRow, 'data-method', 'ALL'); }
     if (kind === 'search'){ state.search = ''; if (searchInput) searchInput.value = ''; }
     $all('.intel-row.active').forEach(function(r){ r.classList.remove('active'); });
+    $all('.ioc-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.vol-row.focus').forEach(function(r){ r.classList.remove('focus'); });
     applyFilters();
   }
@@ -502,6 +546,7 @@ JS = r"""
     if (methodRow) setActive(methodRow, 'data-method', 'ALL');
     $all('.chip-port').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-port') === ''); });
     $all('.intel-row.active').forEach(function(r){ r.classList.remove('active'); });
+    $all('.ioc-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.vol-row.focus').forEach(function(r){ r.classList.remove('focus'); });
     fetchFragment(state.range, null).then(function(frag){ applyFragment(frag, ['vol-box']); });
   }
@@ -791,8 +836,8 @@ JS = r"""
 
   // ---------------- notes-less footer / init ----------------
   document.addEventListener('DOMContentLoaded', function(){
-    wireLogRows(); wireIntelRows(); wireVolumeRows(); applyFilters(); initHero();
+    wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero();
   });
-  if (document.readyState !== 'loading'){ wireLogRows(); wireIntelRows(); wireVolumeRows(); applyFilters(); initHero(); }
+  if (document.readyState !== 'loading'){ wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero(); }
 })();
 """

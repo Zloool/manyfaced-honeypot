@@ -281,3 +281,58 @@ def test_extract_c2_hosts_runs_inside_payload_window(monkeypatch, window):
     # that the C2 scan (a non-None since) actually ran inside the window.
     assert any(s is not None for s in store.sinces_seen)
     assert any(h['host'] == '91.92.40.118' for h in payload['c2_hosts'])
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Click interactivity (issue #361): rows must carry the data-* attributes the
+# wireIocRows() handler reads, and the handler must be present in the page JS.
+# ---------------------------------------------------------------------------
+
+
+def test_ioc_rows_emit_click_data_attributes():
+    payload = {
+        'token': 'tok',
+        'range': '24h',
+        'page': 1,
+        'log_page_size': 50,
+        'log_window_total': 0,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'hostname': 'node1',
+        'mult': 6,
+        'display_ports': [],
+        'listening_count': 1,
+        'stats': {'total': 520, 'day': 10, 'unique_ips': 6, 'hour_total': 1},
+        'by_port': [],
+        'by_country': [{'key': 'NL', 'count': 220}],
+        'by_service': [],
+        'by_ip': [
+            {'key': '45.153.34.231', 'count': 220},
+            {'key': '47.79.23.6', 'count': 95},
+        ],
+        'by_classification': [],
+        'c2_hosts': [
+            {'host': '91.92.40.118', 'count': 52},
+            {'host': '203.0.113.9', 'count': 3},
+        ],
+        'ioc_since': '2026-07-09 00:00:00.000000',
+        'volume_bars': [],
+        'log_rows': [],
+        'log_summary': 'no captures',
+    }
+    html = _render_mod.render_page(payload)
+    assert 'id="ioc"' in html
+    # IP rows: clicking filters the capture log by data-ip.
+    assert 'data-ioc-type="ip"' in html
+    assert 'data-ioc-value="45.153.34.231"' in html
+    # Host rows: clicking copies the host and greps the log.
+    assert 'data-ioc-type="host"' in html
+    assert 'data-ioc-value="91.92.40.118"' in html
+
+
+def test_dashboard_js_wires_ioc_rows():
+    from manyfaced.web.dashboard_assets import JS as _JS
+
+    assert 'function wireIocRows' in _JS
+    # Invoked from both applyFragment and the DOM-ready init block.
+    assert _JS.count('wireIocRows()') >= 2
