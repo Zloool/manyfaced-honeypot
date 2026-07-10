@@ -240,14 +240,64 @@ def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> 
 # injected string) can't blow out the Payloads panel layout.
 _PAYLOAD_PREVIEW_CHARS = 400
 
+# Paths whose presence marks a row as benign probe noise rather than a real
+# exploit payload (issue #362).
+_NOISE_PATH_MARKERS = (
+    '/favicon.ico',
+    '/robots.txt',
+    '/healthz',
+    '/health',
+    '/ping',
+)
+
+# Methods that, with no payload-bearing characters, are just connectivity
+# probes (the connective tissue of scanners), not juicy findings.
+_BARE_PROBE_METHODS = {'HEAD', 'OPTIONS', 'TRACE'}
+
 
 def _truncate_payload(raw: str) -> str:
     """Return a display-safe, length-bounded copy of a raw request payload."""
     raw = (raw or '').replace('\r\n', '\n').replace('\r', '\n')
     if len(raw) > _PAYLOAD_PREVIEW_CHARS:
         raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
-        raw = raw[:_PAYLOAD_PREVIEW_CHARS] + '…'
     return raw
+
+
+def _is_payload_noise(row: dict) -> bool:
+    """True if a raw request row is favicon/noise rather than a real payload."""
+    raw = (row.get('raw') or '').lower()
+    path = (row.get('request_path') or '').lower()
+    if '/favicon.ico' in raw or any(m in path for m in _NOISE_PATH_MARKERS):
+        return True
+    # A bare HEAD/OPTIONS probe with no real payload body and no interesting
+    # path is noise — it's the connective tissue of scanners, not an exploit.
+    method = (row.get('request_command') or '').upper()
+    if method in _BARE_PROBE_METHODS and not any(
+        marker in raw for marker in ('://', '=', "'", '"', '<', ';')
+    ):
+        return True
+    return False
+
+
+# severity ranking: crit > warn > info (feeding _data.severity_for)
+_SEV_RANK = {'crit': 2, 'warn': 1, 'info': 0}
+
+
+def _build_payloads(rows: list[dict]) -> list[str]:
+    """Shape interesting raw rows into truncated display payloads (issue #362).
+
+    Drops benign-scanner rows (already excluded in SQL) plus favicon/noise
+    probes, then ranks survivors by severity (crit > warn > info) and recency
+    and truncates the top ``_PAYLOADS_LIMIT`` for display.
+    """
+    survivors = [
+        r for r in rows if r.get('classification') != 'benign' and not _is_payload_noise(r)
+    ]
+    survivors.sort(
+        key=lambda r: (_SEV_RANK.get(_data.severity_for(r), 0), r.get('raw') or ''),
+        reverse=True,
+    )
+    return [_truncate_payload(r['raw']) for r in survivors[:_PAYLOADS_LIMIT]]
 
 
 def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
@@ -305,12 +355,14 @@ def _build_payload(range_str: str, token: str, page: int = 1) -> dict:
         raw_recent = store.recent_records(limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset)
         log_rows = _data.group_log_rows(raw_recent)
 
-        # Raw captured payloads (issue #350 follow-up): surface the actual
-        # attacker request bytes in a dedicated "Payloads" panel right after the
-        # capture log, so operators can eyeball exploit payloads (wget drops,
-        # SQLi, traversal) without expanding each log entry. Bounded + cheap.
-        raw_payloads = store.fetch_request_raws(since=None, limit=_PAYLOADS_LIMIT)
-        payloads = [_truncate_payload(r) for r in raw_payloads if r]
+        # Raw captured payloads (issue #350 follow-up, refined by #362): surface
+        # the actual attacker request bytes in a dedicated "Payloads" panel right
+        # after the capture log, so operators can eyeball exploit payloads
+        # (wget drops, SQLi, traversal) without expanding each log entry.
+        # fetch_interesting_raws drops benign scanners + favicon noise and ranks
+        # survivors by severity; the SQL keeps it confined to URL-bearing rows.
+        interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_LIMIT * 20)
+        payloads = _build_payloads(interesting)
 
         configured_ports = _config.settings.resolve_ports()
         # Weight keyed by EXTERNAL port (resolve_display_ports returns external

@@ -300,6 +300,28 @@ class StorageBackend(ABC):
         """
         raise NotImplementedError('fetch_request_raws not implemented by this backend')
 
+    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+        """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
+
+        Unlike :meth:`fetch_request_raws` (which returns bare ``request_raw``
+        strings for the C2 scan), this returns *rows* so the dashboard can drop
+        benign scanner noise and rank survivors by severity. Each row is a dict
+        with keys ``raw`` (the ``request_raw`` text), ``classification``, and
+        ``detected_id``, plus ``request_path`` / ``request_command`` / ``login``
+        so callers can feed the row to :func:`manyfaced.web.dashboard_data.
+        severity_for` without a second round-trip.
+
+        The ``(classification IS NULL OR classification != 'benign')`` predicate
+        excludes known research scanners (Shodan/Censys/Rapid7/Shadowserver,
+        flagged by :mod:`manyfaced.common.classification`) up front, and the
+        ``LIKE '%://%'`` predicate keeps the read confined to payload-bearing
+        rows. Rows are returned newest-first (``ORDER BY timestamp DESC``); the
+        caller re-ranks by severity. ``limit`` bounds the work.
+
+        Concrete subclasses override this; the base raises.
+        """
+        raise NotImplementedError('fetch_interesting_raws not implemented by this backend')
+
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -1056,6 +1078,57 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading request_raw payloads from SQLite storage')
             return []
 
+    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+        """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
+
+        See the base-class docstring. Mirrors :meth:`fetch_request_raws` but
+        returns rows (dicts) so the dashboard can drop benign noise and rank by
+        severity, and filters ``classification = 'benign'`` out up front.
+        """
+        if self._conn is None:
+            return []
+        clauses = [
+            "request_raw LIKE '%://%'",
+            "(classification IS NULL OR classification != 'benign')",
+        ]
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608
+            f'request_command, login FROM honeypot_bears{where} '
+            'ORDER BY timestamp DESC LIMIT ?'
+        )
+        try:
+            rows = self._conn.execute(sql, (*params, int(limit))).fetchall()
+            out = []
+            for (
+                request_raw,
+                classification,
+                detected_id,
+                request_path,
+                request_command,
+                login,
+            ) in rows:
+                if not request_raw:
+                    continue
+                out.append(
+                    {
+                        'raw': request_raw,
+                        'classification': classification,
+                        'detected_id': detected_id,
+                        'request_path': request_path,
+                        'request_command': request_command,
+                        'login': login,
+                    }
+                )
+            return out
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading interesting request_raw rows from SQLite storage')
+            return []
+
     def __del__(self) -> None:
         self.close()
 
@@ -1576,6 +1649,73 @@ class PostgreSQLStorage(StorageBackend):
             except psycopg2.Error:  # noqa: BLE001
                 logger.exception('Error reading request_raw payloads from PostgreSQL storage')
                 return []
+
+    def fetch_interesting_raws(self, since: str | None = None, limit: int = 20000) -> list[dict]:
+        """Return non-benign, URL-bearing request rows for the Payloads panel (issue #362).
+
+        See the base-class docstring. Mirrors :meth:`fetch_request_raws` but
+        returns rows (dicts) so the dashboard can drop benign noise and rank by
+        severity, and filters ``classification = 'benign'`` out up front.
+        """
+        if self._conn is None and not self._ensure_connected():
+            return []
+        clauses = [
+            'request_raw ILIKE %s',
+            '(classification IS NULL OR classification != %s)',
+        ]
+        params: list = ['%://%', 'benign']
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT request_raw, classification, detected_id, request_path, '  # nosec B608
+            f'request_command, login FROM honeypot_bears{where} '
+            'ORDER BY timestamp DESC LIMIT %s'
+        )
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (*params, int(limit)))
+                rows = cur.fetchall()
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            logger.warning(
+                'PostgreSQL fetch_interesting_raws error; rolling back and reconnecting once'
+            )
+            self._reset_conn()
+            if not self._ensure_connected():
+                return []
+            try:
+                with self._conn.cursor() as cur:
+                    cur.execute(sql, (*params, int(limit)))
+                    rows = cur.fetchall()
+            except psycopg2.Error:  # noqa: BLE001
+                logger.exception(
+                    'Error reading interesting request_raw rows from PostgreSQL storage'
+                )
+                return []
+        else:
+            out = []
+            for (
+                request_raw,
+                classification,
+                detected_id,
+                request_path,
+                request_command,
+                login,
+            ) in rows:
+                if not request_raw:
+                    continue
+                out.append(
+                    {
+                        'raw': request_raw,
+                        'classification': classification,
+                        'detected_id': detected_id,
+                        'request_path': request_path,
+                        'request_command': request_command,
+                        'login': login,
+                    }
+                )
+            return out
 
     # -- data lifecycle (issue #243 #4) --------------------------------------
 
