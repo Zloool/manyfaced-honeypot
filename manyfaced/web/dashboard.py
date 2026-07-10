@@ -460,6 +460,48 @@ def _build_payload(
     }
 
 
+def _payload_with_scope(payload: dict, page: int, ip: str | None, host: str | None) -> dict:
+    """Cheap on-request override: recompute just the page/ip/host-scoped log +
+    payloads sections against an already-cached base (range, page=1, no ip/host)
+    payload, instead of rebuilding the whole thing from scratch.
+
+    The overview stats, C2 host scan, and volume bars in ``payload`` don't
+    depend on page/ip/host at all (see ``_build_payload``), so re-running them
+    on every pager click or IoC-row click was pure waste — and, worse, it hits
+    SQLite directly on the request thread, which can block for seconds behind
+    the live writer's WAL lock (the exact thing the background-cache refresher
+    exists to avoid; see the module docstring / comment above
+    ``_REFRESH_INTERVAL``).
+    """
+    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
+    try:
+        vol_since = _volume_window(payload['range'])
+        window_total = store.count_recent(since=vol_since, ip=ip, host=host)
+        log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
+        raw_recent = store.recent_records(
+            limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
+        )
+        log_rows = _data.group_log_rows(raw_recent)
+        interesting = store.fetch_interesting_raws(
+            since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host
+        )
+        payloads = _build_payloads(interesting)
+    finally:
+        # Do NOT close: see _build_payload's identical comment.
+        pass
+    scoped = dict(payload)
+    scoped.update(
+        {
+            'page': page,
+            'log_window_total': window_total,
+            'log_rows': log_rows,
+            'payloads': payloads,
+            'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
+        }
+    )
+    return scoped
+
+
 def _payload_with_port(payload: dict, port_filter: int) -> dict:
     """Cheap on-request override: recompute just the volume bars for one port.
 
@@ -557,6 +599,36 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
         access_logger.info('%s - %s', self.client_address[0], format % args)
 
+    def _scoped_payload(
+        self, range_str: str, token: str, page: int, ip: str | None, host: str | None
+    ) -> dict:
+        """Return the payload for (range, page, ip, host).
+
+        Unscoped page 1 uses the background-refreshed cache directly. Any
+        pager/IoC scope reuses that same cached base payload and layers the
+        cheap ``_payload_with_scope`` override on top, instead of running the
+        full aggregate/C2 rebuild on the request thread for every page click
+        or IP/host filter (that rebuild used to run on *every* such request,
+        including the 20s live-poll tick — see _payload_with_scope docstring).
+        """
+        if page == 1 and not ip and not host:
+            key = _cache_key(range_str, page, ip, host)
+            cached = _get_cached(_PAYLOAD_CACHE, key)
+            if cached is not None:
+                return cached
+            payload = _build_payload(range_str, token, page=page, ip=ip, host=host)
+            with _CACHE_LOCK:
+                _PAYLOAD_CACHE[key] = (time.time(), payload)
+            return payload
+
+        base = _get_cached(_PAYLOAD_CACHE, _cache_key(range_str, 1, None, None))
+        if base is not None:
+            return _payload_with_scope(base, page, ip, host)
+
+        # Cold start (background refresher hasn't primed this range yet) —
+        # fall back to a full rebuild just this once.
+        return _build_payload(range_str, token, page=page, ip=ip, host=host)
+
     def _deny(self) -> None:
         # Generic 404 — do NOT reveal that this is an auth-gated endpoint.
         self.send_response(404)
@@ -599,14 +671,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         try:
             if fmt == 'fragment':
-                key = _cache_key(range_str, page, ip_filter, host_filter)
-                cached = _get_cached(_PAYLOAD_CACHE, key)
-                payload = cached or _build_payload(
-                    range_str, token or '', page=page, ip=ip_filter, host=host_filter
-                )
-                if not cached:
-                    with _CACHE_LOCK:
-                        _PAYLOAD_CACHE[key] = (time.time(), payload)
+                payload = self._scoped_payload(range_str, token or '', page, ip_filter, host_filter)
                 if port_filter is not None:
                     payload = _payload_with_port(payload, port_filter)
                 body = _render.render_fragment(payload)
@@ -614,10 +679,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 return
 
             if page > 1:
-                # Deeper pages aren't pre-cached; build on demand.
-                payload = _build_payload(
-                    range_str, token or '', page=page, ip=ip_filter, host=host_filter
-                )
+                # Deeper pages aren't pre-cached; reuse the range's cached
+                # overview/volume/C2 data and only re-query the paged rows.
+                payload = self._scoped_payload(range_str, token or '', page, ip_filter, host_filter)
                 body = _render.render_page(payload).encode('utf-8')
                 self._send(body, 'text/html; charset=utf-8')
                 return

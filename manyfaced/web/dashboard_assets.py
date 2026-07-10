@@ -481,9 +481,13 @@ JS = r"""
 
   // ---------------- log toolbar ----------------
   var searchInput = $('#log-search');
+  var searchDebounce = null;
   if (searchInput) searchInput.addEventListener('input', function(){
-    state.search = searchInput.value.trim().toLowerCase();
-    applyFilters();
+    if (searchDebounce) clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(function(){
+      state.search = searchInput.value.trim().toLowerCase();
+      applyFilters();
+    }, 150);
   });
 
   var methodRow = $('#method-row');
@@ -654,8 +658,19 @@ JS = r"""
   }
 
   function hasActiveFilters(){
-    return state.port != null || !!state.country || !!state.service || !!state.ip ||
+    return state.port != null || !!state.country || !!state.service || !!state.ip || !!state.host ||
       !!state.window || state.method !== 'ALL' || !!state.search;
+  }
+
+  // A filter/scope/page is "live-sensitive" when the 20s background poll
+  // (refreshLive) blindly replacing #log-rows/#payloads-rows with a fresh
+  // unscoped page-1 fetch would silently discard what's on screen — e.g. a
+  // client-side search match that scrolled off page 1 as new captures landed,
+  // or an expanded/paged view the operator is mid-inspection of. Freezing the
+  // live tick while any of these are active avoids the capture log appearing
+  // to get wiped out from under an active filter.
+  function liveRefreshBlocked(){
+    return hasActiveFilters() || state.page > 1;
   }
 
   function applyFilters(){
@@ -672,9 +687,10 @@ JS = r"""
       if (empty) empty.hidden = visible > 0;
       var summary = $('#log-summary');
       if (summary){
-        summary.textContent = hasActiveFilters()
+        var base = hasActiveFilters()
           ? (visible + ' of ' + entries.length + ' rows match')
           : (summary.getAttribute('data-full') || summary.textContent);
+        summary.textContent = liveRefreshBlocked() ? (base + ' · live paused') : base;
       }
     }
     // Payloads panel (issue #368): the same toolbar controls that filter the
@@ -893,8 +909,13 @@ JS = r"""
   // ---------------- live polling ----------------
   function refreshLive(){
     if (state.paused) return;
+    // Skip the tick entirely while a filter/scope/page is active — see
+    // liveRefreshBlocked(). The operator's PAUSE button already covers the
+    // "I want to freeze everything" case; this covers the narrower "I'm
+    // filtering/paging and don't want the log to shift under me" case.
+    if (liveRefreshBlocked()) return;
     fetchFragment(state.range, state.port, state.page, state.ip, state.host).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','payloads-rows']);
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
     }).catch(function(){ /* transient network hiccup — try again next tick */ });
   }
   setInterval(refreshLive, 20000);
