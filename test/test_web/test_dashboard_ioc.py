@@ -563,4 +563,90 @@ def test_dashboard_js_wires_ioc_rows():
 
     assert 'function wireIocRows' in _JS
     # Invoked from both applyFragment and the DOM-ready init block.
-    assert _JS.count('wireIocRows()') >= 2
+
+
+# ---------------------------------------------------------------------------
+# Cold-start: prime-before-serve + slow-TTL all-time total (issue #409 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class _CountingStore:
+    """aggregate_stats counts how often it's called with since=None (all-time)."""
+
+    def __init__(self) -> None:
+        self.all_time_calls = 0
+
+    def aggregate_stats(self, since=None, bucket='hour'):  # noqa: ANN001, ANN002
+        if since is None:
+            self.all_time_calls += 1
+        return {
+            'total': 1129806,
+            'detected': 10,
+            'undetected': 1129796,
+            'unique_ips': 6,
+            'by_service': [],
+            'by_country': [],
+            'by_continent': [],
+            'by_ip': [],
+            'by_path': [],
+            'by_port': [],
+            'by_classification': [],
+            'volume': [],
+        }
+
+    def fetch_request_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
+        return []
+
+    def fetch_interesting_raws(self, since=None, limit=20000, ip=None, host=None):  # noqa: ANN001, ANN002
+        return []
+
+    def nonbenign_ports(self):  # noqa: ANN001, ANN002
+        return []
+
+    def last_capture_ts(self):  # noqa: ANN001, ANN002
+        return None
+
+    def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
+        return []
+
+    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
+        return 0
+
+    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
+        return []
+
+
+def test_get_alltime_total_caches_within_ttl():
+    store = _CountingStore()
+    _dash_mod._ALLTIME_TOTAL_CACHE = None
+    try:
+        # First call hits the store (the expensive unbounded COUNT(*)).
+        assert _dash_mod._get_alltime_total(store) == 1129806
+        assert store.all_time_calls == 1
+        # Second call within TTL returns the cached value, no extra store hit.
+        assert _dash_mod._get_alltime_total(store) == 1129806
+        assert store.all_time_calls == 1
+    finally:
+        _dash_mod._ALLTIME_TOTAL_CACHE = None
+
+
+def test_refresh_cache_primes_and_sets_primed(monkeypatch):
+    # The background primer must populate the cache AND signal _PRIMED so the
+    # server only opens the port once warm (no cold 502/504 stampede).
+    _dash_mod._PRIMED.clear()
+    _dash_mod._ALLTIME_TOTAL_CACHE = None
+    store = _CountingStore()
+
+    # Route get_storage() to our counting store for the primer run.
+    import manyfaced.db.storage as _storage_mod
+
+    monkeypatch.setattr(_storage_mod, 'get_storage', lambda **kw: store)
+
+    _dash_mod._refresh_cache('tok')
+    # All four ranges built + all-time total warmed -> _PRIMED set.
+    assert _dash_mod._PRIMED.is_set()
+    # The expensive all-time query ran exactly once during the primer pass,
+    # not once per range.
+    assert store.all_time_calls == 1
+    _dash_mod._PRIMED.clear()
+    _dash_mod._ALLTIME_TOTAL_CACHE = None

@@ -82,6 +82,16 @@ _CACHE_LOCK = threading.Lock()
 _REFRESHER: threading.Thread | None = None
 _REFRESHER_STOP = threading.Event()
 
+# The all-time "Total Captures" total is an unbounded COUNT(*) over the whole
+# prod table (~18s on 1.1M rows). It barely moves minute-to-minute, so cache it
+# on a slow TTL and refresh it off the hot 30s path instead of on every build.
+_ALLTIME_TOTAL_TTL = 300.0
+_ALLTIME_TOTAL_CACHE: tuple[float, int] | None = None  # (built_at, total)
+
+# Set once the background primer has completed its first full pass, so the
+# server can refuse traffic until the cache is warm (issue #409 follow-up).
+_PRIMED = threading.Event()
+
 _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 
 # Capture-log page size (issue #316) — one page is rendered server-side per
@@ -359,10 +369,10 @@ def _build_payload(
 
         # Genuinely unbounded — the "Total Captures" card claims "all-time",
         # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
-        # Affordable here because it's computed by the 30s background
-        # refresher, off the request path (same precedent as the old
-        # dashboard's cached 'all' range).
-        all_time_total = store.aggregate_stats(since=None, bucket='day')['total']
+        # This is the single most expensive query on a large prod table
+        # (unbounded COUNT(*) ~18s), so it comes from a slow-TTL cache, not a
+        # fresh run on every build (issue #409 follow-up).
+        all_time_total = _get_alltime_total(store)
 
         day_since, _b = _parse_window('24h')
         day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
@@ -546,6 +556,29 @@ def _payload_with_port(payload: dict, port_filter: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _get_alltime_total(store: Any) -> int:
+    """All-time capture total, served from a slow-TTL cache.
+
+    An exact ``COUNT(*)`` over the entire prod table is ~18s on 1.1M rows and
+    is the dominant cost of every dashboard build. The "Total Captures" card
+    doesn't need second-level freshness, so we refresh it at most once per
+    ``_ALLTIME_TOTAL_TTL`` seconds instead of on every 30s refresh / cold
+    request (issue #409 follow-up).
+    """
+    global _ALLTIME_TOTAL_CACHE
+    now = time.time()
+    cached = _ALLTIME_TOTAL_CACHE
+    if cached is not None and (now - cached[0]) <= _ALLTIME_TOTAL_TTL:
+        return cached[1]
+    try:
+        total = store.aggregate_stats(since=None, bucket='day')['total']
+    except Exception:  # noqa: BLE001 — fall back to the last good value
+        logger.exception('Dashboard all-time total refresh failed')
+        return cached[1] if cached is not None else 0
+    _ALLTIME_TOTAL_CACHE = (now, total)
+    return total
+
+
 def _refresh_cache(token: str) -> None:
     """Refresh the cached payload + full page for every supported range.
 
@@ -563,6 +596,8 @@ def _refresh_cache(token: str) -> None:
         with _CACHE_LOCK:
             _PAYLOAD_CACHE[r] = (now, payload)
             _HTML_CACHE[r] = (now, html_bytes)
+    # First full pass done — the cache is warm, the server may accept traffic.
+    _PRIMED.set()
 
 
 def _cache_key(range_str: str, page: int, ip: str | None = None, host: str | None = None) -> str:
@@ -582,6 +617,7 @@ def _start_refresher(token: str) -> None:
     global _REFRESHER
     if _REFRESHER is not None and _REFRESHER.is_alive():
         return
+    _PRIMED.clear()
 
     def _loop() -> None:
         _refresh_cache(token)
@@ -746,6 +782,15 @@ def run_dashboard(args: Any, update_event: Any) -> None:
     # Prime + maintain a cached payload/page on a background thread so the
     # request path never blocks on the live writer's WAL lock.
     _start_refresher(token)
+
+    # Warm the cache BEFORE opening the port (issue #409 follow-up). Previously
+    # the server accepted traffic the instant it started, so the first hits
+    # landed on an empty cache and ran the full ~20s build synchronously on the
+    # request thread — under nginx's short upstream timeout that surfaced as
+    # 502/504 "slow spin up". Waiting for _PRIMED means the dashboard comes up
+    # already-warm. The timeout is a safety valve: if priming somehow stalls,
+    # still serve rather than hang the whole process.
+    _PRIMED.wait(timeout=120)
 
     httpd = ThreadingHTTPServer((bind, port), _DashboardHandler)
     logger.info('Dashboard listening on http://%s:%d/', bind, port)
