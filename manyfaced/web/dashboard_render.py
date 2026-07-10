@@ -594,28 +594,41 @@ def _render_log_section(payload: dict) -> str:
 def _render_payloads_section(payload: dict) -> str:
     """Raw captured request payloads, surfaced right after the capture log.
 
-    Each entry is the actual bytes an attacker sent (already truncated +
-    escaped server-side). Lets operators eyeball exploit payloads (wget drops,
-    SQLi, traversal) without expanding every log row.
+    Each entry is the actual bytes an attacker sent (truncated + escaped
+    server-side). Issue #368 adds a **decoded** pane beside the raw one: the
+    best-effort URL/base64-decoded view — so encoded exploit payloads
+    (``%2e%2e%2fetc%2Fpasswd``, `.env` probes, base64 C2 drops) become
+    human-readable without expanding every log row.
     """
     payloads = payload.get('payloads') or []
     if not payloads:
         items = '<p class="section-hint">no payloads captured yet</p>'
     else:
         total = len(payloads)
-        items = ''.join(
-            f"""<div class="payload-row">
-  <div class="log-raw-meta payload-meta"><b>PAYLOAD {i:02d}/{total:02d}</b><span>{len(p)} chars</span></div>
-  <pre class="log-raw">{_esc(p)}</pre>
+        rows_html = []
+        for i, entry in enumerate(payloads, 1):
+            raw, decoded = entry if isinstance(entry, tuple) else (entry, entry)
+            decoded_pane = (
+                f'<pre class="log-raw payload-decoded">{_esc(decoded)}</pre>'
+                if decoded != raw
+                else '<p class="section-hint payload-nodecode">no encoding detected</p>'
+            )
+            rows_html.append(
+                f"""<div class="payload-row">
+  <div class="log-raw-meta payload-meta"><b>PAYLOAD {i:02d}/{total:02d}</b><span>{len(raw)} chars raw</span></div>
+  <div class="payload-split">
+    <div class="payload-pane"><div class="payload-pane-label">RAW</div><pre class="log-raw">{_esc(raw)}</pre></div>
+    <div class="payload-pane"><div class="payload-pane-label">DECODED</div>{decoded_pane}</div>
+  </div>
 </div>"""
-            for i, p in enumerate(payloads, 1)
-        )
+            )
+        items = ''.join(rows_html)
     return f"""
 <section id="payloads" class="section">
   <div class="section-head">
     <div class="section-title">PAYLOADS</div>
     <div class="rule"></div>
-    <div class="section-hint">raw captured request bytes ({len(payloads)} shown)</div>
+    <div class="section-hint">raw + decoded captured request bytes ({len(payloads)} shown)</div>
   </div>
   <div class="payloads-box">{items}</div>
 </section>

