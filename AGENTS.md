@@ -2,7 +2,7 @@
 
 ## What is this?
 
-A Python 3.12+ socket-based honeypot that impersonates many web services (WordPress, phpMyAdmin, WebDAV, Jenkins, etc.) to capture bot interactions. Captured data lands in `honeypot.sqlite` on a DigitalOcean droplet and is served via systemd as the `manyfaced` service.
+A Python 3.12+ socket-based honeypot that impersonates many web services (WordPress, phpMyAdmin, WebDAV, Jenkins, etc.) to capture bot interactions. On production the captured data lands in a **PostgreSQL** database (see *Config file locations* below); for local/dev the default backend is SQLite. The service runs as a Docker container on a DigitalOcean droplet.
 
 ## Repo layout
 
@@ -16,7 +16,7 @@ manyfaced/              # Package root
   handlers/             # Request processing (ABC pattern, service-specific handlers)
   db/                   # Data persistence layer (SQLite / PostgreSQL)
 deployment-analysis/    # Production analysis scripts and data (untracked output in latest/)
-bots/                   # Untracked — honeypot.sqlite lives here on prod
+bots/                   # Untracked — local SQLite DB / runtime artifacts land here in dev
 skills/prod-healthcheck/  # Fast read-only service health check (SSH)
 skills/prod-analysis/     # Data-pull + investigation + report generation workflow
 test/                   # pytest suite (~76% coverage target)
@@ -102,14 +102,14 @@ Rules:
 
 ## Deployment
 
-Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service is managed via systemd (`systemctl status manyfaced`). For a quick health check, use the **prod-healthcheck** skill; for the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis** skill.
+Production runs on a DigitalOcean droplet (`~/.deploy_config` holds connection details). The service runs as a Docker container (the deploy pipeline restarts it on each push to `master`). For a quick health check, use the **prod-healthcheck** skill; for the full analysis workflow (SSH data pull, log/DB parsing, report generation), see the **prod-analysis** skill.
 
 The deploy pipeline (GitHub Actions) runs automatically on push to `master` — it skips tests and deploys directly. It syncs all files atomically via rsync into a per-commit staging directory under `/opt/manyfaced/releases/<sha>/`, reinstalls deps, swaps the symlink (`/opt/manyfaced/current → releases/<sha>`), restarts the service, and verifies honeypot ports are listening. If any step fails, it rolls back to the previous backup.
 
 ### Config file locations
 
-- **Service runs as `honeypot` user** — reads config from `/home/honeypot/.config/manyfaced/config.toml`
-- **Production DB path:** `/opt/manyfaced/bots/honeypot.sqlite` (persistent, outside releases directory)
+- **Service runs as `honeypot` user** inside a Docker container (image built from the repo `Dockerfile`); config is read from `/home/honeypot/.config/manyfaced/config.toml` and backend settings come from `HONEY_*` env vars (see `templates/honeypot.env.example`).
+- **Production DB:** **PostgreSQL** — the container runs with `HONEY_DB_BACKEND=postgresql` (see `/tmp/pg_env` on the droplet). There is **no** `honeypot.sqlite` on prod; SQLite is only the local/dev default backend. To query prod, connect via `psycopg2` using the PG env vars (or `docker exec` + `psql` inside the container).
 
 ### CI/CD monitoring pattern
 

@@ -16,7 +16,7 @@ Use this skill when you need a quick answer: **is the honeypot alive and healthy
 **Do NOT use this skill for:**
 - Data pulls, quality audits, or report generation — use **prod-analysis** instead
 - Investigating attack patterns or bot behavior over time
-- Analyzing honeypot.sqlite data quality
+- Analyzing production database data quality (it's PostgreSQL on prod, not sqlite) — use **prod-analysis** for that
 
 ## Prerequisites
 
@@ -40,10 +40,10 @@ Run all checks in a single SSH session for speed:
 ```bash
 source .deploy_config
 ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "
-echo '=== Service Status ===' && systemctl status manyfaced --no-pager 2>&1
-echo '=== Processes ===' && ps aux | grep mfh | grep -v grep
-echo '=== Listening Ports ===' && ss -tlnp | grep python | wc -l
-echo '=== Disk Space ===' && df -h /opt/manyfaced/bots
+echo '=== Container Status ===' && docker ps --filter name=manyfaced --format '{{.Names}} {{.Status}}' 2>&1
+echo '=== Processes ===' && docker exec \$(docker ps -q --filter name=manyfaced) ps aux 2>/dev/null | grep -E 'mfh|python' | grep -v grep
+echo '=== Listening Ports ===' && docker exec \$(docker ps -q --filter name=manyfaced) ss -tlnp 2>/dev/null | grep -c LISTEN
+echo '=== Disk Space ===' && df -h /opt/manyfaced
 "
 ```
 
@@ -70,7 +70,7 @@ Only the following findings from the full analysis are actionable at the health-
 
 ## Quick Decision Tree
 
-1. **Service inactive/crashing** → Restart: `systemctl restart manyfaced`
+1. **Service inactive/crashing** → Restart the container: `docker restart manyfaced` (or push to master to redeploy; the deploy pipeline restarts it)
 2. **Process count > 3** → Investigate child process crashes (check journal for repeated start/stop cycles)
 3. **Ports < expected** → Client process may not be listening on all HONEYTOP_PORTS
 4. **Disk > 50%** → Clean up old logs or expand volume
