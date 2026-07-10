@@ -1116,3 +1116,83 @@ class TestListenPortColumn:
         assert internal_ports(22) == [22, 10022]
         assert internal_ports(80) == [80, 8080]
         storage.close()
+
+
+class TestIssue366IocLogScoping:
+    """recent_records/count_recent accept ip/host to scope the capture log
+    to an IoC indicator clicked in the dashboard panel (issue #366)."""
+
+    def _seed(self, db_path):
+        storage = SQLiteStorage(db_path=db_path)
+        recs = [
+            {
+                'ip': '1.2.3.4',
+                'hostname': 'a',
+                'timestamp': '2024-01-01 00:00:01',
+                'parsed_request': {},
+                'raw_request': 'GET /admin HTTP/1.1',
+                'is_detected': 1,
+            },
+            {
+                'ip': '9.9.9.9',
+                'hostname': 'b',
+                'timestamp': '2024-01-01 00:00:02',
+                'parsed_request': {},
+                'raw_request': 'GET / HTTP/1.1',
+                'is_detected': 0,
+            },
+            {
+                'ip': '1.2.3.4',
+                'hostname': 'a',
+                'timestamp': '2024-01-01 00:00:03',
+                'parsed_request': {},
+                'raw_request': 'POST /login HTTP/1.1',
+                'is_detected': 1,
+            },
+            {
+                'ip': '5.5.5.5',
+                'hostname': 'c',
+                'timestamp': '2024-01-01 00:00:04',
+                'parsed_request': {},
+                'raw_request': 'GET http://evil.example/c2 HTTP/1.1',
+                'is_detected': 1,
+            },
+        ]
+        for r in recs:
+            storage.insert(r)
+            storage._conn.commit()
+        return storage
+
+    def test_ip_filter_returns_only_that_ip(self, tmp_path):
+        storage = self._seed(str(tmp_path / 'ip.db'))
+        try:
+            rows = storage.recent_records(ip='1.2.3.4')
+            assert len(rows) == 2
+            assert all(r['bot_ip'] == '1.2.3.4' for r in rows)
+            # count_recent mirrors the filter
+            assert storage.count_recent(ip='1.2.3.4') == 2
+            assert storage.count_recent(ip='9.9.9.9') == 1
+        finally:
+            storage.close()
+
+    def test_host_filter_matches_request_raw_substring(self, tmp_path):
+        storage = self._seed(str(tmp_path / 'host.db'))
+        try:
+            rows = storage.recent_records(host='evil.example')
+            assert len(rows) == 1
+            assert 'evil.example' in rows[0]['request_raw']
+            assert storage.count_recent(host='evil.example') == 1
+            # no spurious matches on unrelated hosts
+            assert storage.recent_records(host='nope.invalid') == []
+        finally:
+            storage.close()
+
+    def test_ip_and_host_combine_with_and(self, tmp_path):
+        storage = self._seed(str(tmp_path / 'both.db'))
+        try:
+            # 1.2.3.4 only sent /admin and /login, never the c2 host
+            rows = storage.recent_records(ip='1.2.3.4', host='evil.example')
+            assert rows == []
+            assert storage.count_recent(ip='1.2.3.4', host='evil.example') == 0
+        finally:
+            storage.close()

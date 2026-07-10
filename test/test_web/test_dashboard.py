@@ -795,3 +795,109 @@ def test_build_payload_uses_interesting_raws(tmp_path, monkeypatch):
     assert '203.0.113.9' not in joined
     storage.close()
     storage_mod.reset_storage_singleton()
+
+
+# ---------------------------------------------------------------------------
+# issue #366: IoC panel clicks must server-side scope the capture log
+# ---------------------------------------------------------------------------
+
+
+def test_build_payload_scopes_log_by_ip(tmp_path, monkeypatch):
+    """_build_payload(ip=...) confines the capture log to that bot_ip (issue #366)."""
+    from manyfaced.db import storage as storage_mod
+
+    db_path = str(tmp_path / 'ioc_ip.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    now = datetime.now()
+
+    def ts(h):
+        return (now - timedelta(hours=h)).strftime('%Y-%m-%d %H:%M:%S.%f')
+
+    storage.insert(
+        {
+            'ip': '1.2.3.4',
+            'hostname': 'h',
+            'timestamp': ts(2),
+            'parsed_request': {},
+            'raw_request': 'GET /x HTTP/1.1',
+            'is_detected': status_mod.WORDPRESS_HTTP,
+        }
+    )
+    storage.insert(
+        {
+            'ip': '9.9.9.9',
+            'hostname': 'h',
+            'timestamp': ts(1),
+            'parsed_request': {},
+            'raw_request': 'GET /y HTTP/1.1',
+            'is_detected': status_mod.WORDPRESS_HTTP,
+        }
+    )
+    storage._conn.commit()
+
+    full = _dash_mod._build_payload('24h', 'tok')
+    assert len(full['log_rows']) == 2  # both IPs in the unfiltered window
+
+    scoped = _dash_mod._build_payload('24h', 'tok', ip='1.2.3.4')
+    assert len(scoped['log_rows']) == 1
+    assert scoped['log_rows'][0]['row']['bot_ip'] == '1.2.3.4'
+    storage.close()
+    storage_mod.reset_storage_singleton()
+
+
+def test_build_payload_scopes_log_by_host(tmp_path, monkeypatch):
+    """_build_payload(host=...) confines the log to rows carrying that C2 host (issue #366)."""
+    from manyfaced.db import storage as storage_mod
+
+    db_path = str(tmp_path / 'ioc_host.db')
+    monkeypatch.setenv('HONEY_DB_PATH', db_path)
+    storage_mod.reset_storage_singleton()
+    storage = SQLiteStorage(db_path=db_path)
+    now = datetime.now()
+
+    def ts(h):
+        return (now - timedelta(hours=h)).strftime('%Y-%m-%d %H:%M:%S.%f')
+
+    storage.insert(
+        {
+            'ip': '1.1.1.1',
+            'hostname': 'h',
+            'timestamp': ts(2),
+            'parsed_request': {},
+            'raw_request': 'GET http://c2.evil/pew HTTP/1.1',
+            'is_detected': status_mod.WORDPRESS_HTTP,
+        }
+    )
+    storage.insert(
+        {
+            'ip': '2.2.2.2',
+            'hostname': 'h',
+            'timestamp': ts(1),
+            'parsed_request': {},
+            'raw_request': 'GET /benign HTTP/1.1',
+            'is_detected': status_mod.WORDPRESS_HTTP,
+        }
+    )
+    storage._conn.commit()
+
+    full = _dash_mod._build_payload('24h', 'tok')
+    assert len(full['log_rows']) == 2
+
+    scoped = _dash_mod._build_payload('24h', 'tok', host='c2.evil')
+    assert len(scoped['log_rows']) == 1
+    assert 'c2.evil' in scoped['log_rows'][0]['row']['request_raw']
+    storage.close()
+    storage_mod.reset_storage_singleton()
+
+
+def test_cache_key_includes_ioc_scope(tmp_path, monkeypatch):
+    """Cache key must differ per ip/host so filtered logs never bleed across filters (issue #366)."""
+    base = _dash_mod._cache_key('24h', 1)
+    assert base == '24h#p1'
+    assert _dash_mod._cache_key('24h', 1, ip='1.2.3.4') != base
+    assert _dash_mod._cache_key('24h', 1, host='c2.evil') != base
+    assert _dash_mod._cache_key('24h', 1, ip='1.2.3.4') != _dash_mod._cache_key(
+        '24h', 1, host='c2.evil'
+    )

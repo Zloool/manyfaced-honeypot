@@ -235,7 +235,12 @@ class StorageBackend(ABC):
     # (SQLiteStorage, PostgreSQLStorage) override these; calling the base raises.
 
     def recent_records(
-        self, limit: int = 50, since: str | None = None, offset: int = 0
+        self,
+        limit: int = 50,
+        since: str | None = None,
+        offset: int = 0,
+        ip: str | None = None,
+        host: str | None = None,
     ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
@@ -244,10 +249,16 @@ class StorageBackend(ABC):
             since: Optional inclusive lower bound on ``timestamp`` (already
                 formatted as the column's textual ``%Y-%m-%d %H:%M:%S.%f``).
             offset: Rows to skip from the newest end (pagination). Defaults to 0.
+            ip: Optional ``bot_ip`` filter (issue #366) — scope the capture log
+                to a single attacker IP clicked from the IoC panel.
+            host: Optional ``request_raw`` substring filter (issue #366) — scope
+                the log to requests that carried a C2/download host.
         """
         raise NotImplementedError('recent_records not implemented by this backend')
 
-    def count_recent(self, since: str | None = None) -> int:
+    def count_recent(
+        self, since: str | None = None, ip: str | None = None, host: str | None = None
+    ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316) so older rows stay
@@ -888,17 +899,41 @@ class SQLiteStorage(StorageBackend):
     # -- read API (issue #234 dashboard) ------------------------------------
 
     def recent_records(
-        self, limit: int = 50, since: str | None = None, offset: int = 0
+        self,
+        limit: int = 50,
+        since: str | None = None,
+        offset: int = 0,
+        ip: str | None = None,
+        host: str | None = None,
     ) -> list[dict]:
+        """Return the most recent bear records (newest first).
+
+        Args:
+            limit: Max rows to return.
+            since: Optional inclusive lower bound on timestamp.
+            offset: Rows to skip from the newest end (pagination).
+            ip: Optional bot_ip filter (issue #366) - scope the capture
+                log to a single attacker IP clicked from the IoC panel.
+            host: Optional request_raw substring filter (issue #366) -
+                scope the log to requests that carried a C2/download host
+                (the exact rows the host was extracted from).
+        """
         if self._conn is None:
             return []
         conn = self._conn
-        sql = 'SELECT * FROM honeypot_bears'
-        params: tuple = ()
+        clauses = []
+        params: list = []
         if since is not None:
-            sql += ' WHERE timestamp >= ?'
-            params = (since,)
-        sql += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        if ip is not None:
+            clauses.append('bot_ip = ?')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw LIKE ?')
+            params.append('%' + host + '%')
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
         try:
             rows = conn.execute(sql, (*params, int(limit), int(offset))).fetchall()
             cols = [d[0] for d in conn.execute('SELECT * FROM honeypot_bears LIMIT 0').description]
@@ -907,20 +942,32 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading recent records from SQLite storage')
             return []
 
-    def count_recent(self, since: str | None = None) -> int:
+    def count_recent(
+        self, since: str | None = None, ip: str | None = None, host: str | None = None
+    ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316) so older rows inside
         the selected time range stay reachable beyond the rendered page size.
+        ip/host mirror :meth:`recent_records` (issue #366) so the pager total
+        stays correct when the log is scoped to an IoC indicator.
         """
         if self._conn is None:
             return 0
         conn = self._conn
-        sql = 'SELECT COUNT(*) FROM honeypot_bears'
-        params: tuple = ()
+        clauses = []
+        params: list = []
         if since is not None:
-            sql += ' WHERE timestamp >= ?'
-            params = (since,)
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        if ip is not None:
+            clauses.append('bot_ip = ?')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw LIKE ?')
+            params.append('%' + host + '%')
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        sql = 'SELECT COUNT(*) FROM honeypot_bears' + where
         try:
             return int(conn.execute(sql, params).fetchone()[0])
         except (sqlite3.Error, sqlite3.OperationalError):
@@ -1397,16 +1444,34 @@ class PostgreSQLStorage(StorageBackend):
     # -- read API (issue #234 dashboard) ------------------------------------
 
     def recent_records(
-        self, limit: int = 50, since: str | None = None, offset: int = 0
+        self,
+        limit: int = 50,
+        since: str | None = None,
+        offset: int = 0,
+        ip: str | None = None,
+        host: str | None = None,
     ) -> list[dict]:
+        """Return the most recent bear records (newest first).
+
+        Mirrors :meth:`SQLiteStorage.recent_records`; adds optional ip
+        (bot_ip) and host (request_raw substring) filters for IoC-panel
+        log scoping (issue #366).
+        """
         if self._conn is None and not self._ensure_connected():
             return []
-        sql = 'SELECT * FROM honeypot_bears'
+        clauses = []
         params: list = []
         if since is not None:
-            sql += ' WHERE timestamp >= %s'
+            clauses.append('timestamp >= %s')
             params.append(since)
-        sql += ' ORDER BY timestamp DESC LIMIT %s OFFSET %s'
+        if ip is not None:
+            clauses.append('bot_ip = %s')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw ILIKE %s')
+            params.append('%' + host + '%')
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT %s OFFSET %s'
         try:
             with self._conn.cursor() as cur:
                 cur.execute(sql, (*params, int(limit), int(offset)))
@@ -1428,19 +1493,30 @@ class PostgreSQLStorage(StorageBackend):
                 logger.exception('Error reading recent records from PostgreSQL storage')
                 return []
 
-    def count_recent(self, since: str | None = None) -> int:
+    def count_recent(
+        self, since: str | None = None, ip: str | None = None, host: str | None = None
+    ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316). Mirrors
-        :meth:`SQLiteStorage.count_recent`.
+        :meth:`SQLiteStorage.count_recent`; ip/host match
+        :meth:`recent_records` (issue #366).
         """
         if self._conn is None and not self._ensure_connected():
             return 0
-        sql = 'SELECT COUNT(*) FROM honeypot_bears'
+        clauses = []
         params: list = []
         if since is not None:
-            sql += ' WHERE timestamp >= %s'
+            clauses.append('timestamp >= %s')
             params.append(since)
+        if ip is not None:
+            clauses.append('bot_ip = %s')
+            params.append(ip)
+        if host is not None:
+            clauses.append('request_raw ILIKE %s')
+            params.append('%' + host + '%')
+        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        sql = 'SELECT COUNT(*) FROM honeypot_bears' + where + ''
         try:
             with self._conn.cursor() as cur:
                 cur.execute(sql, params)

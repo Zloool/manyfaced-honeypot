@@ -171,10 +171,10 @@ class _FakeAggregateStore:
     def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
         return []
 
-    def count_recent(self, since=None):  # noqa: ANN001, ANN002
+    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
         return 0
 
-    def recent_records(self, limit=50, since=None, offset=0):  # noqa: ANN001, ANN002
+    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
         return []
 
 
