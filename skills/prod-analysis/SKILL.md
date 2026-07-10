@@ -24,7 +24,7 @@ Use this skill when you need to **pull gathered data from production and investi
 
 - SSH access to production droplet (`~/.ssh/dohp`, port from `.deploy_config`)
 - `.deploy_config` file with connection details at repo root
-- Python 3.10+ with sqlite3 (stdlib)
+- Python 3.10+ with psycopg2 (or sqlite3 stdlib for local/dev SQLite pulls)
 - `analyze_production.py` script in `deployment-analysis/`
 
 ## Loading config
@@ -50,7 +50,11 @@ cd deployment-analysis/latest
 # Pull log file (may not exist — logging may go to journalctl only)
 ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > honeypot.log 2>/dev/null || echo "No log file found on server"
 
-# Pull database safely via scp (avoids WAL corruption from cat-redirect)
+# Pull database safely (PROD = PostgreSQL: dump from the container; LOCAL/DEV SQLite: scp the file).
+# For prod, REMOTE_DB is not a sqlite file — use pg_dump instead:
+#   ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
+#     "docker exec \$(docker ps -q --filter name=manyfaced) pg_dump -t honeypot_bears honeypot" > honeypot_bears.sql
+# For a local/dev SQLite backend, the scp pull still works:
 scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
 
 # 3. Run analysis script
@@ -68,10 +72,10 @@ python3 ../analyze_production.py .
 - Contains bot interactions, errors, warnings, service health info
 - **Note:** May not exist on server if logging was redirected to journalctl only
 
-### 2. SQLite Database (`honeypot.sqlite`)
+### 2. Production Database (PostgreSQL)
 - Table: `honeypot_bears` — all captured bot records
-- Schema: `id`, `bot_ip`, `hostname`, `timestamp`, `request_path`, `request_command`, `request_version`, `request_raw`, `bot_user_agent`, `bot_country`, `bot_continent`, `bot_tracert`, `bot_dns_name`, `detected_id`, `hive_id`, `login`
-- **WAL mode caveat:** Query via active Python connection (reads WAL), not raw file copy. Use `scp` to pull the DB file, then open it with a Python sqlite3 connection for accurate reads.
+- Schema: `id`, `bot_ip`, `hostname`, `timestamp`, `request_path`, `request_command`, `request_version`, `request_raw`, `bot_user_agent`, `bot_country`, `bot_continent`, `bot_dns_name`, `detected_id`, `hive_id`, `login`, plus later-added columns (`listen_port`, `classification`, `bot_asn`, `bot_org`, `benign_source`)
+- **Production uses PostgreSQL** (the container runs with `HONEY_DB_BACKEND=postgresql`). There is **no** `honeypot.sqlite` file on prod. To pull data, use `docker exec … pg_dump` / `psql` inside the container, or connect with `psycopg2` using the `HONEY_PG_*` env vars (from `/tmp/pg_env` on the droplet). For a **local/dev** SQLite backend, pull the file via `scp` and open it with a Python `sqlite3` connection.
 
 ### 3. Journal Logs (`journalctl -u manyfaced`)
 - Recent errors, warnings, service status
@@ -93,7 +97,10 @@ cd deployment-analysis/latest
 # Pull log file (may not exist)
 ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "cat $REMOTE_LOG" > honeypot.log 2>/dev/null || echo "No log file found on server"
 
-# Pull database via scp (WAL-safe — avoids cat-redirect corruption)
+# Pull database via scp (WAL-safe — avoids cat-redirect corruption). For PROD (PostgreSQL)
+# use pg_dump inside the container instead; scp only works for a local/dev SQLite backend:
+#   ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
+#     "docker exec $(docker ps -q --filter name=manyfaced) pg_dump -t honeypot_bears honeypot" > honeypot_bears.sql
 scp -i "$SSH_KEY" -P "$SSH_PORT" "${SSH_USER}@${SERVER_IP}:${REMOTE_DB}" honeypot.db
 ```
 
@@ -264,7 +271,7 @@ deployment-analysis/
 ├── analyze_production.py    # Reusable analysis script (tracked)
 ├── PRODUCTION_ANALYSIS.md   # Example report from 2026-05-01 (reference)
 ├── latest/                  # Untracked — fresh analysis data goes here
-│   ├── honeypot.db          # SQLite database dump
+│   ├── honeypot_bears.sql    # PostgreSQL dump (prod) or honeypot.db (local SQLite)
 │   ├── honeypot.log         # Log file dump (may be empty)
 │   └── report-YYYY-MM-DD.md # Generated report
 ```

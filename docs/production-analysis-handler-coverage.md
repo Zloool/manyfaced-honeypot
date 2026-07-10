@@ -1,7 +1,7 @@
 # Production Analysis: Handler Coverage Gaps
 
 **Date:** 2026-05-05  
-**Source:** honeypot.sqlite database (all-time) + recent journalctl logs  
+**Source:** production PostgreSQL database (`honeypot_bears`, all-time) + recent journalctl logs 
 **Total recorded bots:** ~17,500+ dialogue entries  
 
 ---
