@@ -54,24 +54,51 @@ class TestRedisHandler(unittest.TestCase):
         self.assertIn(b'+PONG', response)
 
     def test_redis_auth_credential_capture(self):
-        """AUTH command should capture username and password."""
+        """AUTH command should capture username and password and be accepted."""
         raw_data = b'*3\r\n$4\r\nAUTH\r\n$5\r\nadmin\r\n$6\r\npassword123\r\n'
         response = generate_redis_response(raw_data, '10.0.0.2')
         creds = extract_redis_credentials(raw_data)
         self.assertIsNotNone(creds)
         self.assertEqual(creds[0], 'admin')
         self.assertEqual(creds[1], 'password123')
+        self.assertEqual(response, b'+OK\r\n')
 
     def test_redis_noauth_response(self):
-        """Commands without auth should return -NOAUTH response."""
+        """Unauthenticated data commands on a honeypot still get a benign reply.
+
+        We no longer hard-fail with -NOAUTH (that broke redis-py sessions);
+        GET/SET/etc. now return protocol-valid replies.
+        """
         raw_data = b'*1\r\n$4\r\nKEYS\r\n'
         response = generate_redis_response(raw_data, '10.0.0.3')
-        self.assertIn(b'-NOAUTH', response)
+        self.assertNotIn(b'-NOAUTH', response)
+
+    def test_redis_hello_resp3_reply_is_map(self):
+        """HELLO 3 must return a RESP3 map redis-py can parse into a dict (issue #382)."""
+        raw = b'*2\r\n$5\r\nHELLO\r\n$1\r\n3\r\n'
+        resp = generate_redis_response(raw, '10.0.0.5')
+        self.assertTrue(resp.startswith(b'%7\r\n'))
+        for key in (b'server', b'version', b'proto', b'id', b'mode', b'role', b'modules'):
+            self.assertIn(key, resp)
+
+    def test_redis_hello_resp2_reply_is_array(self):
+        """HELLO 2 must return a RESP2 flat array of interleaved key/values."""
+        raw = b'*2\r\n$5\r\nHELLO\r\n$1\r\n2\r\n'
+        resp = generate_redis_response(raw, '10.0.0.6')
+        self.assertTrue(resp.startswith(b'*14\r\n'))
+        self.assertIn(b'server', resp)
+
+    def test_redis_set_get_replies(self):
+        """redis-py .set()/.get() need +OK and a bulk/nil reply (issue #382)."""
+        set_r = generate_redis_response(b'*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n', '10.0.0.7')
+        self.assertEqual(set_r, b'+OK\r\n')
+        get_r = generate_redis_response(b'*2\r\n$3\r\nGET\r\n$1\r\nk\r\n', '10.0.0.7')
+        self.assertEqual(get_r, b'$-1\r\n')
 
     def test_redis_greeting(self):
-        """Greeting should return +PONG."""
+        """Redis is client-first: no banner is sent on connect (issue #382)."""
         greeting = generate_redis_greeting('10.0.0.4')
-        self.assertEqual(greeting, b'+PONG\r\n')
+        self.assertEqual(greeting, b'')
 
 
 class TestMongoDBHandler(unittest.TestCase):

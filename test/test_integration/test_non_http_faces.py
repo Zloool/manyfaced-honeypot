@@ -272,3 +272,74 @@ def test_dispatch_elasticsearch_reply_reaches_client():
 def test_dispatch_ssh_banner_reaches_client_before_speaking():
     got = _dispatch(lambda: get_face(10022), None, 10022)
     assert got.startswith(b'SSH-2.0-'), f'client got {got!r}'
+
+
+def _dispatch_multi(make_spec, client_frames, server_port):
+    """Like _dispatch but drives a *sequence* of client frames (issue #382):
+    send a frame, read its reply, repeat — proving the client-first exchange
+    loop serves multiple commands (redis-py does HELLO → PING → SET)."""
+    import socket as _sock
+
+    args = SimpleNamespace(server=19999, server_host='127.0.0.1')
+    set_enrich_args(args)
+    spec = make_spec()
+
+    lsn = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    lsn.bind(('127.0.0.1', 0))
+    lsn.listen(1)
+    real_port = lsn.getsockname()[1]
+
+    client = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    client.connect(('127.0.0.1', real_port))
+    srv_sock, _ = lsn.accept()
+
+    def server_side():
+        try:
+            _handle_non_http_connection(srv_sock, args, '9.9.9.9', None, server_port, spec)
+        finally:
+            srv_sock.close()
+
+    t = threading.Thread(target=server_side, daemon=True)
+    t.start()
+    replies = []
+    try:
+        for frame in client_frames:
+            client.settimeout(4)
+            client.sendall(frame)
+            client.settimeout(4)
+            replies.append(client.recv(8192))
+        return replies
+    except Exception as e:
+        return replies + [f'ERR:{e!r}'.encode()]
+    finally:
+        client.close()
+        lsn.close()
+        t.join(timeout=3)
+
+
+def test_dispatch_redis_hello_ping_set_sequence():
+    """redis-py opens with HELLO 3, then PING, then SET — the exchange loop must
+    answer all three (issue #382)."""
+    hello = b'*2' + CRLF + b'$5' + CRLF + b'HELLO' + CRLF + b'$1' + CRLF + b'3' + CRLF
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    sett = (
+        b'*3'
+        + CRLF
+        + b'$3'
+        + CRLF
+        + b'SET'
+        + CRLF
+        + b'$1'
+        + CRLF
+        + b'k'
+        + CRLF
+        + b'$1'
+        + CRLF
+        + b'v'
+        + CRLF
+    )
+    replies = _dispatch_multi(lambda: get_face(6379), [hello, ping, sett], 6379)
+    assert len(replies) == 3, f'expected 3 replies, got {replies!r}'
+    assert replies[0].startswith(b'%7'), f'HELLO reply not a RESP3 map: {replies[0]!r}'
+    assert replies[1] == b'+PONG' + CRLF, f'PING reply wrong: {replies[1]!r}'
+    assert replies[2] == b'+OK' + CRLF, f'SET reply wrong: {replies[2]!r}'
