@@ -1015,14 +1015,18 @@ JS = r"""
   setInterval(refreshLive, 20000);
 
   // ---------------- notes-less footer / init ----------------
-  document.addEventListener('DOMContentLoaded', function(){
-    wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero();
-    var hflag = document.getElementById('hero-flag');
-    refreshAlive(hflag ? hflag.getAttribute('data-last') || '' : '');
-  });
-  if (document.readyState !== 'loading'){ wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); applyFilters(); initHero();
+  // NOTE: every wire*() must run on load. wireLogPager was historically
+  // omitted here and only got wired lazily by applyFragment() (the first
+  // 20s live-poll tick), so on a fresh page load the capture-log pager had
+  // no click listener and pagination looked dead until some other fragment
+  // refresh happened to fire (regression #416). Wire it eagerly like the
+  // other delegated listeners.
+  function initWire(){
+    wireLogRows(); wireIntelRows(); wireVolumeRows(); wireIocRows(); wireLogPager(); applyFilters(); initHero();
     var hflag = document.getElementById('hero-flag');
     refreshAlive(hflag ? hflag.getAttribute('data-last') || '' : '');
   }
+  document.addEventListener('DOMContentLoaded', initWire);
+  if (document.readyState !== 'loading'){ initWire(); }
 })();
 """
