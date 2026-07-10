@@ -45,6 +45,7 @@ import re
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -397,6 +398,7 @@ def _build_payload(
     page: int = 1,
     ip: str | None = None,
     host: str | None = None,
+    shared: Any | None = None,
 ) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
@@ -416,30 +418,17 @@ def _build_payload(
     page = max(1, int(page or 1))
     store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
     try:
-        overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
-        overview = store.aggregate_stats(since=overview_since, bucket='day')
-
-        # Indicators of Compromise (issue #351): top attacker IPs come straight
-        # from `overview['by_ip']` (already aggregated in aggregate_stats); the
-        # C2 / download hosts are scanned out of request_raw text and ranked by
-        # frequency. Both surfaces are blocklist candidates for the operator.
-        c2_hosts = _extract_c2_hosts(store, since=overview_since)
-
-        # Genuinely unbounded — the "Total Captures" card claims "all-time",
-        # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
-        # This is the single most expensive query on a large prod table
-        # (unbounded COUNT(*) ~18s), so it comes from a slow-TTL cache, not a
-        # fresh run on every build (issue #409 follow-up).
-        all_time_total = _get_alltime_total(store)
-
-        day_since, _b = _parse_window('24h')
-        day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
-
-        # Real per-hour request rate: raw capture count over the last 60
-        # minutes (issue #328). A stable, readable number that reconciles with
-        # Captures/24h ÷ 24, replacing the dead-looking per-60s "Requests/min".
-        hour_since = (datetime.now() - timedelta(seconds=3600)).strftime('%Y-%m-%d %H:%M:%S.%f')
-        hour_total = store.aggregate_stats(since=hour_since, bucket='hour')['total']
+        shared = shared or _build_shared(store, token)
+        overview = shared.overview
+        c2_hosts = shared.c2_hosts
+        all_time_total = shared.all_time_total
+        day_total = shared.day_total
+        hour_total = shared.hour_total
+        payloads = shared.payloads
+        display_ports = shared.display_ports
+        configured_ports = shared.configured_ports
+        last_capture = shared.last_capture
+        overview_since = shared.overview_since
 
         vol_since = _volume_window(range_str)
         volume_raw = store.volume_series(
@@ -457,49 +446,6 @@ def _build_payload(
             limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
         )
         log_rows = _data.group_log_rows(raw_recent)
-
-        # Raw captured payloads (issue #350 follow-up, refined by #362): surface
-        # the actual attacker request bytes in a dedicated "Payloads" panel right
-        # after the capture log, so operators can eyeball exploit payloads
-        # (wget drops, SQLi, traversal) without expanding each log entry.
-        # fetch_interesting_raws drops benign scanners + favicon noise and ranks
-        # survivors by severity; the SQL keeps it confined to URL-bearing rows.
-        # Stays all-time (since=None) by design — it's a standing top-severity
-        # list, not tied to the volume/log range picker — but ip/host DO scope
-        # it, so clicking an IoC entry filters Payloads along with the capture
-        # log instead of leaving it showing unrelated all-time findings
-        # (issue #368).
-        interesting = store.fetch_interesting_raws(
-            since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host
-        )
-        payloads = _build_payloads(interesting)
-
-        configured_ports = _config.settings.resolve_ports()
-        # Hero / port chips: surface every port that has taken a real hit from
-        # a non-benign sender (issue #409). `nonbenign_ports` already filters
-        # benign research scanners out of the `by_port` aggregate; we resolve
-        # each bound high port to its EXTERNAL (attacker-visible) port and
-        # de-duplicate so e.g. direct 22 + redirected 10022 collapse to one
-        # port. Falls back to the configured listening ports only when no
-        # non-benign traffic has been seen yet.
-        nonbenign_local = store.nonbenign_ports()
-        active_external = sorted({_ports.external_port(p) for p in nonbenign_local if p})
-        # Weight keyed by EXTERNAL port (resolve_display_ports returns external
-        # ports; by_port keys are the bound ports the captures were stored on —
-        # map them through display_port so weights line up with the hero LEDs).
-        weight_by_port = {
-            _data.display_port(int(r['key'])): r['count']
-            for r in overview['by_port']
-            if r.get('key') is not None
-        }
-        display_ports = [
-            (p, max(1, weight_by_port.get(p, 0)))
-            for p in _data.resolve_display_ports(active_external, configured_ports)
-        ]
-        # Real last-seen time across the WHOLE table (not the overview window),
-        # so the "SYSTEM ONLINE" badge reflects actual honeypot liveness
-        # instead of a hard-coded string (issue #409).
-        last_capture = store.last_capture_ts()
     finally:
         # Do NOT close: get_storage() returns the shared singleton also used by
         # the capture writer. Closing it here drops the writer's connection and
@@ -538,6 +484,116 @@ def _build_payload(
         'payloads': payloads,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
     }
+
+
+class _Shared:
+    """Range-independent dashboard data, computed ONCE per refresh pass.
+
+    The overview hero stats, C2 hosts, all-time total, day/hour totals,
+    Payloads panel, port chips and last-seen are identical for every volume
+    range (they use DASHBOARD_TIME_RANGE / since=None, not the range picker).
+    Building them once and reusing across all 4 ranges removes ~9 of the 12
+    aggregate passes that used to run serially on every cold start — the root
+    cause of the ~30-50s dashboard warm-up that raced the deploy health gate
+    (issue #416 follow-up).
+    """
+
+    __slots__ = (
+        'overview',
+        'overview_since',
+        'c2_hosts',
+        'all_time_total',
+        'day_total',
+        'hour_total',
+        'interesting',
+        'payloads',
+        'display_ports',
+        'configured_ports',
+        'last_capture',
+    )
+
+
+def _build_shared(store: Any, token: str) -> _Shared:
+    """Build the range-independent dashboard bundle once (issue #416 perf)."""
+    overview_since, _b = _parse_window(_config.settings.DASHBOARD_TIME_RANGE)
+    overview = store.aggregate_stats(since=overview_since, bucket='day')
+
+    # Indicators of Compromise (issue #351): top attacker IPs come straight
+    # from `overview['by_ip']` (already aggregated in aggregate_stats); the
+    # C2 / download hosts are scanned out of request_raw text and ranked by
+    # frequency. Both surfaces are blocklist candidates for the operator.
+    c2_hosts = _extract_c2_hosts(store, since=overview_since)
+
+    # Genuinely unbounded — the "Total Captures" card claims "all-time",
+    # unlike `overview` above which is scoped to DASHBOARD_TIME_RANGE.
+    # This is the single most expensive query on a large prod table
+    # (unbounded COUNT(*) ~18s), so it comes from a slow-TTL cache, not a
+    # fresh run on every build (issue #409 follow-up).
+    all_time_total = _get_alltime_total(store)
+
+    day_since, _b = _parse_window('24h')
+    day_total = store.aggregate_stats(since=day_since, bucket='hour')['total']
+
+    # Real per-hour request rate: raw capture count over the last 60
+    # minutes (issue #328). A stable, readable number that reconciles with
+    # Captures/24h ÷ 24, replacing the dead-looking per-60s "Requests/min".
+    hour_since = (datetime.now() - timedelta(seconds=3600)).strftime('%Y-%m-%d %H:%M:%S.%f')
+    hour_total = store.aggregate_stats(since=hour_since, bucket='hour')['total']
+
+    # Raw captured payloads (issue #350 follow-up, refined by #362): surface
+    # the actual attacker request bytes in a dedicated "Payloads" panel right
+    # after the capture log, so operators can eyeball exploit payloads
+    # (wget drops, SQLi, traversal) without expanding each log entry.
+    # fetch_interesting_raws drops benign scanners + favicon noise and ranks
+    # survivors by severity; the SQL keeps it confined to URL-bearing rows.
+    # Stays all-time (since=None) by design — it's a standing top-severity
+    # list, not tied to the volume/log range picker — but ip/host DO scope
+    # it, so clicking an IoC entry filters Payloads along with the capture
+    # log instead of leaving it showing unrelated all-time findings
+    # (issue #368).
+    interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_LIMIT * 20)
+    payloads = _build_payloads(interesting)
+
+    configured_ports = _config.settings.resolve_ports()
+    # Hero / port chips: surface every port that has taken a real hit from
+    # a non-benign sender (issue #409). `nonbenign_ports` already filters
+    # benign research scanners out of the `by_port` aggregate; we resolve
+    # each bound high port to its EXTERNAL (attacker-visible) port and
+    # de-duplicate so e.g. direct 22 + redirected 10022 collapse to one
+    # port. Falls back to the configured listening ports only when no
+    # non-benign traffic has been seen yet.
+    nonbenign_local = store.nonbenign_ports()
+    active_external = sorted({_ports.external_port(p) for p in nonbenign_local if p})
+    # Weight keyed by EXTERNAL port (resolve_display_ports returns external
+    # ports; by_port keys are the bound ports the captures were stored on —
+    # map them through display_port so weights line up with the hero LEDs).
+    weight_by_port = {
+        _data.display_port(int(r['key'])): r['count']
+        for r in overview['by_port']
+        if r.get('key') is not None
+    }
+    display_ports = [
+        (p, max(1, weight_by_port.get(p, 0)))
+        for p in _data.resolve_display_ports(active_external, configured_ports)
+    ]
+    # Real last-seen time across the WHOLE table (not the overview window),
+    # so the "SYSTEM ONLINE" badge reflects actual honeypot liveness
+    # instead of a hard-coded string (issue #409).
+    last_capture = store.last_capture_ts()
+
+    s = _Shared()
+    s.overview = overview
+    s.overview_since = overview_since
+    s.c2_hosts = c2_hosts
+    s.all_time_total = all_time_total
+    s.day_total = day_total
+    s.hour_total = hour_total
+    s.interesting = interesting
+    s.payloads = payloads
+    s.display_ports = display_ports
+    s.configured_ports = configured_ports
+    s.last_capture = last_capture
+    return s
 
 
 def _payload_with_scope(payload: dict, page: int, ip: str | None, host: str | None) -> dict:
@@ -642,20 +698,56 @@ def _refresh_cache(token: str) -> None:
 
     Only page 1 is pre-cached in the background refresher; deeper pages are
     built on-demand from ``?page=`` requests (issue #316).
+
+    Warm-up is accelerated three ways (issue #416 follow-up):
+
+    * The range-independent bundle (overview hero stats, C2 hosts, all-time
+      total, day/hour totals, Payloads panel, port chips, last-seen) is
+      built ONCE via ``_build_shared`` and reused for every range, instead of
+      being recomputed 4× serially.
+    * The default range (``_DASHBOARD_DEFAULT_RANGE``) is built first and the
+      server is marked ``_PRIMED`` immediately, so the dashboard socket opens
+      as soon as the range the page actually loads is ready — the other ranges
+      finish in the background.
+    * The remaining ranges are built concurrently in a ``ThreadPoolExecutor``.
+      This is safe because PostgreSQLStorage now gives each thread its own
+      read-only connection (``_read_cursor``); see storage.py.
     """
-    for r in _VOLUME_RANGES:
+    store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
+    # Build the shared, range-independent bundle once.
+    try:
+        shared = _build_shared(store, token)
+    except Exception:  # noqa: BLE001 — if the shared base fails, fall back to per-range
+        logger.exception('Dashboard shared-data build failed; building per-range')
+        shared = None
+
+    def _build_range(r: str) -> None:
         try:
-            payload = _build_payload(r, token, page=1)
+            payload = _build_payload(r, token, page=1, shared=shared)
             html_bytes = _render.render_page(payload).encode('utf-8')
         except Exception:  # noqa: BLE001 — keep serving stale copies on failure
             logger.exception('Dashboard cache refresh failed for range %s', r)
-            continue
+            return
         now = time.time()
         with _CACHE_LOCK:
             _PAYLOAD_CACHE[r] = (now, payload)
             _HTML_CACHE[r] = (now, html_bytes)
-    # First full pass done — the cache is warm, the server may accept traffic.
+
+    # Prime the default range first; open the socket as soon as it's ready so
+    # the dashboard is reachable without waiting for the slower ranges.
+    _build_range(_DASHBOARD_DEFAULT_RANGE)
     _PRIMED.set()
+
+    # Build the remaining ranges concurrently.
+    others = [r for r in _VOLUME_RANGES if r != _DASHBOARD_DEFAULT_RANGE]
+    if others:
+        with ThreadPoolExecutor(max_workers=len(others), thread_name_prefix='dash-refresh') as ex:
+            list(ex.map(_build_range, others))
+
+
+# Default range the dashboard loads on first paint — primed first so the
+# socket opens without waiting for the slower (7d/30d) ranges (issue #416).
+_DASHBOARD_DEFAULT_RANGE = '24h'
 
 
 def _cache_key(range_str: str, page: int, ip: str | None = None, host: str | None = None) -> str:
