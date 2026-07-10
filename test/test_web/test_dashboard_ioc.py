@@ -563,6 +563,7 @@ def test_dashboard_js_wires_ioc_rows():
 
     assert 'function wireIocRows' in _JS
     # Invoked from both applyFragment and the DOM-ready init block.
+    assert _JS.count('wireIocRows()') >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +642,6 @@ def test_refresh_cache_primes_and_sets_primed(monkeypatch):
     import manyfaced.db.storage as _storage_mod
 
     monkeypatch.setattr(_storage_mod, 'get_storage', lambda **kw: store)
-
     _dash_mod._refresh_cache('tok')
     # All four ranges built + all-time total warmed -> _PRIMED set.
     assert _dash_mod._PRIMED.is_set()
@@ -650,3 +650,93 @@ def test_refresh_cache_primes_and_sets_primed(monkeypatch):
     assert store.all_time_calls == 1
     _dash_mod._PRIMED.clear()
     _dash_mod._ALLTIME_TOTAL_CACHE = None
+
+
+# ---------------------------------------------------------------------------
+# Pagination (issue #316 / regression #416): the capture-log pager is refreshed
+# in place by the client's fetch-based applyFragment(), which replaces the DOM
+# node *named* by the fragment key ('log-pager'). The server renders the pager
+# into a container whose id must equal that target name; if it doesn't, the new
+# pager HTML is silently dropped, the pager stays frozen on page 1, and the
+# client's state.page desyncs so further clicks no-op ("pagination not
+# working"). The container id must be 'log-pager' and the JS must wire it.
+# ---------------------------------------------------------------------------
+
+
+class _FakePagerStore(_FakeAggregateStore):
+    """Adds >1 page of capture rows so the pager actually renders."""
+
+    def __init__(self, total: int) -> None:
+        super().__init__()
+        self._total = total
+
+    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
+        return self._total
+
+    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
+        # Two distinct rows per page; never empty so the log section renders.
+        return [
+            {
+                'timestamp': '2026-07-10 12:00:00',
+                'bot_ip': '1.2.3.4',
+                'bot_country': 'NL',
+                'listen_port': 80,
+                'detected_id': None,
+                'request_path': '/',
+                'request_command': 'GET',
+                'request_raw': 'GET / HTTP/1.1',
+                'hostname': 'node1',
+                'login': '',
+                'classification': 'unknown',
+            },
+            {
+                'timestamp': '2026-07-10 11:59:50',
+                'bot_ip': '9.9.9.9',
+                'bot_country': 'US',
+                'listen_port': 23,
+                'detected_id': None,
+                'request_path': '/',
+                'request_command': 'GET',
+                'request_raw': 'GET / HTTP/1.1',
+                'hostname': 'node1',
+                'login': '',
+                'classification': 'unknown',
+            },
+        ]
+
+    def fetch_interesting_raws(self, since=None, limit=20000, ip=None, host=None):  # noqa: ANN001, ANN002
+        return []
+
+
+def test_pager_container_id_matches_fragment_target(monkeypatch):
+    store = _FakePagerStore(total=120)  # 120 / 50 per page => 3 pages
+    monkeypatch.setattr(_dash_mod._storage, 'get_storage', lambda **kw: store)
+    payload = _dash_mod._build_payload('24h', token='tok', page=1)
+    html = _render_mod.render_page(payload)
+    # The pager must mount in the element applyFragment() replaces.
+    assert 'id="log-pager"' in html
+    assert 'id="log-pager-wrap"' not in html
+    # And it must actually render controls when the window spans >1 page.
+    assert 'data-page="2"' in html
+    assert 'page 1 / 3' in html
+
+
+def test_pager_fragment_target_is_log_pager(monkeypatch):
+    store = _FakePagerStore(total=120)
+    monkeypatch.setattr(_dash_mod._storage, 'get_storage', lambda **kw: store)
+    payload = _dash_mod._build_payload('24h', token='tok', page=2)
+    frag = _render_mod.render_fragment(payload).decode()
+    boundary = frag.splitlines()[0]
+    assert f'{boundary}:log-pager' in frag
+    # Page 2 must be wired as the current page in the refreshed fragment.
+    assert 'page 2 / 3' in frag
+    assert 'data-page="3"' in frag
+
+
+def test_js_wires_log_pager():
+    from manyfaced.web.dashboard_assets import JS as _JS
+
+    # Listener binds to the container whose id matches the fragment target.
+    assert "$('#log-pager')" in _JS
+    assert "$('#log-pager-wrap')" not in _JS
+    assert 'function wireLogPager' in _JS

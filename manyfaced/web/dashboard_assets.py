@@ -656,8 +656,13 @@ JS = r"""
 
   // ---------------- log rows: toggle raw / group, filtering ----------------
   function wireLogPager(){
-    var wrap = $('#log-pager-wrap');
-    if (!wrap || wrap.__wired) return;
+    // The pager lives in #log-pager (the fragment target name matches the
+    // DOM id), so refreshed pagers always replace the same node and this
+    // delegation listener survives in-place. If the id is ever wrong the
+    // whole pager would silently vanish; fail loud instead of dead-clicking.
+    var wrap = $('#log-pager');
+    if (!wrap){ console.error('[dashboard] #log-pager container missing — pagination disabled'); return; }
+    if (wrap.__wired) return;
     wrap.__wired = true;
     wrap.addEventListener('click', function(e){
       var btn = e.target.closest('.log-pager [data-page]');
