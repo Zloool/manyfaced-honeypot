@@ -115,8 +115,12 @@ _HOST_FILTER_MIN_LEN = 3
 # Issue #411: defense-in-depth HTTP security headers. All assets are inlined
 # (CSS/JS are plain strings in dashboard_assets.py), so a tight CSP is safe: no
 # external resources, only inline style/script (already HTML-escaped) and
-# self-hosted images.
-_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'"
+# self-hosted images. connect-src 'self' is REQUIRED: the dashboard refreshes
+# its panels in place via same-origin fetch() calls (fetchFragment), and without
+# it the browser blocks every fragment request under default-src 'none' — which
+# silently breaks all filtering / range switching / pagination / live-ticks.
+# See issue #425.
+_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; connect-src 'self'"
 _SECURITY_HEADERS = (
     ('Content-Security-Policy', _CSP),
     ('X-Content-Type-Options', 'nosniff'),
