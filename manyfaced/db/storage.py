@@ -1530,7 +1530,7 @@ class PostgreSQLStorage(StorageBackend):
     _read_local = None  # thread-local holder, set in __init__
 
     @contextmanager
-    def _read_conn(self):
+    def _read_conn(self):  # type: ignore[return-value]
         """Yield a per-thread read-only psycopg2 connection.
 
         Safe for concurrent callers: every thread gets its own connection via
@@ -1538,7 +1538,7 @@ class PostgreSQLStorage(StorageBackend):
         the shared writer connection only if thread-local setup is unavailable.
         """
         local = self._read_local
-        conn = getattr(local, 'conn', None) if local is not None else None
+        conn: Any = getattr(local, 'conn', None) if local is not None else None
         try:
             if conn is None:
                 conn = self._new_conn()
@@ -1549,7 +1549,7 @@ class PostgreSQLStorage(StorageBackend):
                 with conn.cursor() as _c:
                     _c.execute('SELECT 1')
             yield conn
-        except (psycopg2.OperationalError, psycopg2.InterfaceError):  # noqa: BLE001
+        except psycopg2.Error:  # noqa: BLE001
             # Drop and recreate this thread's connection once.
             try:
                 if conn is not None:
@@ -1577,7 +1577,7 @@ class PostgreSQLStorage(StorageBackend):
         )
 
     @contextmanager
-    def _read_cursor(self):
+    def _read_cursor(self):  # type: ignore[return-value]
         """Yield a cursor from this thread's read-only connection."""
         with self._read_conn() as conn:
             with conn.cursor() as cur:
