@@ -653,6 +653,41 @@ def test_refresh_cache_primes_and_sets_primed(monkeypatch):
     _dash_mod._ALLTIME_TOTAL_CACHE = None
 
 
+def test_refresh_cache_primes_default_range_first(monkeypatch):
+    # Lever 3 (issue #416 perf): the server must open the dashboard socket as
+    # soon as the DEFAULT range (the one the page loads) is built — NOT wait
+    # for the slower ranges (7d/30d). If a non-default range build blows up,
+    # _PRIMED must already be set from the default-range build.
+    _dash_mod._PRIMED.clear()
+    _dash_mod._ALLTIME_TOTAL_CACHE = None
+
+    class _FlakyStore(_CountingStore):
+        def __init__(self):
+            super().__init__()
+            self._vs_calls = 0
+
+        def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
+            self._vs_calls += 1
+            # The DEFAULT range ('24h') is built first and calls volume_series
+            # once; every non-default range calls it again. Fail from the 2nd
+            # call so we prove _PRIMED was set by the default-range build before
+            # the slower ranges ran (and blew up).
+            if self._vs_calls >= 2:
+                raise RuntimeError('simulated non-default range failure')
+            return []
+
+    store = _FlakyStore()
+    import manyfaced.db.storage as _storage_mod
+
+    monkeypatch.setattr(_storage_mod, 'get_storage', lambda **kw: store)
+    _dash_mod._refresh_cache('tok')
+    # _PRIMED must be set because the default range ('24h') built successfully
+    # and primed the socket before the flaky non-default ranges ran.
+    assert _dash_mod._PRIMED.is_set()
+    _dash_mod._PRIMED.clear()
+    _dash_mod._ALLTIME_TOTAL_CACHE = None
+
+
 # ---------------------------------------------------------------------------
 # Pagination (issue #316 / regression #416): the capture-log pager is refreshed
 # in place by the client's fetch-based applyFragment(), which replaces the DOM

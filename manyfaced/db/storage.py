@@ -13,8 +13,9 @@ import sqlite3
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timedelta
-from threading import Lock
+from threading import Lock, local as _ThreadLocal
 from typing import Any
 
 try:
@@ -1391,6 +1392,10 @@ class PostgreSQLStorage(StorageBackend):
         # Per-instance lock is now genuinely useful: with a cached singleton, all
         # report threads share this one instance's connection and serialize here.
         self._lock = Lock()
+        # Per-thread read connections (issue #416 follow-up): dashboard readers
+        # get an isolated connection each via _read_conn(), so parallel payload
+        # builds and the live poll can't corrupt the shared writer connection.
+        self._read_local = _ThreadLocal()
         try:
             self._init_db()
         except ImportError:
@@ -1513,6 +1518,71 @@ class PostgreSQLStorage(StorageBackend):
         except psycopg2.Error:  # noqa: BLE001 — best-effort
             pass
 
+    # -- read-path connection isolation (issue #416 follow-up) --------------
+    # The dashboard builds several range payloads in parallel (a ThreadPool in
+    # the refresher / live tick) and also runs the 20s live poll. psycopg2
+    # connections are NOT thread-safe — concurrent cursor() calls on the single
+    # shared self._conn corrupt the socket (asynchronous/aborted-txn errors).
+    # Give each calling thread its OWN read-only connection, lazily created and
+    # reconnected on failure. The writer keeps the dedicated self._conn (under
+    # self._lock), so read threads never touch the recording connection and
+    # can't poison it either.
+    _read_local = None  # thread-local holder, set in __init__
+
+    @contextmanager
+    def _read_conn(self):  # type: ignore[return-value]
+        """Yield a per-thread read-only psycopg2 connection.
+
+        Safe for concurrent callers: every thread gets its own connection via
+        ``threading.local``. Reconnects once on a dead connection. Falls back to
+        the shared writer connection only if thread-local setup is unavailable.
+        """
+        local = self._read_local
+        conn: Any = getattr(local, 'conn', None) if local is not None else None
+        try:
+            if conn is None:
+                conn = self._new_conn()
+                if local is not None:
+                    local.conn = conn
+            else:
+                # Cheap liveness probe; reconnect if the backend dropped it.
+                with conn.cursor() as _c:
+                    _c.execute('SELECT 1')
+            yield conn
+        except psycopg2.Error:  # noqa: BLE001
+            # Drop and recreate this thread's connection once.
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+            if local is not None:
+                local.conn = None
+            conn = self._new_conn()
+            if local is not None:
+                local.conn = conn
+            yield conn
+
+    def _new_conn(self):
+        """Open a fresh connection using the same DSN/params as the writer."""
+        if self._dsn:
+            return psycopg2.connect(dsn=self._dsn, sslmode=self._sslmode)
+        return psycopg2.connect(
+            host=self._host,
+            port=self._port,
+            database=self._database,
+            user=self._user,
+            password=self._password,
+            sslmode=self._sslmode,
+        )
+
+    @contextmanager
+    def _read_cursor(self):  # type: ignore[return-value]
+        """Yield a cursor from this thread's read-only connection."""
+        with self._read_conn() as conn:
+            with conn.cursor() as cur:
+                yield cur
+
     # -- public API ----------------------------------------------------------
 
     def insert(self, record: dict) -> None:  # noqa: C901
@@ -1616,25 +1686,13 @@ class PostgreSQLStorage(StorageBackend):
         try:
             # Issue #413: bound the OFFSET so a deep page can't scan O(offset).
             bounded_offset = clamp_offset(offset, limit)
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 cur.execute(sql, (*params, int(limit), bounded_offset))
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
-            # Reset (rollback + close) the shared connection and retry once,
-            # so a transient failure can't poison later reads/writes.
-            logger.warning('PostgreSQL recent_records error; rolling back and reconnecting once')
-            self._reset_conn()
-            if not self._ensure_connected():
-                return []
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(sql, (*params, int(limit), bounded_offset))
-                    cols = [d[0] for d in cur.description]
-                    return [dict(zip(cols, row)) for row in cur.fetchall()]
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error reading recent records from PostgreSQL storage')
-                return []
+            logger.exception('PostgreSQL recent_records error')
+            return []
 
     def count_recent(
         self, since: str | None = None, ip: str | None = None, host: str | None = None
@@ -1664,20 +1722,12 @@ class PostgreSQLStorage(StorageBackend):
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT COUNT(*) FROM honeypot_bears' + where + ''
         try:
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 cur.execute(sql, params)
                 return int(cur.fetchone()[0])
         except psycopg2.Error:  # noqa: BLE001
-            self._reset_conn()
-            if not self._ensure_connected():
-                return 0
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(sql, params)
-                    return int(cur.fetchone()[0])
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error counting recent records from PostgreSQL storage')
-                return 0
+            logger.exception('PostgreSQL count_recent error')
+            return 0
 
     def aggregate_stats(self, since: str | None = None, bucket: str = 'hour') -> dict:
         if self._conn is None:
@@ -1770,21 +1820,11 @@ class PostgreSQLStorage(StorageBackend):
             }
 
         try:
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 return _run(cur)
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
-            # Reset (rollback + close) the shared connection and retry once,
-            # so a transient failure can't poison later reads/writes.
-            logger.warning('PostgreSQL aggregate_stats error; rolling back and reconnecting once')
-            self._reset_conn()
-            if not self._ensure_connected():
-                return _empty_stats()
-            try:
-                with self._conn.cursor() as cur:
-                    return _run(cur)
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error aggregating stats from PostgreSQL storage')
-                return _empty_stats()
+            logger.exception('PostgreSQL aggregate_stats error')
+            return _empty_stats()
 
     def nonbenign_ports(self) -> list[int]:
         if self._conn is None and not self._ensure_connected():
@@ -1795,43 +1835,24 @@ class PostgreSQLStorage(StorageBackend):
             'AND (classification IS NULL OR classification <> %s)'
         )
         try:
-            with self._conn.cursor() as cur:
-                cur.execute(sql, ('benign',))
+            with self._read_cursor() as cur:
+                cur.execute(sql, ('benign',))  # noqa: S610
                 return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
         except psycopg2.Error:  # noqa: BLE001
-            logger.warning('PostgreSQL nonbenign_ports error; reconnecting once')
-            self._reset_conn()
-            if not self._ensure_connected():
-                return []
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(sql, ('benign',))
-                    return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error reading non-benign ports from PostgreSQL storage')
-                return []
+            logger.exception('PostgreSQL nonbenign_ports error')
+            return []
 
     def last_capture_ts(self) -> str | None:
         if self._conn is None and not self._ensure_connected():
             return None
         try:
-            with self._conn.cursor() as cur:
-                cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')
+            with self._read_cursor() as cur:
+                cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')  # nosec B608
                 row = cur.fetchone()
                 return row[0] if row and row[0] else None
         except psycopg2.Error:  # noqa: BLE001
-            logger.warning('PostgreSQL last_capture_ts error; reconnecting once')
-            self._reset_conn()
-            if not self._ensure_connected():
-                return None
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')
-                    row = cur.fetchone()
-                    return row[0] if row and row[0] else None
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error reading last capture timestamp from PostgreSQL storage')
-                return None
+            logger.exception('PostgreSQL last_capture_ts error')
+            return None
 
     def volume_series(
         self, since: str | None = None, bucket: str = 'hour', port: int | list[int] | None = None
@@ -1854,7 +1875,7 @@ class PostgreSQLStorage(StorageBackend):
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         bucket_expr = _pg_bucket_expr(bucket)
         try:
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 cur.execute(
                     f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
                     'GROUP BY b ORDER BY b',
@@ -1862,23 +1883,8 @@ class PostgreSQLStorage(StorageBackend):
                 )
                 return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
-            # Reset (rollback + close) the shared connection and retry once,
-            # so a transient failure can't poison later reads/writes.
-            logger.warning('PostgreSQL volume_series error; rolling back and reconnecting once')
-            self._reset_conn()
-            if not self._ensure_connected():
-                return []
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(
-                        f'SELECT {bucket_expr} AS b, COUNT(*) AS c FROM honeypot_bears{where} '  # nosec B608
-                        'GROUP BY b ORDER BY b',
-                        params,
-                    )
-                    return [{'bucket': r[0], 'count': r[1]} for r in cur.fetchall()]
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error reading volume series from PostgreSQL storage')
-                return []
+            logger.exception('PostgreSQL volume_series error')
+            return []
 
     def fetch_request_raws(self, since: str | None = None, limit: int = 20000) -> list[str]:
         """Return ``request_raw`` payloads embedding a URL, bounded by ``since``.
@@ -1901,23 +1907,12 @@ class PostgreSQLStorage(StorageBackend):
             'ORDER BY timestamp DESC LIMIT %s'
         )
         try:
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 cur.execute(sql, (*params, int(limit)))
                 return [row[0] for row in cur.fetchall() if row[0]]
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
-            logger.warning(
-                'PostgreSQL fetch_request_raws error; rolling back and reconnecting once'
-            )
-            self._reset_conn()
-            if not self._ensure_connected():
-                return []
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(sql, (*params, int(limit)))
-                    return [row[0] for row in cur.fetchall() if row[0]]
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception('Error reading request_raw payloads from PostgreSQL storage')
-                return []
+            logger.exception('PostgreSQL fetch_request_raws error')
+            return []
 
     def fetch_interesting_raws(
         self,
@@ -1960,25 +1955,12 @@ class PostgreSQLStorage(StorageBackend):
             'ORDER BY timestamp DESC LIMIT %s'
         )
         try:
-            with self._conn.cursor() as cur:
+            with self._read_cursor() as cur:
                 cur.execute(sql, (*params, int(limit)))
                 rows = cur.fetchall()
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
-            logger.warning(
-                'PostgreSQL fetch_interesting_raws error; rolling back and reconnecting once'
-            )
-            self._reset_conn()
-            if not self._ensure_connected():
-                return []
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(sql, (*params, int(limit)))
-                    rows = cur.fetchall()
-            except psycopg2.Error:  # noqa: BLE001
-                logger.exception(
-                    'Error reading interesting request_raw rows from PostgreSQL storage'
-                )
-                return []
+            logger.exception('PostgreSQL fetch_interesting_raws error')
+            return []
         else:
             out = []
             for (

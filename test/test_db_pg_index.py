@@ -142,3 +142,98 @@ class TestPgIndexDDL:
         # Must not raise despite the index create error.
         storage._init_db()
         assert conn.commit.called
+
+    def test_read_cursor_isolates_per_thread_connections(self, fake_psycopg2, monkeypatch):
+        """Concurrent reads must NOT share one psycopg2 connection (issue #416).
+
+        psycopg2 connections are not thread-safe; the old code ran every read
+        against the single shared ``self._conn``. ``_read_cursor`` must hand
+        each calling thread its OWN connection, so parallel dashboard builds
+        can't corrupt the shared socket. This asserts that two threads calling
+        ``_read_cursor`` at the same time receive distinct connection objects.
+        """
+        import threading
+
+        import manyfaced.common.config as cfg_mod
+
+        monkeypatch.setattr(cfg_mod, 'settings', _fresh_settings())
+
+        # Each connect() returns a connection whose cursors know their parent.
+        conns = []
+
+        def _connect(*a, **k):
+            c = MagicMock()
+            c._tag = len(conns)
+            conns.append(c)
+
+            def _mk_cursor(*ac, **kc):
+                cur = MagicMock()
+                cur.connection = c
+                cur.__enter__ = lambda *a: cur
+                cur.__exit__ = lambda *exc: None
+                return cur
+
+            c.cursor.side_effect = _mk_cursor
+            return c
+
+        fake_psycopg2.connect.side_effect = _connect
+
+        storage = storage_mod.PostgreSQLStorage()
+        # Bypass _init_db's DDL (it runs against the writer conn); we only care
+        # about the read-path connection routing here.
+        storage._conn = MagicMock()
+
+        captured = []
+        barrier = threading.Barrier(2)
+
+        def _reader(tid: int):
+            with storage._read_cursor() as cur:
+                # Record which connection this thread's cursor came from.
+                captured.append((tid, cur.connection))
+            barrier.wait()
+
+        t1 = threading.Thread(target=_reader, args=(1,))
+        t2 = threading.Thread(target=_reader, args=(2,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert len(captured) == 2, 'both readers must complete'
+        conn1 = captured[0][1]
+        conn2 = captured[1][1]
+        assert conn1 is not None and conn2 is not None
+        # The two threads must have used DIFFERENT connections.
+        assert conn1 is not conn2, 'concurrent reads shared one connection (unsafe)'
+
+    def test_read_cursor_reuses_thread_local_connection(self, fake_psycopg2, monkeypatch):
+        """A single thread reuses its own read connection across calls."""
+        import manyfaced.common.config as cfg_mod
+
+        monkeypatch.setattr(cfg_mod, 'settings', _fresh_settings())
+        conns = []
+
+        def _connect(*a, **k):
+            c = MagicMock()
+            conns.append(c)
+
+            def _mk_cursor(*ac, **kc):
+                cur = MagicMock()
+                cur.connection = c
+                cur.__enter__ = lambda *a: cur
+                cur.__exit__ = lambda *exc: None
+                return cur
+
+            c.cursor.side_effect = _mk_cursor
+            return c
+
+        fake_psycopg2.connect.side_effect = _connect
+        storage = storage_mod.PostgreSQLStorage()
+        storage._conn = MagicMock()
+
+        got = []
+        with storage._read_cursor() as cur:
+            got.append(cur.connection)
+        with storage._read_cursor() as cur:
+            got.append(cur.connection)
+        assert got[0] is not None and got[0] is got[1], 'thread should reuse its connection'
