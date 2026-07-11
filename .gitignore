@@ -127,3 +127,6 @@ actionlint
 
 # Runtime capture dump (manyfaced.common.utils.dump_file default cwd path)
 dump.jsonl
+
+# local jsdom debugging harness (not part of the project)
+.jsdomtest/

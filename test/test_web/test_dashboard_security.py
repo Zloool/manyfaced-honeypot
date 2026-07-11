@@ -27,8 +27,9 @@ from manyfaced.db.storage import SQLiteStorage, reset_storage_singleton
 from manyfaced.web import dashboard as _dash_mod
 
 
-# Issue #411: the exact header set the dashboard must emit.
-_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'"
+# Issue #411: the exact header set the dashboard must emit. The CSP is the
+# live constant from the dashboard module (not a copy) so the two can't drift.
+_CSP = _dash_mod._CSP
 _EXPECTED_SECURITY_HEADERS = {
     'Content-Security-Policy': _CSP,
     'X-Content-Type-Options': 'nosniff',
@@ -250,6 +251,24 @@ def test_security_headers_on_fragment(dashboard_server):
     resp = urllib.request.urlopen(base + f'?token={secret}&format=fragment&range=24h', timeout=3)
     for name, value in _EXPECTED_SECURITY_HEADERS.items():
         assert resp.headers.get(name) == value, f'missing/incorrect header {name}'
+
+
+def test_csp_allows_same_origin_fetch(dashboard_server):
+    """Issue #425: the CSP must permit the dashboard's own fragment fetches.
+
+    The dashboard refreshes panels in place via same-origin fetch() (the
+    fetchFragment path used by every filter / range switch / pager / live-tick).
+    With connect-src unset, default-src 'none' blocks all fetches and the
+    panels silently never update — i.e. "no filters work". Regression guard.
+    """
+    secret, base = dashboard_server
+    resp = urllib.request.urlopen(base + f'?token={secret}&format=fragment&range=24h', timeout=3)
+    csp = resp.headers.get('Content-Security-Policy')
+    assert csp is not None
+    # connect-src must explicitly allow the dashboard's own origin.
+    assert "connect-src 'self'" in csp, f'CSP missing connect-src self: {csp}'
+    # And it must NOT fall back to the default 'none' for connect.
+    assert "default-src 'none'" in csp
 
 
 def test_security_headers_on_deny_404(dashboard_server):
