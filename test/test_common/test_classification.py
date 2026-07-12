@@ -104,6 +104,76 @@ def test_visionheight_reverse_dns_exact_host():
     assert src == 'visionheight'
 
 
+# ---------------------------------------------------------------------------
+# Research-scanner allowlist additions (cluster C5): issues #441 #459 #429
+# #510 #501 #447 #514. Each keyed on a network-verifiable PTR only.
+# ---------------------------------------------------------------------------
+
+
+def test_shadowserver_io_reverse_dns():
+    # #441/#514: real Shadowserver PTRs are .io, not just .org.
+    cls, src = classify(reverse_dns='scan-60-0.shadowserver.io')
+    assert cls == BENIGN
+    assert src == 'shadowserver'
+
+
+def test_shadowserver_org_still_benign():
+    cls, src = classify(reverse_dns='scan-1.shadowserver.org')
+    assert cls == BENIGN
+    assert src == 'shadowserver'
+
+
+def test_stretchoid_reverse_dns():
+    cls, src = classify(reverse_dns='azpdsg1ue5fj.stretchoid.com')
+    assert cls == BENIGN
+    assert src == 'stretchoid'
+
+
+def test_onyphe_probe_reverse_dns():
+    cls, src = classify(reverse_dns='villanueva.probe.onyphe.net')
+    assert cls == BENIGN
+    assert src == 'onyphe'
+
+
+def test_modat_scanner_reverse_dns():
+    cls, src = classify(reverse_dns='o017.scanner.modat.io')
+    assert cls == BENIGN
+    assert src == 'modat'
+
+
+def test_internet_measurement_reverse_dns():
+    cls, src = classify(reverse_dns='r3-77-4d.monitoring.internet-measurement.com')
+    assert cls == BENIGN
+    assert src == 'internet-measurement'
+
+
+def test_infrawatch_reverse_dns():
+    cls, src = classify(reverse_dns='193-176-31-196.infrawat.ch')
+    assert cls == BENIGN
+    assert src == 'infrawatch'
+
+
+def test_internet_census_reverse_dns():
+    cls, src = classify(reverse_dns='zl-amsc-nl-gp1-wk118a.internet-census.org')
+    assert cls == BENIGN
+    assert src == 'infrawatch'
+
+
+def test_genomecrawler_deepfield_reverse_dns():
+    # #510: Nokia GenomeCrawler PTR under crawler.deepfield.net.
+    cls, src = classify(reverse_dns='monet-07.crawler.deepfield.net')
+    assert cls == BENIGN
+    assert src == 'nokia-genomecrawler'
+
+
+def test_attacker_no_ptr_stays_unknown():
+    # An attacker IP with no PTR (and non-curated ASN) must stay unknown even if
+    # its org names a cloud provider — benign is PTR/ASN-only (issue #352).
+    cls, src = classify(reverse_dns='', asn='AS59577', org='LinkCom')
+    assert cls == UNKNOWN
+    assert src == ''
+
+
 def test_shodan_user_agent():
     # UA matches but every entry carrying a UA also carries a network signal;
     # Shodan's entry has reverse_dns + asn, so UA alone is NOT sufficient here.
