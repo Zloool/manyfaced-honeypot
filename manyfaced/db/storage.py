@@ -7,8 +7,10 @@ and provides a factory function for runtime selection.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from abc import ABC, abstractmethod
@@ -55,8 +57,53 @@ def sanitize_host_filter(host: str | None) -> str | None:
     return host
 
 
+# Hosts that are never real C2 drop targets — mirrors dashboard._C2_IGNORE_HOSTS
+# so handler-extracted hosts filtered here match the raw-scan panel.
+_C2_PROFILE_IGNORE_RE = re.compile(
+    r'^(10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
+    r'|^(172\.(1[6-9]|2\d|3[01])|192\.168|169\.254)\.\d{1,3}\.\d{1,3}$'
+)
+
+
+def _iter_c2_hosts_from_profile_json(blob: str) -> list[str]:
+    """Yield handler-extracted ``c2_host`` values from a ``bot_profile_data`` blob.
+
+    The blob is the per-IP JSON dict the routers serialize (domain -> BotProfile
+    report). Each report's ``request_history`` list carries per-request dicts
+    with a ``c2_host`` key the Exploit-CGI handler populated (issue #520). We
+    tolerate malformed JSON / missing keys so a single bad row can't break the
+    IoC scan for the whole DB.
+    """
+    if not blob:
+        return []
+    try:
+        data = json.loads(blob)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    hosts: list[str] = []
+    for report in data.values():
+        if not isinstance(report, dict):
+            continue
+        history = report.get('request_history')
+        if not isinstance(history, list):
+            continue
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            host = entry.get('c2_host')
+            if not host or not isinstance(host, str):
+                continue
+            if host.lower().endswith(('.local', '.internal', '.example', '.invalid', '.test')):
+                continue
+            if _C2_PROFILE_IGNORE_RE.fullmatch(host):
+                continue
+            hosts.append(host)
+    return hosts
+
+
 def clamp_offset(offset: int, limit: int) -> int:
-    """Issue #413: bound the SQL OFFSET so a deep page can't scan O(offset) rows."""
     if offset < 0:
         return 0
     cap = max(_MAX_OFFSET, int(limit))
@@ -408,10 +455,27 @@ class StorageBackend(ABC):
         the Payloads panel to the same attacker IP or C2/download host clicked
         from the IoC panel, so the panel isn't stuck showing all-time findings
         once an IoC filter is active.
-
         Concrete subclasses override this; the base raises.
         """
+
         raise NotImplementedError('fetch_interesting_raws not implemented by this backend')
+
+    def fetch_profile_c2_hosts(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Return handler-extracted C2 hosts stored in ``bot_profile_data`` JSON.
+
+        Unlike :meth:`fetch_request_raws` (which re-scans ``request_raw`` text),
+        this pulls C2/download hosts that a handler already *structurally* extracted
+        and persisted via ``record_request({'c2_host': ...})`` — e.g. the
+        Exploit-CGI handler's Mirai/Mozi drop-host surfacing (issue #520). That
+        data rides on the ``request_history`` list inside the ``bot_profile_data``
+        JSON column, so a handler-extracted C2 host surfaces even when its raw
+        request line doesn't carry a fetch-tool prefix (or was truncated).
+
+        Returns a flat list of host strings (one per occurrence), so callers can
+        rank by frequency the same way :meth:`fetch_request_raws` results are
+        ranked. Concrete subclasses override this; the base returns ``[]``.
+        """
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -1241,6 +1305,40 @@ class SQLiteStorage(StorageBackend):
             logger.exception('Error reading request_raw payloads from SQLite storage')
             return []
 
+    def fetch_profile_c2_hosts(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """SQLite impl: parse ``bot_profile_data`` JSON for handler C2 hosts.
+
+        See the base-class docstring (issue #520). The ``bot_profile_data``
+        column holds a per-IP JSON dict keyed by handler domain; each value is
+        a BotProfile report whose ``request_history`` entries carry the
+        ``c2_host`` the handler extracted. We walk every non-empty
+        ``bot_profile_data`` row and collect those hosts. Confined by ``since``
+        and bounded by ``limit`` rows pulled into Python.
+        """
+        if self._conn is None:
+            return []
+        clauses = ['bot_profile_data IS NOT NULL', "bot_profile_data != ''"]
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= ?')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT bot_profile_data FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT ?'
+        )
+        hosts: list[str] = []
+        try:
+            rows = self._conn.execute(sql, (*params, int(limit))).fetchall()
+        except (sqlite3.Error, sqlite3.OperationalError):
+            logger.exception('Error reading bot_profile_data C2 hosts from SQLite storage')
+            return []
+        for (blob,) in rows:
+            if not blob:
+                continue
+            hosts.extend(_iter_c2_hosts_from_profile_json(blob))
+        return hosts
+
     def fetch_interesting_raws(
         self,
         since: str | None = None,
@@ -1913,6 +2011,45 @@ class PostgreSQLStorage(StorageBackend):
         except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
             logger.exception('PostgreSQL fetch_request_raws error')
             return []
+
+    def fetch_profile_c2_hosts(self, since: str | None = None, limit: int = 20000) -> list[str]:
+        """Postgres impl: parse ``bot_profile_data`` JSON for handler C2 hosts.
+
+        Mirrors :meth:`SQLiteStorage.fetch_profile_c2_hosts` (issue #520): the
+        ``bot_profile_data`` column holds a per-IP JSON dict keyed by handler
+        domain; each value is a BotProfile report whose ``request_history``
+        entries carry the ``c2_host`` the Exploit-CGI handler extracted. We pull
+        every non-empty ``bot_profile_data`` row and walk it with
+        :func:`_iter_c2_hosts_from_profile_json`, so a handler-extracted C2 host
+        (e.g. ``91.92.40.118``) surfaces in the IoC panel even when its raw
+        request line didn't carry a fetch-tool prefix. Confined by ``since`` and
+        bounded by ``limit`` rows pulled into Python.
+        """
+        if self._conn is None and not self._ensure_connected():
+            return []
+        clauses = ['bot_profile_data IS NOT NULL', "bot_profile_data != ''"]
+        params: list = []
+        if since is not None:
+            clauses.append('timestamp >= %s')
+            params.append(since)
+        where = ' WHERE ' + ' AND '.join(clauses)
+        sql = (
+            f'SELECT bot_profile_data FROM honeypot_bears{where} '  # nosec B608
+            'ORDER BY timestamp DESC LIMIT %s'
+        )
+        try:
+            with self._read_cursor() as cur:
+                cur.execute(sql, (*params, int(limit)))
+                rows = cur.fetchall()
+        except psycopg2.Error:  # noqa: BLE001 — dead conn OR aborted txn
+            logger.exception('PostgreSQL fetch_profile_c2_hosts error')
+            return []
+        hosts: list[str] = []
+        for (blob,) in rows:
+            if not blob:
+                continue
+            hosts.extend(_iter_c2_hosts_from_profile_json(blob))
+        return hosts
 
     def fetch_interesting_raws(
         self,

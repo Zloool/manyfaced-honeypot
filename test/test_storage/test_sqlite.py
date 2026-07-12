@@ -1262,3 +1262,107 @@ class TestNonbenignPortsAndLiveness:
             assert storage.last_capture_ts() is None
         finally:
             storage.close()
+
+
+class TestFetchProfileC2Hosts:
+    """Issue #520: SQLiteStorage.fetch_profile_c2_hosts parses bot_profile_data.
+
+    The handler-extracted C2 host rides on a report's ``request_history`` list
+    inside the per-IP ``bot_profile_data`` JSON blob. This test seeds such a
+    blob and asserts the host is surfaced (and that private/reserved hosts are
+    filtered out to match the dashboard guard, so 91.92.40.118 passes).
+    """
+
+    def _storage(self, db_path):
+        return SQLiteStorage(db_path=db_path)
+
+    def _seed_profile(self, storage, profile_data, timestamp='2026-07-10 10:00:00.000000'):
+        storage.insert(
+            {
+                'ip': '45.153.34.231',
+                'hostname': 'attacker.local',
+                'timestamp': timestamp,
+                'path': '/',
+                'command': 'GET',
+                'version': 'HTTP/1.1',
+                'raw_request': 'GET / HTTP/1.1',
+                'user_agent': 'Mozilla/5.0',
+                'country': 'NL',
+                'continent': 'EU',
+                'tracert': '',
+                'dns_name': '',
+                'is_detected': 0,
+                'hive_id': 1,
+                'login': '',
+                'bot_profile_data': profile_data,
+            }
+        )
+        storage._conn.commit()
+
+    def test_extracts_host_from_seeded_blob(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'c2profile.db'))
+        try:
+            profile_data = {
+                'exploit_cgi': {
+                    'request_history': [
+                        {
+                            'path': '/tmUnblock.cgi',
+                            'c2_host': '91.92.40.118',
+                        }
+                    ]
+                }
+            }
+            self._seed_profile(storage, profile_data)
+            hosts = storage.fetch_profile_c2_hosts()
+            assert '91.92.40.118' in hosts, f'expected C2 host in {hosts}'
+        finally:
+            storage.close()
+
+    def test_filters_private_reserved_and_local_hosts(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'c2priv.db'))
+        try:
+            profile_data = {
+                'exploit_cgi': {
+                    'request_history': [
+                        {'path': '/a', 'c2_host': '192.168.1.5'},
+                        {'path': '/b', 'c2_host': '10.0.0.1'},
+                        {'path': '/c', 'c2_host': 'malware.local'},
+                        {'path': '/d', 'c2_host': 'scan.internal'},
+                    ]
+                }
+            }
+            self._seed_profile(storage, profile_data)
+            hosts = storage.fetch_profile_c2_hosts()
+            assert not any(
+                h in hosts for h in ('192.168.1.5', '10.0.0.1', 'malware.local', 'scan.internal')
+            ), f'private/reserved hosts leaked: {hosts}'
+        finally:
+            storage.close()
+
+    def test_empty_without_bot_profile_data(self, tmp_path):
+        storage = self._storage(str(tmp_path / 'c2empty.db'))
+        try:
+            # A row with no bot_profile_data must not contribute any host.
+            storage.insert(
+                {
+                    'ip': '1.2.3.4',
+                    'hostname': 'x',
+                    'timestamp': '2026-07-10 10:00:00.000000',
+                    'path': '/',
+                    'command': 'GET',
+                    'version': 'HTTP/1.1',
+                    'raw_request': 'GET / HTTP/1.1',
+                    'user_agent': 'Mozilla/5.0',
+                    'country': 'NL',
+                    'continent': 'EU',
+                    'tracert': '',
+                    'dns_name': '',
+                    'is_detected': 0,
+                    'hive_id': 1,
+                    'login': '',
+                }
+            )
+            storage._conn.commit()
+            assert storage.fetch_profile_c2_hosts() == []
+        finally:
+            storage.close()
