@@ -49,6 +49,12 @@ ROUTES: list[Route] = [
         KUBERNETES_HTTP,
         'k8s_dashboard_env',
     ),
-    Route(PathPrefix('/api/'), _kubernetes(), KUBERNETES_HTTP, 'k8s_api_prefix'),
-    Route(PathPrefix('/apis/'), _kubernetes(), KUBERNETES_HTTP, 'k8s_apis_prefix'),
+    # NOTE: the previous greedy `PathPrefix('/api/')` and `PathPrefix('/apis/')`
+    # routes shadowed every face nested under /api/ — Next.js server-action RCE
+    # (/api/route), PHPUnit eval-stdin RCE (/api/vendor/phpunit/...), Grafana
+    # (/api/datasources), RabbitMQ, Prometheus, and env-disclosure (/api/.env).
+    # kube-apiserver only ever answers its own real endpoints, so we keep the
+    # explicit /api, /api/v1, /apis exact routes above and drop the catch-all
+    # prefixes (issue #453).  Non-kube /api/* now falls through to the
+    # dedicated faces, and finally to the realistic 404 monster page.
 ]
