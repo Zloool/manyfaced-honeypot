@@ -328,6 +328,12 @@ class BotProfile:
                 'credential_attempts': len(self.captured_credentials),
                 'captured_credentials': list(self.captured_credentials),
                 'explored_paths': [r.get('path', '') for r in self.request_history],
+                # Persist the raw request log (incl. handler-extracted C2 hosts,
+                # exploit vectors and attack flags recorded via record_request).
+                # Without this, handler-surfaced C2 IoCs (issue #520) never
+                # reach the DB's bot_profile_data JSON and the dashboard IoC
+                # panel can't surface them.
+                'request_history': list(self.request_history),
                 'dialogue': list(self.dialogue),
             }
 

