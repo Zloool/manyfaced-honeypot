@@ -5,12 +5,13 @@ old client path blocked on ``receive_timeout`` *before* producing any response,
 so:
 
 * **server-first** faces (the server greets before the client speaks — SSH,
-  FTP, Telnet, SMTP, POP3, IMAP, VNC, RDP, MySQL, MSSQL, AMQP) could never be
-  detected from client bytes (there are none at greeting time). They need to be
-  resolved by the **port** the client connected to, and greeted *on accept*.
+  FTP, Telnet, SMTP, POP3, IMAP, VNC, RDP, MySQL, MSSQL, AMQP, Oracle TNS) could
+  never be detected from client bytes (there are none at greeting time). They
+  need to be resolved by the **port** the client connected to, and greeted
+  *on accept*.
 * **client-first** faces (Redis, Memcached, MongoDB, Zookeeper, Postgres,
-  Elasticsearch) can be detected from client bytes, but the read→respond→send
-  loop still has to actually fire.
+  Elasticsearch, NFS, EPMD) can be detected from client bytes, but the read→
+  respond→send loop still has to actually fire.
 
 The registry is keyed by **external port** (the attacker-visible privileged
 port), built from the existing canonical mappings in
@@ -151,6 +152,33 @@ def _amqp_greeting() -> bytes:
     return b'AMQP\x00\x00\x09\x01'
 
 
+def _oracle_greeting() -> bytes:
+    # Oracle TNS listener: a "Refuse" packet (packet type 0x04) with an ORA
+    # error. Real Oracle 19c sends a Refuse carrying "ORA-12514: TNS:listener
+    # does not currently know of service requested in connect descriptor". This
+    # is protocol-shaped so nmap `oracle-tns-version` / clients see a TNS reply
+    # instead of an HTTP admin panel (issue #440).
+    msg = b'ORA-12514: TNS:listener does not currently know of service requested'
+    # TNS header: type=0x04 (Refuse), reserved=0x00, checksum=0x0000,
+    # length = len(header 8) + len(msg).
+    length = 8 + len(msg)
+    header = bytes([0x04, 0x00, 0x00, 0x00]) + length.to_bytes(2, 'big')
+    return header + msg
+
+
+def _nfs_greeting() -> bytes:
+    # NFS / rpcbind: the server sends nothing on accept (client-first); the
+    # reply is produced in _nfs_respond. Kept empty here (issue #454/#457).
+    return b''
+
+
+def _epmd_greeting() -> bytes:
+    # EPMD (Erlang Port Mapper Daemon) is client-first: the client sends an
+    # opcode (e.g. 0x73 NAMES, 0x78 PORT_PLEASE2, 0x64 DUMP), and the daemon
+    # replies. Nothing is sent on accept, so the greeting is empty (issue #451/#458).
+    return b''
+
+
 def _mssql_greeting() -> bytes:
     # TDS prelogin: type=0x12 (Prelogin), length=0x00 0x1f (31), fixed fields.
     return (
@@ -229,10 +257,9 @@ def _vnc_respond(raw: bytes, bot_ip: str) -> bytes:
     return _vnc_resp(raw, bot_ip) or b''
 
 
-# Memcached / Zookeeper / Postgres / Elasticsearch respond functions live in
-# dedicated handlers; until those exist we synthesize a protocol-correct reply
-# inline so the face at least answers. (See issue #377 sub-tasks for fuller
-# emulation.)
+# Memcached / Zookeeper / Postgres / Elasticsearch / Oracle / NFS / EPMD respond
+# functions are synthesized inline so the face at least answers. (See issue #377
+# sub-tasks for fuller emulation.)
 def _memcached_respond(raw: bytes, bot_ip: str) -> bytes:
     # Reply to a `version` command with a VERSION line; otherwise stat/empty.
     text = raw.decode('latin-1', errors='replace')
@@ -267,6 +294,44 @@ def _elasticsearch_respond(raw: bytes, bot_ip: str) -> bytes:
         b'Content-Length: ' + str(len(body)).encode() + b'\r\n'
         b'Connection: close\r\n\r\n' + body
     )
+
+
+def _oracle_respond(raw: bytes, bot_ip: str) -> bytes:
+    # Reply to a TNS CONNECT data packet with a Refuse carrying ORA-12514 so a
+    # client that sends a connect (rather than receiving the pre-accept Refuse)
+    # still gets a protocol-shaped answer instead of an HTTP admin panel.
+    msg = b'ORA-12514: TNS:listener does not currently know of service requested'
+    length = 8 + len(msg)
+    header = bytes([0x04, 0x00, 0x00, 0x00]) + length.to_bytes(2, 'big')
+    return header + msg
+
+
+def _nfs_respond(raw: bytes, bot_ip: str) -> bytes:
+    # Reply to an rpcbind/NFS RPC call with a minimal but structurally valid
+    # rpcbind reply: XID (echoed from the request) + reply header claiming
+    # success. Enough that a showmount/portmap probe sees a protocol-shaped
+    # answer instead of an HTTP 404 (issue #454/#457).
+    if len(raw) < 4:
+        return b''
+    xid = raw[:4]
+    # RPC reply: reply_stat=MSG_ACCEPTED (0), auth_flavor=AUTH_NULL (0),
+    # auth_len=0, accept_stat=SUCCESS (0), then the NULL body.
+    return xid + bytes([0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+
+def _epmd_respond(raw: bytes, bot_ip: str) -> bytes:
+    # Reply to an EPMD request. A NAMES (0x73) / DUMP (0x64) query is answered
+    # with an empty node list (just the 4-byte big-endian length == 0); a
+    # PORT_PLEASE2 (0x78) for an unknown name is answered with a 0x78 byte
+    # (the "no such node" marker). This keeps a rabbitmq/epmd probe in the
+    # right (non-HTTP) face instead of being served an Apache panel (issue #451/#458).
+    if not raw:
+        return b''
+    opcode = raw[0]
+    if opcode == 0x78:  # PORT_PLEASE2 -> unknown name
+        return bytes([0x78])
+    # NAMES / DUMP / anything else: empty node list (length 0).
+    return (0).to_bytes(4, 'big')
 
 
 # Server-first protocol replies to the client's post-greeting auth frame.
@@ -308,8 +373,8 @@ def _imap_respond(raw: bytes, bot_ip: str) -> bytes:
     return b'a OK\r\n'
 
 
-# MySQL/MSSQL/AMQP: after the server-first greeting the client drives the
-# handshake; we do not need to complete it for capture purposes, so respond
+# MySQL/MSSQL/AMQP/Oracle: after the server-first greeting the client drives
+# the handshake; we do not need to complete it for capture purposes, so respond
 # with nothing (close). Kept as an explicit no-op for clarity.
 def _greeting_only_respond(raw: bytes, bot_ip: str) -> bytes:
     return b''
@@ -328,9 +393,15 @@ def _no_reply(raw: bytes, bot_ip: str) -> bytes:
 # external->bound mapping; DEFAULT_TOP_PORTS gives the always-bound high ports
 # (MySQL/Postgres/Redis/Mongo/...). A face's registry key is its EXTERNAL port
 # (the attacker-visible one); the client resolves listen_port->external_port.
+#
+# INVARIANT: every non-HTTP protocol port in DEFAULT_TOP_PORTS MUST have a
+# complete FaceSpec here, otherwise it falls through to the HTTP handler and is
+# served a fake admin panel (issue #440/#454/#492). Conversely, a port that is
+# registered here MUST NOT also be treated as an HTTP port (see is_http_port /
+# _is_non_http_overlap below). The two sets must be disjoint.
 # ---------------------------------------------------------------------------
 
-# External port -> (name, detected_id, direction, greeting-fn, respond-fn,
+# External port -> (detected_id, direction, greeting-fn, respond-fn,
 # capture_creds, extract_creds-or-None). Only non-HTTP faces are listed; HTTP
 # ports resolve to None and fall through to the existing HTTP path.
 _FACE_DEFS: dict[int, tuple] = {
@@ -353,6 +424,8 @@ _FACE_DEFS: dict[int, tuple] = {
     1433: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mssql_greeting, _greeting_only_respond, True, None),
     3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _greeting_only_respond, True, None),
     5672: (UNKNOWN_NON_HTTP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False, None),
+    # Oracle TNS (issue #440): server-first Refuse packet greeting.
+    1521: (UNKNOWN_NON_HTTP, SERVER_FIRST, _oracle_greeting, _oracle_respond, False, None),
     # client-first faces (high ports, no privilege redirect needed)
     6379: (UNKNOWN_REDIS, CLIENT_FIRST, lambda: b'', _redis_respond, True, _redis_extract),
     27017: (UNKNOWN_MONGODB, CLIENT_FIRST, lambda: b'', _mongo_respond, False, None),
@@ -361,6 +434,10 @@ _FACE_DEFS: dict[int, tuple] = {
     5432: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _postgres_respond, False, None),
     9200: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
     15672: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
+    # NFS / rpcbind (issue #454/#457): client-first RPC reply.
+    2049: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _nfs_respond, False, None),
+    # EPMD (Erlang Port Mapper, rabbitmq companion; issue #451/#458): client-first.
+    4369: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _epmd_respond, False, None),
 }
 
 
@@ -415,11 +492,14 @@ def _port_name(ext_port: int) -> str:
         6379: 'redis',
         11211: 'memcached',
         1433: 'mssql',
+        1521: 'oracle',
         2181: 'zookeeper',
         27017: 'mongodb',
         5672: 'amqp',
         9200: 'elasticsearch',
         15672: 'rabbitmq',
+        2049: 'nfs',
+        4369: 'epmd',
     }
     return names.get(ext_port, 'unknown')
 
@@ -445,11 +525,33 @@ def get_face(listen_port: int | None) -> FaceSpec | None:
 
 
 def is_http_port(listen_port: int | None) -> bool:
-    """True when the port is an HTTP(S) face that the existing HTTP path owns."""
+    """True when the port is an HTTP(S) face that the existing HTTP path owns.
+
+    A port registered in the non-HTTP FACE_REGISTRY is NEVER an HTTP port, even
+    if its external number would otherwise resemble a web port. This closes the
+    double-ownership hole where a non-HTTP face (e.g. RDP 3389, Postgres 5432)
+    could be simultaneously claimed by the HTTP handler when the port also
+    appears in ``DEFAULT_TOP_PORTS`` (issues #460/#487). When the registry owns
+    the port, the non-HTTP path always wins.
+    """
     if not listen_port:
+        return False
+    # Non-HTTP faces always win: never treat a registered face port as HTTP.
+    if get_face(listen_port) is not None:
         return False
     ext = _ports.external_port(listen_port)
     return int(ext) in (80, 443, 8080, 8443, 5000, 7001, 7002, 8888, 9090)
+
+
+def _is_non_http_overlap() -> list[int]:
+    """Return non-HTTP registry ports that ALSO appear in ``DEFAULT_TOP_PORTS``.
+
+    Such overlap is a latent dual-ownership bug (issue #460/#487): the port is
+    bound by both the generic HTTP listener and the non-HTTP face. The dispatch
+    in ``client.py`` already gives the non-HTTP face precedence, so this is
+    informational — it lets operators/CI assert no new overlap is introduced.
+    """
+    return sorted(set(_FACE_DEFS) & set(_ports.DEFAULT_TOP_PORTS))
 
 
 # ---------------------------------------------------------------------------
