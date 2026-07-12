@@ -7,13 +7,17 @@ under the 400-line limit. Dispatch table routes path patterns to responses.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import unquote_plus
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
 from manyfaced.common.status import CONFIG_DISCLOSURE_HTTP
 from manyfaced.handlers.config_responses import (
-    fake_backup_sql,
+    fake_app_config,
+    fake_appsettings_json,
+    fake_application_ini,
+    fake_apache_conf,
     fake_composer_json,
     fake_config_json,
     fake_config_php,
@@ -21,18 +25,41 @@ from manyfaced.handlers.config_responses import (
     fake_db_directory,
     fake_docker_compose_yml,
     fake_dockerfile,
+    fake_doctrine_yml,
     fake_env_file,
+    fake_generic_ini,
+    fake_generic_json,
+    fake_generic_php,
+    fake_generic_text,
+    fake_generic_yaml,
+    fake_gemfile,
+    fake_gemfile_lock,
     fake_git_config,
     fake_git_head,
+    fake_git_index,
+    fake_httpd_conf,
     fake_htaccess_file,
     fake_htpasswd_file,
+    fake_makefile,
     fake_my_cnf,
     fake_nginx_conf,
     fake_package_json,
+    fake_parameters_yml,
+    fake_parameters_yml_dist,
+    fake_pip_conf,
     fake_php_ini,
     fake_phpinfo_php,
+    fake_postgresql_conf,
+    fake_redis_conf,
+    fake_requirements_txt,
+    fake_routing_yml,
+    fake_security_yml,
     fake_security_txt,
+    fake_service_yml,
     fake_settings_py,
+    fake_setup_cfg,
+    fake_sql_dump,
+    fake_tox_ini,
     fake_web_config,
     fake_wp_config_php,
     fake_xmlrpc_php,
@@ -52,53 +79,167 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
     domain = 'config_disclosure'
     DETECTED_ID = CONFIG_DISCLOSURE_HTTP
 
-    # Dispatch table: (path_check_fn, response_fn, content_type) tuples.
-    # Evaluated in order; first match wins.
-    _DISPATCH_TABLE: list[tuple] = [
-        (_check_path, '/wp-config.php', fake_wp_config_php, 'application/x-httpd-php'),
-        (_check_path, '/xmlrpc.php', fake_xmlrpc_php, 'application/x-httpd-php'),
-        (_check_path, '/.env', fake_env_file, 'text/plain'),
-        (_check_path, '/.htaccess', fake_htaccess_file, 'text/plain'),
-        (_check_path, '/.htpasswd', fake_htpasswd_file, 'text/plain'),
-        (
-            _check_path,
-            '/config.php',
-            '/configuration.php',
-            fake_config_php,
-            'application/x-httpd-php',
-        ),
-        (_check_path, '/settings.py', fake_settings_py, 'text/x-python'),
-        (_check_path, '/database.yml', fake_database_yml, 'text/x-yaml'),
-        (_check_path, '/config.json', fake_config_json, 'application/json'),
-        (_check_path, '/web.config', fake_web_config, 'application/xml'),
-        (_check_path, '/phpinfo.php', '/info.php', fake_phpinfo_php, 'text/html'),
-        (_check_path, '/php.ini', fake_php_ini, 'text/plain'),
-        (_check_path, '/my.cnf', '/mysqld.cnf', fake_my_cnf, 'text/plain'),
-        (_check_path, '/nginx.conf', fake_nginx_conf, 'text/plain'),
-        (_check_path, '/docker-compose.yml', fake_docker_compose_yml, 'text/x-yaml'),
-        (_check_path, '/Dockerfile', fake_dockerfile, 'text/plain'),
-        (_check_path, '/composer.json', fake_composer_json, 'application/json'),
-        (_check_path, '/package.json', fake_package_json, 'application/json'),
-        (
-            _check_path,
-            '/backup.sql',
-            '/dump.sql',
-            '/database.sql',
-            fake_backup_sql,
-            'application/sql',
-        ),
-        (_check_path, '/db/', '/mysql/', '/postgres/', fake_db_directory, 'text/html'),
-        # .git/head before .git/config (more specific)
-        (lambda p: '/.git/head' in p, fake_git_head, 'text/plain'),
-        (lambda p: '/.git/config' in p, fake_git_config, 'text/plain'),
-        (
-            _check_path,
-            '/security.txt',
-            '/.well-known/security.txt',
-            fake_security_txt,
-            'text/plain',
-        ),
-    ]
+    # Response map keyed by the route ``name`` from routes_config_disclosure.py.
+    # This is the single source of truth: every routed path yields a body that
+    # is type-appropriate for its artifact. Handlers no longer fall back to a
+    # wp-config.php body for paths that have no bespoke builder.
+    _RESPONSE_MAP: dict[str, tuple] = {
+        # WordPress config
+        'config_wp_config_php': (fake_wp_config_php, 'application/x-httpd-php'),
+        'config_wp_config_bak': (fake_wp_config_php, 'application/x-httpd-php'),
+        'config_wp_config_old': (fake_wp_config_php, 'application/x-httpd-php'),
+        'config_wp_config_dist': (fake_wp_config_php, 'application/x-httpd-php'),
+        'config_wp_config_txt': (fake_wp_config_php, 'application/x-httpd-php'),
+        # PHP config
+        'config_php': (fake_config_php, 'application/x-httpd-php'),
+        'config_php_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_php_old': (fake_generic_php, 'application/x-httpd-php'),
+        'config_configuration_php': (fake_config_php, 'application/x-httpd-php'),
+        'config_configuration_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_conf_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_conf_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_db_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_local_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_local_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_globals_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_globals_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_initialize_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_initialize_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_constants_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_constants_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_xmlrpc_php': (fake_xmlrpc_php, 'application/x-httpd-php'),
+        'config_xmlrpc_bak': (fake_xmlrpc_php, 'application/x-httpd-php'),
+        'config_phpinfo_php': (fake_phpinfo_php, 'text/html'),
+        'config_phpinfo_bak': (fake_phpinfo_php, 'text/html'),
+        'config_info_php': (fake_phpinfo_php, 'text/html'),
+        'config_info_bak': (fake_phpinfo_php, 'text/html'),
+        'config_test_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_test_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_debug_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_debug_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_console_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_console_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_cli_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_cli_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_install_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_install_bak': (fake_generic_php, 'application/x-httpd-php'),
+        'config_upgrade_php': (fake_generic_php, 'application/x-httpd-php'),
+        'config_upgrade_bak': (fake_generic_php, 'application/x-httpd-php'),
+        # Python config
+        'config_settings_py': (fake_settings_py, 'text/x-python'),
+        'config_settings_bak': (fake_settings_py, 'text/x-python'),
+        'config_settings_old': (fake_settings_py, 'text/x-python'),
+        # Ruby config
+        'config_database_yml': (fake_database_yml, 'text/x-yaml'),
+        'config_database_bak': (fake_database_yml, 'text/x-yaml'),
+        # JSON config
+        'config_json': (fake_config_json, 'application/json'),
+        'config_json_bak': (fake_generic_json, 'application/json'),
+        # Environment files
+        'config_env': (fake_env_file, 'text/plain'),
+        'config_env_bak': (fake_env_file, 'text/plain'),
+        'config_env_local': (fake_env_file, 'text/plain'),
+        'config_env_prod': (fake_env_file, 'text/plain'),
+        'config_env_example': (fake_env_file, 'text/plain'),
+        'config_env_sample': (fake_env_file, 'text/plain'),
+        # Apache config
+        'config_htaccess': (fake_htaccess_file, 'text/plain'),
+        'config_htaccess_bak': (fake_htaccess_file, 'text/plain'),
+        'config_htaccess_old': (fake_htaccess_file, 'text/plain'),
+        'config_htpasswd': (fake_htpasswd_file, 'text/plain'),
+        'config_htpasswd_bak': (fake_htpasswd_file, 'text/plain'),
+        # Windows config
+        'config_web_config': (fake_web_config, 'application/xml'),
+        'config_web_config_bak': (fake_web_config, 'application/xml'),
+        # .NET / other config
+        'config_app_config': (fake_app_config, 'application/xml'),
+        'config_app_bak': (fake_app_config, 'application/xml'),
+        'config_application_ini': (fake_application_ini, 'text/plain'),
+        'config_application_bak': (fake_generic_ini, 'text/plain'),
+        # Symfony / YAML config
+        'config_parameters_yml': (fake_parameters_yml, 'text/x-yaml'),
+        'config_parameters_dist': (fake_parameters_yml_dist, 'text/x-yaml'),
+        'config_service_yml': (fake_service_yml, 'text/x-yaml'),
+        'config_service_bak': (fake_generic_yaml, 'text/x-yaml'),
+        'config_doctrine_yml': (fake_doctrine_yml, 'text/x-yaml'),
+        'config_doctrine_bak': (fake_generic_yaml, 'text/x-yaml'),
+        'config_routing_yml': (fake_routing_yml, 'text/x-yaml'),
+        'config_routing_bak': (fake_generic_yaml, 'text/x-yaml'),
+        'config_security_yml': (fake_security_yml, 'text/x-yaml'),
+        'config_security_bak': (fake_generic_yaml, 'text/x-yaml'),
+        # ASP.NET config
+        'config_appsettings_json': (fake_appsettings_json, 'application/json'),
+        'config_appsettings_bak': (fake_appsettings_json, 'application/json'),
+        # Node.js / JS config
+        'config_package_json': (fake_package_json, 'application/json'),
+        'config_package_bak': (fake_generic_json, 'application/json'),
+        'config_composer_json': (fake_composer_json, 'application/json'),
+        'config_composer_bak': (fake_generic_json, 'application/json'),
+        # Ruby / Python config
+        'config_gemfile': (fake_gemfile, 'text/plain'),
+        'config_gemfile_lock': (fake_gemfile_lock, 'text/plain'),
+        'config_pip_conf': (fake_pip_conf, 'text/plain'),
+        'config_pip_bak': (fake_pip_conf, 'text/plain'),
+        'config_requirements_txt': (fake_requirements_txt, 'text/plain'),
+        'config_requirements_bak': (fake_requirements_txt, 'text/plain'),
+        'config_setup_cfg': (fake_setup_cfg, 'text/plain'),
+        'config_setup_bak': (fake_setup_cfg, 'text/plain'),
+        'config_tox_ini': (fake_tox_ini, 'text/plain'),
+        'config_tox_bak': (fake_tox_ini, 'text/plain'),
+        # Build / deployment config
+        'config_makefile': (fake_makefile, 'text/plain'),
+        'config_makefile_bak': (fake_makefile, 'text/plain'),
+        'config_dockerfile': (fake_dockerfile, 'text/plain'),
+        'config_dockerfile_bak': (fake_dockerfile, 'text/plain'),
+        'config_docker_compose_yml': (fake_docker_compose_yml, 'text/x-yaml'),
+        'config_docker_compose_bak': (fake_docker_compose_yml, 'text/x-yaml'),
+        # Web server config
+        'config_nginx_conf': (fake_nginx_conf, 'text/plain'),
+        'config_nginx_bak': (fake_nginx_conf, 'text/plain'),
+        'config_apache_conf': (fake_apache_conf, 'text/plain'),
+        'config_apache_bak': (fake_apache_conf, 'text/plain'),
+        'config_httpd_conf': (fake_httpd_conf, 'text/plain'),
+        'config_httpd_bak': (fake_httpd_conf, 'text/plain'),
+        # Database config
+        'config_my_cnf': (fake_my_cnf, 'text/plain'),
+        'config_my_cnf_bak': (fake_my_cnf, 'text/plain'),
+        'config_mysqld_cnf': (fake_my_cnf, 'text/plain'),
+        'config_postgresql_conf': (fake_postgresql_conf, 'text/plain'),
+        'config_postgresql_bak': (fake_postgresql_conf, 'text/plain'),
+        'config_redis_conf': (fake_redis_conf, 'text/plain'),
+        'config_redis_bak': (fake_redis_conf, 'text/plain'),
+        # PHP ini
+        'config_php_ini': (fake_php_ini, 'text/plain'),
+        'config_php_ini_bak': (fake_php_ini, 'text/plain'),
+        # SQL dump files
+        'config_backup_sql': (fake_sql_dump, 'application/sql'),
+        'config_backup_bak': (fake_sql_dump, 'application/sql'),
+        'config_dump_sql': (fake_sql_dump, 'application/sql'),
+        'config_dump_bak': (fake_sql_dump, 'application/sql'),
+        'config_database_sql': (fake_sql_dump, 'application/sql'),
+        'config_db_sql': (fake_sql_dump, 'application/sql'),
+        'config_db_bak': (fake_sql_dump, 'application/sql'),
+        'config_dump_gz': (fake_generic_text, 'application/gzip'),
+        'config_dump_zip': (fake_generic_text, 'application/zip'),
+        'config_backup_tar_gz': (fake_generic_text, 'application/gzip'),
+        'config_backup_zip': (fake_generic_text, 'application/zip'),
+        # SQL / DB directories (prefix)
+        'config_sql_dir': (fake_db_directory, 'text/html'),
+        'config_mysql_dir': (fake_db_directory, 'text/html'),
+        'config_postgres_dir': (fake_db_directory, 'text/html'),
+        # Git config files
+        'config_git_config': (fake_git_config, 'text/plain'),
+        'config_git_head': (fake_git_head, 'text/plain'),
+        'config_git_index': (fake_git_index, 'text/plain'),
+        # Security disclosure
+        'config_security_txt': (fake_security_txt, 'text/plain'),
+        'config_well_known_security_txt': (fake_security_txt, 'text/plain'),
+    }
+
+    # Fallback body for any routed path that has no bespoke builder.
+    # Content-appropriate (plaintext) rather than a mismatched wp-config.php,
+    # so a scanner cannot distinguish the host as a honeypot by body type.
+    _DEFAULT_BODY = (fake_generic_text, 'text/plain')
 
     def generate_response(
         self,
@@ -110,36 +251,81 @@ class ConfigDisclosureHandler(HTTPHandlerBase):
         """Generate a config disclosure response for the given request."""
         profile = self.get_or_create_profile(bot_ip)
 
+        method = self._extract_method(raw_request)
+        body = self._extract_body(raw_request, headers)
+
         request_data = {
             'path': path,
-            'method': self._extract_method(raw_request),
+            'method': method,
             'headers': dict(headers) if headers else {},
             'raw': raw_request,
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         profile.record_request(request_data)
 
+        # POST bodies may carry exploit/IOC payloads (e.g. the
+        # `0x[]=DTAB` probe seen in production). Surface them as a dedicated
+        # exploit/IOC signal without broadening credential capture.
+        if method == 'POST' and body:
+            profile.record_request(
+                {
+                    'path': path,
+                    'method': method,
+                    'vector': 'config_disclosure_post',
+                    'post_body': body,
+                    'raw': raw_request,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
         # Escalate on config file access attempts
         profile.escalation_label = 'config_file_probe'
 
         path_lower = path.lower()
 
-        # Dispatch: find first matching route
-        for entry in self._DISPATCH_TABLE:
-            check_fn = entry[0]
-            if check_fn(path_lower, *entry[1:-2]):
-                response_fn = entry[-2]
-                content_type = entry[-1]
-                body = response_fn()
-                return self._build_http_response(
-                    body, 200, 'OK', {'Content-Type': content_type}
-                ), self.DETECTED_ID
+        # Prefer the route-matched body (single source of truth from
+        # routes_config_disclosure.py). If the router exposed the matched
+        # route name, use it directly; otherwise fall back to a substring
+        # lookup so the handler is correct even when invoked directly.
+        route_name = self._matched_route_name(path_lower)
+        if route_name is None:
+            route_name = ''
+        builder, content_type = self._RESPONSE_MAP.get(route_name, self._DEFAULT_BODY)
 
-        # Default: serve wp-config.php as the most common target
-        body = fake_wp_config_php()
+        response_body = builder()
         return self._build_http_response(
-            body, 200, 'OK', {'Content-Type': 'application/x-httpd-php'}
+            response_body, 200, 'OK', {'Content-Type': content_type}
         ), self.DETECTED_ID
+
+    def _matched_route_name(self, path_lower: str) -> str | None:
+        """Return the route ``name`` whose matcher matches ``path_lower``.
+
+        Reuses the canonical route table from routes_config_disclosure.py so the
+        handler's body is always aligned with what the router actually routes.
+        """
+        from manyfaced.handlers.routes.routes_config_disclosure import ROUTES
+
+        for route in ROUTES:
+            if route.matcher.match(path_lower):
+                return route.name
+        return None
+
+    def _extract_body(self, raw_request: str, headers: dict[str, str] | None) -> str:
+        """Extract the decoded POST/PUT body from a raw HTTP request."""
+        if not raw_request:
+            return ''
+        # Body starts after the first blank line.
+        split = raw_request.split('\r\n\r\n', 1)
+        if len(split) < 2:
+            return ''
+        raw_body = split[1]
+        ctype = (headers or {}).get('Content-Type', '')
+        try:
+            if 'application/x-www-form-urlencoded' in ctype:
+                return unquote_plus(raw_body)
+            return raw_body
+        except Exception:
+            return raw_body
 
     def _extract_method(self, raw_request: str) -> str:
         """Extract HTTP method from raw request."""
