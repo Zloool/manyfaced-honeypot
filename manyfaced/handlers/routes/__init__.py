@@ -93,10 +93,39 @@ from manyfaced.handlers.routes.routes_langflow import ROUTES as _langflow_routes
 from manyfaced.handlers.routes.routes_joomla import ROUTES as _joomla_routes
 from manyfaced.handlers.fingerprint import HighEntropyPath, NotFoundHandler  # noqa: E402
 
-# Concatenate in the original order: WordPress → phpMyAdmin → Jenkins → Tomcat →
-# Drupal → cPanel → Bitrix → WebDAV → ConfigDisclosure → catch-all
+# Dispatch policy (issue #503 / #453 / #519): exploit-specific faces are
+# concatenated BEFORE the broad web-root framework faces (Drupal, WordPress,
+# Laravel, Kubernetes, Docker, Elastic, ThinkPHP) so a greedy framework prefix
+# (Drupal's old /admin/, Kubernetes' old /api/, Elastic's old /_) can NOT shadow
+# the dedicated exploit handlers for nested probes like:
+#   /cgi-bin/*            -> ExploitCgiHandler   (was Drupal, issue #505)
+#   /admin/vendor/phpunit/-> PhpUnitHandler     (was Drupal, issue #506)
+#   /admin/.env           -> EnvDiscHandler      (was Drupal, issue #508)
+#   /api/vendor/phpunit/ -> PhpUnitHandler     (was Kubernetes, issue #453)
+#   /api/route            -> NextjsHandler       (was Kubernetes, issue #453)
+#   /api/datasources      -> GrafanaHandler      (was Kubernetes, issue #453)
+#   /_next                -> NextjsHandler        (was Elastic, issue #519)
+#   /laravel/vendor/...   -> PhpUnitHandler     (was Laravel, issue #519)
+# Order within the exploit block is also significant for the /api/ namespace:
+# phpunit (specific /api/vendor/phpunit/) -> grafana (specific API
+# sub-namespaces) -> env_disc (specific secret sub-paths) -> nextjs (broad
+# /api/ server actions) so each face wins its own /api/* subtree.
+# NOTE: ConfigDisclosure is intentionally kept in its ORIGINAL position (after
+# WebDAV, before DBAdmin) — NOT moved to the front. If it were placed before
+# WordPress/phpMyAdmin it would steal /xmlrpc.php and /mysql/; and because
+# EnvDisc owns the bare PathExact('/.env') route in front of ConfigDisclosure,
+# bare /.env would wrongly hit EnvDisc instead of ConfigDisclosure (issue #508).
+# The greedy framework prefixes were REMOVED/NARROWED in their route tables
+# (see routes_drupal/kubernetes/elastic) so the exploit faces below win.
 ROUTES: list[Route] = (
-    list(_wordpress_routes)
+    # ---- Exploit faces FIRST (win over removed greedy framework prefixes) ----
+    list(_exploit_cgi_routes)
+    + list(_phpunit_routes)
+    + list(_grafana_routes)
+    + list(_env_disc_routes)
+    + list(_nextjs_routes)
+    # ---- Broad web-root framework / service faces ----
+    + list(_wordpress_routes)
     + list(_phpmyadmin_routes)
     + list(_jenkins_routes)
     + list(_tomcat_routes)
@@ -104,6 +133,8 @@ ROUTES: list[Route] = (
     + list(_cpanel_routes)
     + list(_bitrix_routes)
     + list(_webdav_routes)
+    # ConfigDisclosure stays in its original slot (after WebDAV) so it owns the
+    # bare /.env probe (issue #508) without stealing WordPress/phpMyAdmin paths.
     + list(_config_disclosure_routes)
     + list(_dbadmin_routes)
     + list(_docker_routes)
@@ -111,7 +142,6 @@ ROUTES: list[Route] = (
     + list(_iot_routes)
     + list(_nginx_probe_routes)
     + list(_k8s_routes)
-    + list(_nextjs_routes)
     + list(_atlassian_routes)
     + list(_spring_routes)
     + list(_aws_creds_routes)
@@ -120,7 +150,6 @@ ROUTES: list[Route] = (
     + list(_magento_routes)
     + list(_redis_admin_routes)
     + list(_solr_routes)
-    + list(_grafana_routes)
     + list(_plex_routes)
     + list(_jupyter_routes)
     + list(_rabbitmq_routes)
@@ -128,15 +157,9 @@ ROUTES: list[Route] = (
     + list(_elasticsearch_routes)
     + list(_zabbix_routes)
     + list(_laravel_routes)
-    # Exploit-scanner routes (issue #350) are inserted BEFORE thinkphp/laravel so
-    # they win for /index.php (pearcmd) and the D-Link/Tenda .cgi names, which
-    # would otherwise be shadowed by those framework handlers.
-    + list(_exploit_cgi_routes)
     + list(_thinkphp_routes)
     + list(_elastic_routes)
-    + list(_env_disc_routes)
     + list(_nginx_routes)
-    + list(_phpunit_routes)
     # New threat-intel faces (issues #391-#397): Joomla, Langflow, ColdFusion,
     # Fortinet, Citrix, SharePoint, Splunk. Concatenated last (before the
     # fingerprint-deflection + monster-page catch-all) so they coexist with the

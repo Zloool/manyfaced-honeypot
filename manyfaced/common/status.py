@@ -65,3 +65,8 @@ ENV_DISC_HTTP = 1034
 # Exploit-scanner honeypot faces (issue #350): D-Link/Tenda CGI RCE (router
 # command-injection -> wget malware-drop), pearcmd LFI/RCE, path traversal.
 EXPLOIT_CGI_HTTP = 1035
+# PHPUnit eval-stdin RCE (CVE-2017-9841). Distinct from ENV_DISC_HTTP
+# (1034) so real RCE probes are not mislabeled as env-disclosure captures
+# (issue #475). Previously phpunit_handler fell back to 1034, colliding with
+# ENV_DISC_HTTP; this constant fixes the detected_id collision.
+PHPUNIT_HTTP = 1047

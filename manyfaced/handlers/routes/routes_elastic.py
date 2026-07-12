@@ -51,8 +51,20 @@ ROUTES: list[Route] = [
     Route(PathExact('/_bulk'), _elastic(), ELASTIC_HTTP, 'elastic_bulk'),
     Route(PathExact('/elasticsearch/.env'), _elastic(), ELASTIC_HTTP, 'elastic_es_env'),
     Route(PathExact('/elastic/.env'), _elastic(), ELASTIC_HTTP, 'elastic_elastic_env'),
-    # Broad prefixes — listed last so specific paths above win.
-    Route(PathPrefix('/_'), _elastic(), ELASTIC_HTTP, 'elastic_underscore'),
+    # NOTE: the previous broad `PathPrefix('/_')` shadowed `/_next` (Next.js)
+    # and every other underscore-prefixed service, answering them with a fake
+    # Elasticsearch JSON body (issue #519). We now enumerate the real ES
+    # underscore endpoints so `/_next` correctly falls through to NextjsHandler.
+    Route(PathPrefix('/_cat/'), _elastic(), ELASTIC_HTTP, 'elastic_cat_prefix'),
+    Route(PathPrefix('/_cluster/'), _elastic(), ELASTIC_HTTP, 'elastic_cluster_prefix'),
+    Route(PathPrefix('/_nodes/'), _elastic(), ELASTIC_HTTP, 'elastic_nodes_prefix'),
+    Route(PathPrefix('/_search/'), _elastic(), ELASTIC_HTTP, 'elastic_search_prefix'),
+    Route(PathPrefix('/_xpack/'), _elastic(), ELASTIC_HTTP, 'elastic_xpack_prefix'),
+    Route(PathPrefix('/_snapshot/'), _elastic(), ELASTIC_HTTP, 'elastic_snapshot_prefix'),
+    Route(PathPrefix('/_license/'), _elastic(), ELASTIC_HTTP, 'elastic_license_prefix'),
+    Route(PathPrefix('/_sql/'), _elastic(), ELASTIC_HTTP, 'elastic_sql_prefix'),
+    Route(PathPrefix('/_bulk/'), _elastic(), ELASTIC_HTTP, 'elastic_bulk_prefix'),
+    Route(PathPrefix('/_plugin/'), _elastic(), ELASTIC_HTTP, 'elastic_plugin_prefix'),
     Route(PathPrefix('/kibana'), _elastic(), ELASTIC_HTTP, 'elastic_kibana_prefix'),
     Route(PathPrefix('/elastic'), _elastic(), ELASTIC_HTTP, 'elastic_elastic_prefix'),
 ]

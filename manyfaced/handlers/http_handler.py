@@ -255,6 +255,11 @@ class HTTPHandler:
 
         router = _get_router()
         path = getattr(parsed, 'path', '/')
+        # The Router percent-decodes the path once during dispatch (issue #443)
+        # so encoded path-escape probes (/ .env%2e -> /.env, /.htaccess,
+        # /%2eenv) match the exploit/config-disclosure routes instead of
+        # falling through to the monster page. Handlers receive the decoded
+        # path from the router.
         result = router.dispatch(path, raw_request, bot_ip, headers or {})
 
         if result is not None:
