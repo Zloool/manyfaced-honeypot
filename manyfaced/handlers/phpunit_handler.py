@@ -28,15 +28,7 @@ from urllib.parse import unquote
 import logging
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
-
-# The constant is expected to be defined in manyfaced.common.status.  If a
-# merged PR has not added it yet, fall back to the next free HTTP detected-id
-# (DBADMIN_HTTP == 1033 -> 1034) so the handler stays importable.  status.py is
-# a shared file and must NOT be edited here.
-try:  # pragma: no cover - exercised by import resolution
-    from manyfaced.common.status import PHPUNIT_HTTP
-except Exception:  # noqa: BLE001 - defensive fallback
-    PHPUNIT_HTTP = 1034
+from manyfaced.common.status import PHPUNIT_HTTP
 
 logger = logging.getLogger(__name__)
 

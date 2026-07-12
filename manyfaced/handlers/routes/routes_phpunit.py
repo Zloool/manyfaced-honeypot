@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from manyfaced.handlers.router import PathExact, PathPrefix, Route
-
-try:  # pragma: no cover - exercised by import resolution
-    from manyfaced.common.status import PHPUNIT_HTTP
-except Exception:  # noqa: BLE001 - defensive fallback
-    PHPUNIT_HTTP = 1034
+from manyfaced.common.status import PHPUNIT_HTTP
 
 
 def _phpunit() -> type:
@@ -32,6 +28,11 @@ ROUTES: list[Route] = [
     # Prefix coverage (also catches %2eenv -> .env decoding handled in handler).
     Route(PathPrefix('/phpunit/'), _phpunit(), PHPUNIT_HTTP, 'phpunit_prefix'),
     Route(PathPrefix('/vendor/phpunit/'), _phpunit(), PHPUNIT_HTTP, 'phpunit_vendor_prefix'),
+    # Admin-nested PHPUnit RCE probe (issue #506): /admin/vendor/phpunit/...
+    # eval-stdin.php. Drupal previously shadowed these with its greedy /admin/
+    # prefix; now that Drupal's /admin/ is narrowed, add the explicit prefix so
+    # these reach PhpUnitHandler even if ordering changes.
+    Route(PathPrefix('/admin/vendor/phpunit/'), _phpunit(), PHPUNIT_HTTP, 'phpunit_admin'),
     # Deep web-root variants (issue #350): production probes hit paths like
     # /www/vendor/phpunit/.../eval-stdin.php, /yii/vendor/phpunit/..., etc.
     # These previously fell through to the generic monster page. Add a prefix

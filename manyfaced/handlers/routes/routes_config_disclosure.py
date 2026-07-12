@@ -484,6 +484,26 @@ ROUTES: list[Route] = [
         CONFIG_DISCLOSURE_HTTP,
         'config_phpinfo_bak',
     ),
+    # Admin-nested phpinfo disclosure probe previously shadowed by Drupal's
+    # greedy /admin/ prefix (issue #508).
+    Route(
+        PathExact('/admin/phpinfo.php'),
+        _config_disclosure(),
+        CONFIG_DISCLOSURE_HTTP,
+        'config_admin_phpinfo',
+    ),
+    Route(
+        PathExact('/admin/info.php'),
+        _config_disclosure(),
+        CONFIG_DISCLOSURE_HTTP,
+        'config_admin_info',
+    ),
+    Route(
+        PathExact('/admin/phpinfo.php.bak'),
+        _config_disclosure(),
+        CONFIG_DISCLOSURE_HTTP,
+        'config_admin_phpinfo_bak',
+    ),
     Route(PathExact('/info.php'), _config_disclosure(), CONFIG_DISCLOSURE_HTTP, 'config_info_php'),
     Route(
         PathExact('/info.php.bak'), _config_disclosure(), CONFIG_DISCLOSURE_HTTP, 'config_info_bak'

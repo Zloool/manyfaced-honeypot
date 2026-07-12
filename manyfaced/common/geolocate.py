@@ -42,6 +42,41 @@ _geo_worker_thread: threading.Thread | None = None
 _geo_state_lock = threading.Lock()
 
 
+# Canonical org strings for known scanners whose free-text org from ip-api.com
+# arrives with inconsistent punctuation/spacing across responses (issue #462).
+# The KEY is the collapsed-whitespace, case-folded, punctuation-stripped form of
+# the raw org; the VALUE is the single canonical spelling. This dedupes the same
+# ASN's org into one bucket for grouping/aggregation WITHOUT being used for the
+# benign decision (benign is still PTR/ASN-only — issue #352).
+_ORG_CANONICAL_MAP: dict[str, str] = {
+    'censys inc': 'Censys, Inc.',
+    'onyphe sas': 'Onyphe SAS',
+    'modat bv': 'Modat B.V.',
+}
+
+
+def normalize_org(org: str) -> str:
+    """Normalize a free-text network-owner (org) string for consistent grouping.
+
+    ip-api.com returns the org field with inconsistent punctuation/spacing across
+    responses (e.g. ``Censys, Inc.`` vs ``Censys Inc``), which fragments any
+    ``bot_org``-based aggregation. This collapses internal whitespace and trims,
+    then applies a small canonicalization map for known scanners so the same ASN
+    yields one org string (issue #462).
+
+    This is a *reporting/aggregation* normalization only — it is NEVER consulted
+    for the benign classification decision (that stays PTR/ASN-only, issue #352).
+    """
+    if not org:
+        return ''
+    # Collapse internal whitespace and trim.
+    collapsed = ' '.join(org.split())
+    # Build the lookup key: case-folded, punctuation stripped.
+    key = ''.join(c for c in collapsed.lower() if c.isalnum() or c.isspace())
+    key = ' '.join(key.split())
+    return _ORG_CANONICAL_MAP.get(key, collapsed)
+
+
 def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
     """Look up geo + network attributes for an IP address.
 
@@ -120,7 +155,7 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
             country = data.get('country', '')
             continent = data.get('continent', '')
             asn = data.get('as', '') or ''
-            org = data.get('org', '') or ''
+            org = normalize_org(data.get('org', '') or '')
             result = (country, continent, asn, org)
 
         # Update cache and rate-limit timestamp

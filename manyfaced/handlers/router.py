@@ -21,8 +21,28 @@ import logging
 from threading import Lock
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, NamedTuple, cast
+from urllib.parse import unquote
 
 from manyfaced.common.metrics import incr, incr_response
+
+
+def _decode_path(path: str) -> str:
+    """Decode a request path for routing/dispatch (issue #443).
+
+    Strips the query string (the Router matches on the path portion only) and
+    percent-decodes path-escape probes so encoded dots/slashes (``%2e`` ->
+    ``.``, ``%2f`` -> ``/``) match the exploit/config-disclosure routes instead
+    of falling through to the catch-all monster page.
+
+    ``urllib.parse.unquote`` is idempotent on an already-decoded path, so
+    calling it here is safe even when handlers also unquote defensively.
+    """
+    clean = path.split('?', 1)[0]
+    try:
+        return unquote(clean)
+    except Exception:  # pragma: no cover - urllib rarely raises
+        return clean
+
 
 if TYPE_CHECKING:
     from manyfaced.handlers.base_handler import HTTPHandlerBase  # noqa: F401
@@ -148,9 +168,14 @@ class Router:
 
         The matched handler instance is reused across calls so that per-request
         state (BotProfile dicts) persists within a session/connection.
+
+        The path is percent-decoded once here (issue #443) so encoded
+        path-escape probes (``%2e``, ``%2f``) match the right route regardless
+        of which caller invokes dispatch.
         """
+        decoded_path = _decode_path(path)
         for idx, route in enumerate(self._routes):
-            if route.matcher.match(path):
+            if route.matcher.match(decoded_path):
                 try:
                     # Reuse existing handler or create new one for this route
                     with self._lock:
@@ -158,7 +183,7 @@ class Router:
                             self._handler_instances[idx] = route.handler_cls()
                         handler = cast('HTTPHandlerBase', self._handler_instances[idx])
                     response_bytes, detected_flag = handler.generate_response(
-                        path=path,
+                        path=decoded_path,
                         raw_request=raw_request,
                         bot_ip=bot_ip,
                         headers=headers,
@@ -166,7 +191,13 @@ class Router:
 
                     # Wire up record_interaction to build the dialogue artifact
                     self._record_interaction(
-                        handler, path, raw_request, bot_ip, headers, response_bytes, detected_flag
+                        handler,
+                        decoded_path,
+                        raw_request,
+                        bot_ip,
+                        headers,
+                        response_bytes,
+                        detected_flag,
                     )
 
                     logger.debug(
@@ -226,8 +257,9 @@ class Router:
 
     def explain(self, path: str) -> str:
         """Return a debug string for the matched route."""
+        decoded_path = _decode_path(path)
         for idx, route in enumerate(self._routes):
-            if route.matcher.match(path):
+            if route.matcher.match(decoded_path):
                 return f'matched route {idx} ({route.name})'
         return 'no match'
 
