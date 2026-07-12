@@ -53,8 +53,57 @@ asn = ["AS398324"]
 [[source]]
 name = "shadowserver"
 category = "scanner"
-reverse_dns = ["*.shadowserver.org"]
+# Real Shadowserver scan hosts present PTRs under BOTH shadowserver.org and
+# shadowserver.io (e.g. scan-60-0.shadowserver.io) — issue #441/#514.
+reverse_dns = ["*.shadowserver.org", "*.shadowserver.io"]
 asn = ["AS11238", "AS400482"]
+
+[[source]]
+name = "stretchoid"
+category = "scanner"
+# Stretchoid internet-wide research scanner; PTRs like azpdsg1ue5fj.stretchoid.com
+# (issues #441 #459 #447 #514). PTR is the network-verifiable signal.
+reverse_dns = ["*.stretchoid.com"]
+
+[[source]]
+name = "onyphe"
+category = "scanner"
+# Onyphe research scanner; PTRs like villanueva.probe.onyphe.net
+# (issues #459 #501 #447 #514).
+reverse_dns = ["*.probe.onyphe.net", "*.onyphe.net"]
+user_agent = ["Onyphe"]
+
+[[source]]
+name = "modat"
+category = "scanner"
+# Modat B.V. scanner; PTRs like o017.scanner.modat.io (issues #459 #447 #514).
+reverse_dns = ["*.scanner.modat.io"]
+asn = ["AS209334"]
+
+[[source]]
+name = "internet-measurement"
+category = "scanner"
+# Census/Driftnet InternetMeasurement project; PTRs like
+# r3-77-4d.monitoring.internet-measurement.com (issues #441 #501 #514).
+reverse_dns = ["*.internet-measurement.com"]
+user_agent = ["InternetMeasurement"]
+
+[[source]]
+name = "infrawatch"
+category = "scanner"
+# Infrawatch (infrawat.ch) internet-wide research scanner; PTRs under
+# *.infrawat.ch, *.internet-census.org and *.as25369.net (issues #429 #447 #514).
+# Matched by PTR only — never by AS25369 org substring (issue #352).
+reverse_dns = ["*.infrawat.ch", "*.internet-census.org", "*.as25369.net"]
+user_agent = ["Infrawatch"]
+
+[[source]]
+name = "nokia-genomecrawler"
+category = "crawler"
+# Nokia GenomeCrawler internet-measurement crawler; PTRs like
+# monet-07.crawler.deepfield.net (issue #510). Matched by PTR only.
+reverse_dns = ["*.crawler.deepfield.net"]
+user_agent = ["GenomeCrawler"]
 
 [[source]]
 name = "googlebot"

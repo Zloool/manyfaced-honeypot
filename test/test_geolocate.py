@@ -25,9 +25,35 @@ from manyfaced.common.geolocate import (  # noqa: E402
     _geo_cache_lock,
     clear_geo_cache,
     lookup_ip_geolocation,
+    normalize_org,
     start_geo_worker,
     stop_geo_worker,
 )
+
+
+# ---------------------------------------------------------------------------
+# normalize_org — issue #462: same ASN must yield one canonical org string
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_org_censys_variants_collapse():
+    # The two free-text spellings ip-api.com returns for AS398324 Censys must
+    # canonicalize to a single string so bot_org aggregation doesn't fragment.
+    assert normalize_org('Censys, Inc.') == normalize_org('Censys Inc')
+    assert normalize_org('Censys Inc') == 'Censys, Inc.'
+
+
+def test_normalize_org_collapses_whitespace():
+    assert normalize_org('  Some   ISP   Ltd ') == 'Some ISP Ltd'
+
+
+def test_normalize_org_empty():
+    assert normalize_org('') == ''
+
+
+def test_normalize_org_unknown_passthrough():
+    # Non-mapped orgs are returned trimmed/collapsed but otherwise verbatim.
+    assert normalize_org('Hetzner Online GmbH') == 'Hetzner Online GmbH'
 
 
 # ---------------------------------------------------------------------------
