@@ -20,7 +20,7 @@ import pytest
 
 from manyfaced.client.client import _handle_non_http_connection
 from manyfaced.common import faces as face_module
-from manyfaced.common.faces import FACE_REGISTRY, FaceSpec, get_face
+from manyfaced.common.faces import FACE_REGISTRY, FaceSpec, get_face, is_http_port
 from manyfaced.handlers.http_handler import set_enrich_args
 
 # CRLF as a bytes constant built without backslash escapes (keeps the test
@@ -47,14 +47,48 @@ def test_registry_covers_expected_faces():
         'mysql',
         'mssql',
         'amqp',
+        'oracle',
         'redis',
         'mongodb',
         'memcached',
         'zookeeper',
         'postgres',
         'elasticsearch',
+        'rabbitmq',
+        'nfs',
+        'epmd',
     }:
         assert expected in names, f'missing face in registry: {expected}'
+
+
+def test_top_ports_without_faces_are_not_http():
+    # The non-HTTP protocol ports this cluster is responsible for must each
+    # resolve to a FaceSpec (so they are dispatched to the right face, not the
+    # HTTP handler) and must NOT be classified as an HTTP port. The HTTP
+    # fallthrough must never answer an Oracle/NFS/EPMD/MSSQL/RDP/Postgres probe
+    # with an admin panel (issues #440/#454/#460/#487/#492, cluster C4).
+    in_scope = {
+        1433,
+        1521,
+        2049,
+        3306,
+        3389,
+        5432,
+        5900,
+        5901,
+        6379,
+        11211,
+        27017,
+        5672,
+        15672,
+        4369,
+        2181,
+    }
+    for port in in_scope:
+        assert get_face(port) is not None, (
+            f'port {port} has no FaceSpec — would fall through to HTTP'
+        )
+        assert not is_http_port(port), f'port {port} flagged as HTTP but owns a non-HTTP face'
 
 
 def test_server_first_faces_have_greeting():
@@ -272,6 +306,54 @@ def test_dispatch_elasticsearch_reply_reaches_client():
 def test_dispatch_ssh_banner_reaches_client_before_speaking():
     got = _dispatch(lambda: get_face(10022), None, 10022)
     assert got.startswith(b'SSH-2.0-'), f'client got {got!r}'
+
+
+# ---------------------------------------------------------------------------
+# New non-HTTP faces added by cluster C4 (issue #440 Oracle 1521, #454/#457 NFS
+# 2049, #451/#458 EPMD 4369, and the double-ownership locks for RDP 3389 and
+# Postgres 5432 — #460/#487). Each must answer with a protocol-shaped (non-HTTP)
+# response, never an HTTP/Apache admin panel.
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_oracle_reply_reaches_client():
+    # Oracle TNS is server-first: the Refuse/ORA-12514 packet arrives on accept.
+    got = _dispatch(lambda: get_face(1521), None, 1521)
+    assert got.startswith(b'\x04'), f'oracle greeting not a TNS Refuse: {got!r}'
+    assert b'ORA-12514' in got, f'oracle greeting missing ORA-12514: {got!r}'
+
+
+def test_dispatch_nfs_reply_reaches_client():
+    # NFS/rpcbind is client-first: reply to a (minimal) RPC NULL call with a
+    # protocol-shaped rpcbind reply, NOT an HTTP 404.
+    got = _dispatch(lambda: get_face(2049), b'\x00\x00\x00\x01req', 2049)
+    assert got, f'client got nothing from NFS face: {got!r}'
+    assert not got.startswith(b'HTTP'), f'NFS face served HTTP: {got!r}'
+
+
+def test_dispatch_epmd_reply_reaches_client():
+    # EPMD NAMES (0x73) -> empty node list; must not be served an HTTP panel.
+    got = _dispatch(lambda: get_face(4369), b'\x73', 4369)
+    assert got, f'client got nothing from EPMD face: {got!r}'
+    assert not got.startswith(b'HTTP'), f'EPMD face served HTTP: {got!r}'
+
+
+def test_dispatch_rdp_not_http():
+    # Double-ownership lock (issue #460): a connection to external 3389 must be
+    # answered by the RDP face (TPKT/X.224 Connection-Confirm), never HTTP.
+    got = _dispatch(lambda: get_face(3389), None, 3389)
+    assert got, f'RDP face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'RDP 3389 served HTTP (double-ownership!): {got!r}'
+    assert got.startswith(b'\x03\x00'), f'RDP greeting not TPKT: {got!r}'
+
+
+def test_dispatch_postgres_not_http():
+    # Double-ownership lock (issue #487): a connection to external 5432 must be
+    # answered by the Postgres face (AuthRequest 'R...'), never an HTTP panel.
+    got = _dispatch(lambda: get_face(5432), b'\x00\x00\x00\x08startup', 5432)
+    assert got, f'Postgres face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'Postgres 5432 served HTTP (double-ownership!): {got!r}'
+    assert got[:1] == b'R', f'Postgres reply not an AuthRequest: {got!r}'
 
 
 def _dispatch_multi(make_spec, client_frames, server_port):
