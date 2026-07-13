@@ -406,7 +406,12 @@ def _handle_non_http_connection(
     # peer's frame is read, instead of blocking until the connection idles
     # (which made client-first faces time out before ever sending a reply).
     message = receive_first_frame(connection_socket, BOT_TIMEOUT)
-    raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
+    # receive_first_frame returns raw bytes (binary-safe, issue #597) — do NOT
+    # decode/encode back through UTF-8, which would mangle non-UTF-8 payloads
+    # (e.g. MongoDB OP_MSG frames with arbitrary BSON bytes).
+    raw_bytes = (
+        message if isinstance(message, bytes) else message.encode('latin-1', errors='replace')
+    )
 
     # ── SSH: banner already sent in PRELUDE; drive binary credential capture,
     #    then record. SSH has no follow-up reply to send. ───────────────────
@@ -462,7 +467,8 @@ def _handle_non_http_connection(
             frame = receive_first_frame(connection_socket, BOT_TIMEOUT)
             if not frame:
                 break
-            raw2 = frame.encode('utf-8') if isinstance(frame, str) else frame
+            # frame is raw bytes (binary-safe, issue #597); keep as-is.
+            raw2 = frame if isinstance(frame, bytes) else frame.encode('latin-1', errors='replace')
             if not raw2:
                 break
             if spec.capture_creds and spec.extract_creds is not None:

@@ -373,7 +373,7 @@ class TestReceiveFirstFrame:
 
         result = receive_first_frame(mock_socket, timeout=5.0)
 
-        assert result == 'PING'
+        assert result == b'PING'
         # Only the first recv waits the full timeout; trailing recvs use RECVLINE_IDLE.
         assert mock_socket.recv.call_count == 2
         # Second recv uses the short idle timeout, not the full 5s.
@@ -398,7 +398,7 @@ class TestReceiveFirstFrame:
         result = receive_first_frame(mock_socket, timeout=5.0)
 
         crlf = chr(13) + chr(10)
-        assert result == '*1' + crlf + '$4' + crlf
+        assert result == b'*1' + CRLF + b'$4' + CRLF
 
     def test_empty_when_peer_closes_immediately(self):
         from manyfaced.common.utils import receive_first_frame
@@ -408,4 +408,4 @@ class TestReceiveFirstFrame:
 
         result = receive_first_frame(mock_socket, timeout=1.0)
 
-        assert result == ''
+        assert result == b''

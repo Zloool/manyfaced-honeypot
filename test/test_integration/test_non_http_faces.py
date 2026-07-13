@@ -257,6 +257,78 @@ def test_build_bear_storage_detected_id():
     assert bs.listen_port == 6379
 
 
+def _make_op_msg_frame(payload: bytes = b'') -> bytes:
+    """Build a minimal MongoDB OP_MSG frame recognised by the repo's detector (issue #597).
+
+    The codebase's wire sniffer expects the opcode at **offset 20** (4-byte
+    length + 16-byte pad + 4-byte opcode), so we match that layout here. Body =
+    flags(4)=0 + payload. ``payload`` carries arbitrary BSON bytes.
+
+    We also guarantee the first byte is NOT one of the redis RESP trigger bytes
+    ($ * +) so the frame is classified as mongodb and not redis (detection order
+    is redis-before-mongodb in ``_PROTOCOL_SIGNATURES``).
+    """
+    import struct
+
+    body = b'\x00' + payload  # flags(4) = 0
+    msg_len = 20 + 4 + len(body)
+    prefix = struct.pack('<I', msg_len)
+    # Shift length until its low byte is not a redis trigger ($ = 0x24, * = 0x2a, + = 0x2b).
+    while prefix[0] in (0x24, 0x2A, 0x2B):
+        body += b'\x00'
+        prefix = struct.pack('<I', 20 + 4 + len(body))
+    return prefix + b'\x00' * 16 + struct.pack('<I', 2013) + body
+
+
+def test_op_msg_frame_detected_and_stored_without_utf8_mangling():
+    """A synthetic OP_MSG (opcode 2013) probe must be detected as mongo AND the
+    binary request_raw must survive the capture/store path WITHOUT the bytes
+    being mangled by a UTF-8 decode (issue #597).
+
+    The frame carries non-UTF-8 BSON bytes (0xff 0xfe 0x00) and a UTF-8
+    accelerator document; only a binary-safe path keeps them intact.
+    """
+    from manyfaced.common.protocol import detect_protocol, get_protocol_info
+    from manyfaced.common.utils import receive_first_frame
+    from manyfaced.handlers.http_handler import _build_bear_storage
+    from manyfaced.common.status import UNKNOWN_MONGODB
+
+    # Binary payload with bytes that are invalid UTF-8 (0xff 0xfe) + a valid doc.
+    bson_garbage = b'\xff\xfe\x00' + b'{"ismaster":1}'
+    frame = _make_op_msg_frame(bson_garbage)
+
+    # 1) Detection: OP_MSG (opcode 2013) is recognised.
+    assert detect_protocol(frame) == 'mongodb'
+    assert get_protocol_info(frame)['protocol'] == 'mongodb'
+
+    # 2) receive_first_frame preserves raw bytes verbatim (no UTF-8 decode).
+    class _Sock:
+        def __init__(self, data):
+            self._data = data
+            self.settimeout = lambda *a, **k: None
+
+        def recv(self, n):
+            if self._data:
+                out, self._data = self._data[:n], self._data[n:]
+                return out
+            return b''
+
+    got = receive_first_frame(_Sock(frame), timeout=1.0)
+    assert isinstance(got, bytes)
+    assert got == frame, 'receive_first_frame must not mangle binary frames'
+
+    # 3) The capture/store path keeps the bytes intact (BearStorage stores the
+    #    raw frame; latin-1 decode/encode is lossless for all 256 byte values).
+    spec = get_face(27017)
+    assert spec.name == 'mongodb'
+    bs = _build_bear_storage('9.9.9.9', spec, frame, 27017)
+    assert bs.isDetected == UNKNOWN_MONGODB
+    # round-trip the stored raw_request through latin-1 and compare to the wire frame
+    stored = bs.raw_request.encode('latin-1', errors='replace')
+    assert stored == frame, 'binary OP_MSG bytes were mangled in storage'
+    assert b'\xff\xfe\x00' in stored, 'non-UTF-8 BSON bytes were lost'
+
+
 # ---------------------------------------------------------------------------
 # Full dispatch: drive _handle_non_http_connection over a real socketpair so we
 # prove the reply actually reaches the client (catches the #377 ordering bug

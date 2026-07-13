@@ -62,8 +62,20 @@ _PROTOCOL_SIGNATURES = [
     # After 12-byte DNS header, require a label length byte (0x01-0x3f) followed by
     # alphanumeric or hyphen — excludes HTTP/2 PRI and other noise.
     ('dns', re.compile(rb'^.{12}(?:[\x01-\x3f][\x2d\x30-\x39\x41-\x5a\x61-\x7a])'), None),
-    # MongoDB wire protocol: opcode at offset 20 in {length(4)+flags(4)+cursor_id(8)+response_to(4)+opcode(4)}
-    ('mongodb', re.compile(rb'^.{20}(?:\xd4\x07\x00\x00|\xe8\x03\x00\x00|\x01\x00\x00\x00)'), None),
+    # MongoDB wire protocol: opcode at offset 20 in {length(4)+flags(4)+cursor_id(8)+response_to(4)+opcode(4)}.
+    # Recognised opcodes (LE): OP_REPLY=1, OP_MSG=2013 (0x07dd -> \xdd\x07\x00\x00),
+    # OP_UPDATE=2001, OP_INSERT=2002, OP_QUERY=2004 (0x07d4 -> \xd4\x07\x00\x00),
+    # OP_GET_MORE=2005, OP_DELETE=2006, OP_KILL_CURSORS=2007, OP_COMMAND=2010,
+    # OP_COMMAND_REPLY=2011, OP_COMPRESSED=2012 (issue #597). Pre-1.6 legacy
+    # OP_QUERY/OP_REPLY probes and the modern OP_MSG (the default opcode used by
+    # all current MongoDB drivers) must both be detected.
+    (
+        'mongodb',
+        re.compile(
+            rb'^.{20}(?:\xd4\x07\x00\x00|\xe8\x03\x00\x00|\x01\x00\x00\x00|\xdd\x07\x00\x00|\xc9\x07\x00\x00|\xca\x07\x00\x00|\xcb\x07\x00\x00|\xcc\x07\x00\x00|\xcd\x07\x00\x00|\xda\x07\x00\x00|\xdb\x07\x00\x00|\xdc\x07\x00\x00)'
+        ),
+        None,
+    ),
 ]
 
 # HTTP detection (for comparison) — separate from _PROTOCOL_SIGNATURES to avoid duplicate matching
@@ -208,7 +220,28 @@ def get_protocol_info(raw_data: bytes) -> dict:
 
         msg_len = struct.unpack('<I', raw_data[:4])[0]
         opcode = struct.unpack('<I', raw_data[20:24])[0]
-        valid_opcodes = {0, 1, 3, 4, 1000, 2001, 2002, 2004, 2005}
+        # OP_REPLY=1, OP_MSG=2013 (the modern default driver opcode, issue #597),
+        # OP_UPDATE=2001, OP_INSERT=2002, OP_QUERY=2004, OP_GET_MORE=2005,
+        # OP_DELETE=2006, OP_KILL_CURSORS=2007, OP_COMMAND=2010,
+        # OP_COMMAND_REPLY=2011, OP_COMPRESSED=2012. Legacy small opcodes (0..4)
+        # are fuzz/version probes; keep them detected.
+        valid_opcodes = {
+            0,
+            1,
+            3,
+            4,
+            1000,
+            2001,
+            2002,
+            2004,
+            2005,
+            2006,
+            2007,
+            2010,
+            2011,
+            2012,
+            2013,
+        }
         if msg_len > 16 and opcode in valid_opcodes:
             info['protocol'] = 'mongodb'
             return info

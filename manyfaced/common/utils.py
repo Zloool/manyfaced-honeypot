@@ -51,7 +51,9 @@ def receive_first_frame(the_socket, timeout=EXCHANGE_TIMEOUT):
         timeout: Max time to wait for the first byte.
 
     Returns:
-        The decoded frame (``str``) or ``b''`` / ``''`` if nothing arrived.
+        The raw frame as ``bytes`` (so binary protocols such as MongoDB OP_MSG
+        are preserved verbatim — issue #597) or ``b''`` if nothing arrived.
+        Callers that need text decode with ``latin-1`` (lossless) deliberately.
     """
     the_socket.settimeout(timeout)
     chunks: list[bytes] = []
@@ -71,8 +73,7 @@ def receive_first_frame(the_socket, timeout=EXCHANGE_TIMEOUT):
         pass
     finally:
         the_socket.settimeout(None)  # reset to blocking for the reply
-    raw = b''.join(chunks)
-    return raw.decode('utf-8', errors='replace')
+    return b''.join(chunks)
 
 
 def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
