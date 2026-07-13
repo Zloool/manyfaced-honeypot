@@ -51,6 +51,19 @@ def test_censys_reverse_dns():
     assert src == 'censys'
 
 
+def test_binaryedge_io_reverse_dns():
+    cls, src = classify(reverse_dns='scan-01.binaryedge.io')
+    assert cls == BENIGN
+    assert src == 'binaryedge'
+
+
+def test_binaryedge_ninja_reverse_dns():
+    # BinaryEdge scan hosts also present a *.ninja PTR form (issue #595).
+    cls, src = classify(reverse_dns='h1.x.nl.binaryedge.ninja')
+    assert cls == BENIGN
+    assert src == 'binaryedge'
+
+
 def test_googlebot_reverse_dns():
     cls, src = classify(reverse_dns='crawl-123.googlebot.com')
     assert cls == BENIGN
