@@ -150,13 +150,6 @@ class TestLockfile(unittest.TestCase):
 
 
 class TestRunGenerateConfig(unittest.TestCase):
-    def setUp(self):
-        self._vs_patch = patch('manyfaced.mfh.validate_secrets')
-        self._vs_patch.start()
-
-    def tearDown(self):
-        self._vs_patch.stop()
-
     """Test run() with --generate-config flag."""
 
     def test_generate_config_exits(self):
@@ -186,13 +179,6 @@ class TestRunGenerateConfig(unittest.TestCase):
 
 
 class TestRunAutoDetect(unittest.TestCase):
-    def setUp(self):
-        self._vs_patch = patch('manyfaced.mfh.validate_secrets')
-        self._vs_patch.start()
-
-    def tearDown(self):
-        self._vs_patch.stop()
-
     """Test run() with no CLI args (auto-detect both client and server)."""
 
     def test_run_auto_detect_starts_both(self):
@@ -226,13 +212,6 @@ class TestRunAutoDetect(unittest.TestCase):
 
 
 class TestRunExplicitArgs(unittest.TestCase):
-    def setUp(self):
-        self._vs_patch = patch('manyfaced.mfh.validate_secrets')
-        self._vs_patch.start()
-
-    def tearDown(self):
-        self._vs_patch.stop()
-
     """Test run() with explicit --client or --server args."""
 
     def test_run_only_client(self):
@@ -299,13 +278,6 @@ class TestRunExplicitArgs(unittest.TestCase):
 
 
 class TestRunPortModeFromConfig(unittest.TestCase):
-    def setUp(self):
-        self._vs_patch = patch('manyfaced.mfh.validate_secrets')
-        self._vs_patch.start()
-
-    def tearDown(self):
-        self._vs_patch.stop()
-
     """Test that auto-detect applies port_mode and top_ports from settings."""
 
     def test_run_applies_port_mode_from_settings(self):
@@ -348,13 +320,6 @@ class TestRunPortModeFromConfig(unittest.TestCase):
 
 
 class TestRunChildSupervision(unittest.TestCase):
-    def setUp(self):
-        self._vs_patch = patch('manyfaced.mfh.validate_secrets')
-        self._vs_patch.start()
-
-    def tearDown(self):
-        self._vs_patch.stop()
-
     """Test the supervision loop: backoff + crash-loop guard (#180)."""
 
     def _run_with_dead_child(
