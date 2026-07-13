@@ -62,6 +62,10 @@ KUBERNETES_HTTP = 1028
 NGINX_PROBE_HTTP = 1029
 IOT_HTTP = 1030
 MCP_HTTP = 1031
+# Issue #555: the two MCP transport routes (/mcp and /sse) used to share
+# MCP_HTTP, so they were indistinguishable in the capture DB. Give the SSE
+# transport its own detected-id so /mcp vs /sse are classifiable apart.
+MCP_SSE_HTTP = 1036
 DOCKER_HTTP = 1032
 DBADMIN_HTTP = 1033
 # Env / config disclosure face (issue #272) — scaffold omitted this constant;

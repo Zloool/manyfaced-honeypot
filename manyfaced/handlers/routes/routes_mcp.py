@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from manyfaced.handlers.router import PathExact, Route
 
-from manyfaced.common.status import MCP_HTTP
+from manyfaced.common.status import MCP_HTTP, MCP_SSE_HTTP
 
 
 def _mcp() -> type:
@@ -16,5 +16,5 @@ def _mcp() -> type:
 ROUTES: list[Route] = [
     # ---- MCP (issue #283) ----
     Route(PathExact('/mcp'), _mcp(), MCP_HTTP, 'mcp_0'),
-    Route(PathExact('/sse'), _mcp(), MCP_HTTP, 'mcp_1'),
+    Route(PathExact('/sse'), _mcp(), MCP_SSE_HTTP, 'mcp_1'),
 ]

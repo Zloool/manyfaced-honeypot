@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
-from manyfaced.common.status import MCP_HTTP
+from manyfaced.common.status import MCP_HTTP, MCP_SSE_HTTP
 
 # Supported MCP protocol version (2025-03-26 is the current Streamable HTTP rev).
 MCP_PROTOCOL_VERSION = '2025-03-26'
@@ -73,12 +73,15 @@ class MCPHandler(HTTPHandlerBase):
             body = f': ping\n\nevent: endpoint\ndata: /mcp?sessionId={session_id}\n\n'
             return (
                 self._build_http_response(body, 200, 'OK', 'text/event-stream'),
-                self.DETECTED_ID,
+                MCP_SSE_HTTP,
             )
 
         # /mcp -> JSON-RPC. POST carries the method call; GET just hints the
-        # endpoint so probing clients see a protocol-shaped reply.
-        if decoded == '/mcp' or decoded.startswith('/mcp?'):
+        # endpoint so probing clients see a protocol-shaped reply. `decoded`
+        # is already `path.split('?', 1)[0].lower()` (above), so the query
+        # string is gone and the old `decoded.startswith('/mcp?')` branch was
+        # dead (issue #555) — a bare `/mcp` match covers both verbs.
+        if decoded == '/mcp':
             if method == 'POST':
                 return self._handle_jsonrpc(raw_request), self.DETECTED_ID
             # GET /mcp : return a JSON-RPC error hint.
