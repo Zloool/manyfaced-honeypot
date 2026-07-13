@@ -98,14 +98,22 @@ def _generate_initial_response() -> bytes:
     Returns:
         TPKT header + X.224 Connection-Confirm as bytes.
     """
-    # X.224 Connection-Confirm (CR_TPDU type 0xE0)
+    # X.224 Connection-Confirm (CC_TPDU), per ITU-T X.224 / ISO 8073.
+    # Header octets (LI counts the octets that follow it):
+    #   octet 0 : Length Indicator (LI) = 6 (code + dst-ref + src-ref + options)
+    #   octet 1 : TPDU code 0xD0 (high nibble 0xD = CC), low nibble = credit (0)
+    #   octet 2-3 : Destination reference
+    #   octet 4-5 : Source reference (this end)
+    #   octet 6 : variable-part / class options (0x00 = none)
+    # The previous code inverted the header (LI slot held 0xE0 and 0xD0 sat in
+    # the source-reference slot), so a real client misread LI and waited for
+    # phantom bytes. See issue #594.
     x224 = (
-        b'\xe0'  # CR_TPDU
-        b'\x00\x00'  # Length indicator
-        b'\xd0'  # Class + flags
-        b'\x00\x00'  # Src reference
-        b'\x00\x00'  # Dest reference
-        b'\x00'  # Class options
+        b'\x06'  # LI = 6 trailing octets
+        b'\xd0'  # CC_TPDU code (0xD0)
+        b'\x00\x00'  # Destination reference
+        b'\x00\x00'  # Source reference (this end)
+        b'\x00'  # class options
     )
 
     # TPKT header: version=3, reserved=0, length = total payload bytes.
@@ -124,14 +132,16 @@ def _generate_connection_confirm() -> bytes:
     Returns:
         Full connection confirm sequence as bytes.
     """
-    # X.224 Connection-Confirm
+    # X.224 Connection-Confirm (CC_TPDU). Same 7-octet layout as
+    # _generate_initial_response; this variant simply uses a non-zero source
+    # reference (0x0001). The previous code inverted the header (LI slot held
+    # 0xE0 and 0xD0 sat in the source-reference slot) — see issue #594.
     x224 = (
-        b'\xe0'  # CR_TPDU
-        b'\x00\x0c'  # Length
-        b'\xd0'  # Class + flags
-        b'\x00\x00'  # Src reference
-        b'\x00\x01'  # Dest reference
-        b'\x00'  # Class options
+        b'\x06'  # LI = 6 trailing octets
+        b'\xd0'  # CC_TPDU code (0xD0)
+        b'\x00\x00'  # Destination reference
+        b'\x00\x01'  # Source reference (this end)
+        b'\x00'  # class options
     )
 
     # MCS Connect-Initial (simplified)
@@ -187,9 +197,13 @@ def _generate_nla_challenge() -> bytes:
         + nonce  # OCTET STRING with challenge
     )
 
-    # Wrap the TSRequest in a minimal X.224 PDU so a real client can reach it.
-    # The X.224 length indicator counts the remaining PDU bytes after it.
-    x224 = b'\xf0' + bytes([len(ts_request)]) + ts_request  # Data TPDU (DT)
+    # Wrap the TSRequest in a minimal X.224 Data TPDU (DT) so a real client can
+    # reach it. X.224 DT layout: octet 0 = Length Indicator (count of bytes after
+    # this octet, i.e. the DT header + user data, = len(ts_request) + 1 for the
+    # code octet), octet 1 = TPDU code 0xF0 (DT), then user data. The previous
+    # code placed 0xF0 in the LI slot and the length where the code belongs,
+    # inverting the header (issue #594).
+    x224 = bytes([1 + len(ts_request)]) + b'\xf0' + ts_request  # Data TPDU (DT)
 
     # TPKT length excludes the 4-byte TPKT header → len(x224).
     payload = x224
