@@ -123,6 +123,15 @@ ROUTES: list[Route] = (
     + list(_phpunit_routes)
     + list(_grafana_routes)
     + list(_env_disc_routes)
+    # Langflow owns its specific /api/v1/* endpoints (run/flows/validate/
+    # upload) and must be listed BEFORE the k8s /api/v1/ prefix below so its
+    # exact routes win over k8s for those paths (issue #592).
+    + list(_langflow_routes)
+    # Kubernetes core API (/api/v1/* and /apis/*) must win over the generic
+    # Next.js /api/ prefix (issue #592). Listed BEFORE _nextjs_routes so the
+    # dedicated kube-apiserver face is not reverse-shadowed (it used to sit
+    # after Next.js at the bottom of the table).
+    + list(_k8s_routes)
     + list(_nextjs_routes)
     # ---- Broad web-root framework / service faces ----
     + list(_wordpress_routes)
@@ -141,7 +150,6 @@ ROUTES: list[Route] = (
     + list(_mcp_routes)
     + list(_iot_routes)
     + list(_nginx_probe_routes)
-    + list(_k8s_routes)
     + list(_atlassian_routes)
     + list(_spring_routes)
     + list(_aws_creds_routes)
@@ -165,7 +173,6 @@ ROUTES: list[Route] = (
     # fingerprint-deflection + monster-page catch-all) so they coexist with the
     # existing framework handlers without shadowing them.
     + list(_joomla_routes)
-    + list(_langflow_routes)
     + list(_coldfusion_routes)
     + list(_fortinet_routes)
     + list(_citrix_routes)
