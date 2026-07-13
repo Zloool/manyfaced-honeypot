@@ -56,8 +56,9 @@ class TestPhpUnitHandler(unittest.TestCase):
         )
         response, detected = handler.generate_response(path, raw, '198.51.100.7')
 
-        # The eval-stdin response must surface the error payload.
-        self.assertIn(b'Error', response)
+        # The eval-stdin response returns the authentic md5('Hello PHPUnit')
+        # digest (issue #494), matching real PHPUnit eval behaviour.
+        self.assertIn(b'6a9f35012f4290369bcf45fd7ccf29cf', response)
         self.assertEqual(detected, PHPUNIT_HTTP)
         # The probe request must have been recorded (captured), and it must
         # be flagged as the CVE-2017-9841 RCE attack vector.
