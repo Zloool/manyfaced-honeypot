@@ -755,3 +755,125 @@ def test_real_http_request_still_http_on_ssh():
     assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
         f'HTTP on 22 should remain HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #600: privileged-port redirect targets (53/135/139/445/993/995) must
+# each resolve to a non-HTTP FaceSpec and be dispatched to the correct face
+# (never the generic HTTP handler). These ports are bound as high ports via
+# PRIVILEGED_PORT_REDIRECTS and mapped back to their external port by get_face.
+# ---------------------------------------------------------------------------
+
+
+def test_600_privileged_redirect_faces_resolve_non_http():
+    # Each external privileged port must resolve to a FaceSpec and NOT be an
+    # HTTP port — otherwise the connection is served a generic admin panel.
+    for ext_port, bound_port in [
+        (53, 10053),
+        (135, 10135),
+        (139, 10139),
+        (445, 10445),
+        (993, 10993),
+        (995, 10995),
+    ]:
+        spec = get_face(bound_port)
+        assert spec is not None, (
+            f'issue #600: port {ext_port} (bound {bound_port}) resolves to no '
+            f'FaceSpec — would fall through to HTTP'
+        )
+        assert not is_http_port(bound_port), (
+            f'issue #600: port {ext_port} (bound {bound_port}) classified as HTTP'
+        )
+        # get_face keyed by the external port must also resolve (direct hit).
+        assert get_face(ext_port) is not None, (
+            f'issue #600: external port {ext_port} resolves to no FaceSpec'
+        )
+        assert not is_http_port(ext_port), (
+            f'issue #600: external port {ext_port} classified as HTTP'
+        )
+
+
+def test_600_privileged_faces_registered_in_registry():
+    names = {spec.name for spec in FACE_REGISTRY.values()}
+    for expected in {'dns', 'msrpc', 'netbios', 'smb', 'imaps', 'pop3s'}:
+        assert expected in names, f'issue #600: missing face in registry: {expected}'
+
+
+def test_600_dns_reply_reaches_client():
+    # DNS-over-TCP query -> protocol-shaped response, never HTTP.
+    import struct
+
+    # Minimal DNS query: txn 0x1234, flags 0x0100 (RD), 1 question (example.com A).
+    question = (
+        b'\x05example\x03com\x00'
+        + struct.pack('>H', 1)  # type A
+        + struct.pack('>H', 1)  # class IN
+    )
+    body = (
+        b'\x12\x34'
+        + struct.pack('>H', 0x0100)
+        + struct.pack('>H', 1)
+        + b'\x00\x00\x00\x00'
+        + question
+    )
+    query = struct.pack('>H', len(body)) + body
+    got = _dispatch(lambda: get_face(10053), query, 10053)
+    assert got, f'issue #600: DNS face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: DNS 53 served HTTP: {got!r}'
+    # Reply echoes the transaction id and sets QR=1 (response).
+    assert got[2:4] == b'\x12\x34', f'issue #600: DNS txn id not echoed: {got!r}'
+    # Flags high byte 0x81 = QR=1.
+    assert got[4] & 0x80, f'issue #600: DNS reply not a response (QR=0): {got!r}'
+
+
+def test_600_netbios_reply_reaches_client():
+    # NetBIOS Session Request (type 0x81) -> Positive Session Response (0x82).
+    got = _dispatch(lambda: get_face(10139), b'\x81\x00\x00\x00', 10139)
+    assert got, f'issue #600: NetBIOS face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: NetBIOS 139 served HTTP: {got!r}'
+    assert got[:1] == b'\x82', f'issue #600: NetBIOS not a positive session resp: {got!r}'
+
+
+def test_600_smb_reply_reaches_client():
+    # SMB Negotiate request (NBT-wrapped) -> SMB1 Negotiate response (\xffSMB).
+    smb_neg = (
+        b'\x00\x00\x00\x2f'  # NBT session header, length 0x2f
+        + b'\xffSMB'
+        + b'\x72'  # Negotiate command
+        + b'\x00' * 59
+    )
+    got = _dispatch(lambda: get_face(10445), smb_neg, 10445)
+    assert got, f'issue #600: SMB face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: SMB 445 served HTTP: {got!r}'
+    assert b'\xffSMB' in got, f'issue #600: SMB reply missing SMB signature: {got!r}'
+
+
+def test_600_msrpc_reply_reaches_client():
+    # MSRPC BIND PDU -> bind_ack (PDU type 0x0c).
+    bind = (
+        b'\x05\x00\x0b\x03'
+        + b'\x10\x00\x00'
+        + b'\x00\x18\x00\x00'
+        + b'\x00\x00\x00\x00'
+        + b'\x01\x00\x00\x00'
+    )
+    got = _dispatch(lambda: get_face(10135), bind, 10135)
+    assert got, f'issue #600: MSRPC face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: MSRPC 135 served HTTP: {got!r}'
+    assert got[2] == 0x0C, f'issue #600: MSRPC not a bind_ack: {got!r}'
+
+
+def test_600_imaps_greeting_reaches_client():
+    # IMAPS (993) server-first: a TLS ServerHello (record 0x16) must arrive.
+    got = _dispatch(lambda: get_face(10993), None, 10993)
+    assert got, f'issue #600: IMAPS face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: IMAPS 993 served HTTP: {got!r}'
+    assert got[:1] == b'\x16', f'issue #600: IMAPS greeting not a TLS record: {got!r}'
+
+
+def test_600_pop3s_greeting_reaches_client():
+    # POP3S (995) server-first: a TLS ServerHello must arrive.
+    got = _dispatch(lambda: get_face(10995), None, 10995)
+    assert got, f'issue #600: POP3S face sent nothing: {got!r}'
+    assert not got.startswith(b'HTTP'), f'issue #600: POP3S 995 served HTTP: {got!r}'
+    assert got[:1] == b'\x16', f'issue #600: POP3S greeting not a TLS record: {got!r}'
