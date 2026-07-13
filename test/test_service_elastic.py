@@ -42,6 +42,23 @@ class TestElasticHandler(unittest.TestCase):
         )
         self.assertIn(b'Error', response)
 
+    def test_response_uses_real_crlf(self):
+        """Regression for #593: headers must use real CRLF, not literal backslash-r-n."""
+        profile = MagicMock()
+        self.handler.bot_profiles = {'1.2.3.4': profile}
+        response, _ = self.handler.generate_response(
+            '/_cluster/health',
+            'GET /_cluster/health HTTP/1.1\r\nHost: x\r\n\r\n',
+            '1.2.3.4',
+        )
+        # Real CRLF present, literal backslash-escape sequence absent.
+        self.assertIn(b'\r\n', response)
+        self.assertNotIn(b'\\r\\n', response)
+        # Header block terminates with a blank line (CRLFCRLF).
+        self.assertIn(b'\r\n\r\n', response)
+        # Status line ends with real CRLF.
+        self.assertTrue(response.startswith(b'HTTP/1.1 200 OK\r\n'))
+
 
 if __name__ == '__main__':
     unittest.main()
