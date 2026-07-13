@@ -155,10 +155,15 @@ class TestRouterDispatch(unittest.TestCase):
 
     def test_root_path_catchall(self):
         router = Router(ROUTES)
-        result = router.dispatch('/', self._make_request('/'), '1.2.3.4')
+        # A path with no matching route must fall through to the generic
+        # catch-all handler (GenericHandler) rather than an admin panel.
+        # Note: bare '/' is now claimed by the Elasticsearch root route
+        # (issue #461/#468), so we probe a genuinely unrouted path here.
+        result = router.dispatch(
+            '/no-such-catchall-path', self._make_request('/no-such-catchall-path'), '1.2.3.4'
+        )
         assert result is not None  # type narrowing for type checker
         body, _ = result
-        # Root path should hit the catch-all (GenericHandler) since no route matches bare '/'
         self.assertIn(b'Server Administration Panel', body)
 
     # ------------------------------------------------------------------

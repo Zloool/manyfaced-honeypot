@@ -97,10 +97,21 @@ def fake_git_head() -> str:
 
 
 def fake_security_txt() -> str:
-    """Fake security.txt."""
-    return r"""Contact: mailto:security@example.com
-Expires: 2025-12-31T23:59:59.000Z
-Encryption: https://example.com/.well-known/security.txt.asc
-Preferred-Languages: en, de
-Policy: https://example.com/security-policy
-Hiring: https://example.com/careers"""
+    """Fake security.txt with a future-dated Expires.
+
+    The Expires value is computed dynamically (one year out) so the contact
+    file never reads as stale/abandoned to scanners (issue #479). A real
+    security.txt with an already-past Expires is itself a fingerprint of an
+    unmaintained deployment.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    expires = (datetime.now(timezone.utc) + timedelta(days=365)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    return (
+        f'Contact: mailto:security@example.com\n'
+        f'Expires: {expires}\n'
+        f'Encryption: https://example.com/.well-known/security.txt.asc\n'
+        f'Preferred-Languages: en, de\n'
+        f'Policy: https://example.com/security-policy\n'
+        f'Hiring: https://example.com/careers'
+    )

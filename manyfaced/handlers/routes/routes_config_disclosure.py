@@ -632,7 +632,7 @@ ROUTES: list[Route] = [
     Route(
         PathExact('/.well-known/security.txt'),
         _config_disclosure(),
-        1,
+        CONFIG_DISCLOSURE_HTTP,
         'config_well_known_security_txt',
     ),
 ]

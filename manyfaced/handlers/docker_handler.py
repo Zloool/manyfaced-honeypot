@@ -101,20 +101,37 @@ class DockerHandler(HTTPHandlerBase):
                 body, 404, 'Not Found', 'application/json'
             ), self.DETECTED_ID
 
-        # Daemon info endpoint.
+        # Daemon info endpoint. The bare /version, /info and /containers/json
+        # paths are also hit by generic uptime probes / other services' health
+        # checks; only answer with Docker daemon JSON when the request looks
+        # Docker-shaped (real docker CLI/dockerd send a `Docker/*` User-Agent or
+        # the distribution API header). Otherwise return a neutral 404 so we
+        # don't steal non-Docker traffic (issue #522).
         if decoded in ('/info', '/_info'):
-            body = self._daemon_info()
-            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
+            if self._is_docker_shaped(headers):
+                body = self._daemon_info()
+                return self._build_http_response(
+                    body, 200, 'OK', 'application/json'
+                ), self.DETECTED_ID
+            return self._not_docker(), self.DETECTED_ID
 
         # Daemon version endpoint.
         if decoded in ('/version', '/_version'):
-            body = self._daemon_version()
-            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
+            if self._is_docker_shaped(headers):
+                body = self._daemon_version()
+                return self._build_http_response(
+                    body, 200, 'OK', 'application/json'
+                ), self.DETECTED_ID
+            return self._not_docker(), self.DETECTED_ID
 
         # Daemon container listing endpoint.
         if decoded in ('/containers/json', '/containers'):
-            body = self._daemon_containers()
-            return self._build_http_response(body, 200, 'OK', 'application/json'), self.DETECTED_ID
+            if self._is_docker_shaped(headers):
+                body = self._daemon_containers()
+                return self._build_http_response(
+                    body, 200, 'OK', 'application/json'
+                ), self.DETECTED_ID
+            return self._not_docker(), self.DETECTED_ID
 
         # Path-traversal probe for a leaked .env (e.g. /docker/.env, /docker/%2eenv).
         if path_lower.endswith('.env'):
@@ -276,6 +293,35 @@ class DockerHandler(HTTPHandlerBase):
             'MAIL_HOST=smtp\n'
             'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n'
             'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n'
+        )
+
+    def _is_docker_shaped(self, headers: dict[str, str] | None) -> bool:
+        """Return True when the request looks like a real Docker client.
+
+        Real ``docker`` CLI / ``dockerd`` HTTP API clients identify themselves
+        with a ``Docker/*`` User-Agent and/or send the registry distribution
+        API header (issue #522). Generic uptime probes (Kubernetes, ES health
+        checks, fuzzers) do not, so we should not answer them with Docker JSON.
+        """
+        if not headers:
+            return False
+        ua = (headers.get('User-Agent') or headers.get('user-agent') or '').lower()
+        if ua.startswith('docker/'):
+            return True
+        lowered = {k.lower(): headers[k] for k in headers}
+        if 'docker-distribution-api-version' in lowered:
+            return True
+        return False
+
+    def _not_docker(self) -> bytes:
+        """Neutral 404 for non-Docker-shaped probes on Docker daemon paths.
+
+        Keeps the Docker Server header (this face is still the owner of the
+        path) but returns no Docker-specific payload, so a non-Docker scanner
+        that happens to hit /version does not get a Docker daemon fingerprint.
+        """
+        return self._build_http_response(
+            json.dumps({'message': 'Not found'}), 404, 'Not Found', 'application/json'
         )
 
     def _login_failed_response(self) -> bytes:

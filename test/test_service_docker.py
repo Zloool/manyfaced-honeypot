@@ -76,6 +76,7 @@ class TestDockerHandler(unittest.TestCase):
             '/version',
             'GET /version HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
+            headers={'User-Agent': 'Docker/24.0'},
         )
         self.assertIn(b'ApiVersion', response)
         self.assertIn(b'26.0.0', response)
@@ -86,6 +87,7 @@ class TestDockerHandler(unittest.TestCase):
             '/info',
             'GET /info HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
+            headers={'User-Agent': 'Docker/24.0'},
         )
         self.assertIn(b'Containers', response)
         self.assertIn(b'ServerVersion', response)
@@ -96,6 +98,7 @@ class TestDockerHandler(unittest.TestCase):
             '/containers/json',
             'GET /containers/json HTTP/1.1\r\nHost: x\r\n\r\n',
             '1.2.3.4',
+            headers={'User-Agent': 'Docker/24.0'},
         )
         # Empty container list -> JSON array.
         self.assertIn(b'[]', response)

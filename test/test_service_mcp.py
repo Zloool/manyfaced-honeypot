@@ -37,4 +37,7 @@ class TestMCPHandler(unittest.TestCase):
             'user=admin&pass=secret',
             '1.2.3.4',
         )
-        self.assertIn(b'Error', response)
+        # /login is not an MCP endpoint; the handler returns a JSON-RPC
+        # 'Method not found' error (no login/credential flow in MCP).
+        self.assertIn(b'"error"', response)
+        self.assertIn(b'Method not found', response)

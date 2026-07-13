@@ -206,6 +206,12 @@ class HTTPHandler:
             response = generate_rdp_response(raw_data, bot_ip)
         elif protocol == 'vnc':
             response = generate_vnc_response(raw_data, bot_ip)
+        elif protocol in ('ftp', 'pop3', 'imap'):
+            # These protocol probes must get a protocol-shaped greeting, NOT the
+            # generic Apache HTTP banner. A real FTP/POP3/IMAP client receiving
+            # ``HTTP/1.1 200 OK`` immediately errors/hangs — poor fidelity and a
+            # lost credential-capture opportunity (issue #491).
+            response = self._non_http_greeting(protocol)
         else:
             # Fallback to legacy handler for other protocols
             response = non_http_response(protocol)
@@ -231,6 +237,20 @@ class HTTPHandler:
         # NOTE: Do NOT call _enrich_and_send() here — credential capture happens
         # after this returns. The caller must send the report AFTER updating bs.login.
         return response, bs
+
+    def _non_http_greeting(self, protocol: str) -> bytes:
+        """Return a protocol-shaped greeting for FTP/POP3/IMAP probes (#491).
+
+        These clients must receive a protocol-appropriate banner, not the
+        generic Apache HTTP response — otherwise they error/hang and the
+        connection (and any credential-capture opportunity) is lost.
+        """
+        greetings = {
+            'ftp': '220 (vsFTPd 3.0.3)'.encode() + bytes([13, 10]),
+            'pop3': '+OK POP3 server ready'.encode() + bytes([13, 10]),
+            'imap': '* OK IMAP4rev1 server ready'.encode() + bytes([13, 10]),
+        }
+        return greetings.get(protocol, b'')
 
     def process_request(self, data):
         """Process an incoming HTTP request."""
@@ -380,7 +400,7 @@ class HTTPHandler:
         return 'GET'
 
 
-def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int):
+def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int, reply: bytes = b''):
     """Build a ``BearStorage`` for a non-HTTP face probe (issue #377).
 
     Shared by the new port-keyed non-HTTP dispatch so every face records a
@@ -392,6 +412,8 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int):
         spec: The resolved ``FaceSpec`` from ``manyfaced.common.faces``.
         raw_bytes: The client's frame (may be empty for greeting-only probes).
         listen_port: The bound port the client connected to.
+        reply: The protocol reply actually sent to the client, so it is
+            persisted into the capture instead of being dropped (issue #502).
     """
     from manyfaced.common.faces import FaceSpec  # noqa: PLC0415
 
@@ -430,6 +452,30 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int):
     )
     if listen_port:
         bs.listen_port = listen_port
+    # Persist the protocol reply so analysts can see what the honeypot actually
+    # said to the attacker (issue #502). Recorded as a single dialogue entry on
+    # the bot_profile_data so it rides the report exactly like the HTTP path.
+    if reply:
+        bs.bot_profile_data = {
+            spec.name: {
+                'dialogue': [
+                    {
+                        'sequence': 1,
+                        'request': {
+                            'path': '/',
+                            'method': spec.name.upper(),
+                            'raw': raw_bytes.decode('latin-1', errors='replace')[:5000],
+                            'headers': {},
+                        },
+                        'response': {
+                            'raw': reply.decode('latin-1', errors='replace')[:5000],
+                            'size': len(reply),
+                            'detected': spec.detected_id,
+                        },
+                    }
+                ]
+            }
+        }
     return bs
 
 

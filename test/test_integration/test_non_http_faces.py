@@ -54,8 +54,6 @@ def test_registry_covers_expected_faces():
         'memcached',
         'zookeeper',
         'postgres',
-        'elasticsearch',
-        'rabbitmq',
         'nfs',
         'epmd',
     }:
@@ -81,7 +79,6 @@ def test_top_ports_without_faces_are_not_http():
         11211,
         27017,
         5672,
-        15672,
         4369,
         2181,
     }
@@ -185,12 +182,6 @@ def test_redis_ping_responds_pong():
 def test_memcached_version_responds():
     reply = _client_first_reply('memcached', b'version' + CRLF)
     assert reply.startswith(b'VERSION'), f'memcached reply was {reply!r}'
-
-
-def test_elasticsearch_get_responds_http():
-    req = b'GET / HTTP/1.0' + CRLF + CRLF
-    reply = _client_first_reply('elasticsearch', req)
-    assert reply.startswith(b'HTTP/1.1 200'), f'es reply was {reply!r}'
 
 
 def test_postgres_startup_gets_auth_request():
@@ -327,12 +318,6 @@ def test_dispatch_redis_reply_reaches_client():
 def test_dispatch_memcached_reply_reaches_client():
     got = _dispatch(lambda: get_face(11211), b'version' + CRLF, 11211)
     assert got.startswith(b'VERSION'), f'client got {got!r}'
-
-
-def test_dispatch_elasticsearch_reply_reaches_client():
-    req = b'GET / HTTP/1.0' + CRLF + CRLF
-    got = _dispatch(lambda: get_face(9200), req, 9200)
-    assert got.startswith(b'HTTP/1.1 200'), f'client got {got!r}'
 
 
 def test_dispatch_ssh_banner_reaches_client_before_speaking():

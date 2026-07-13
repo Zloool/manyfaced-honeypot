@@ -270,8 +270,92 @@ def _memcached_respond(raw: bytes, bot_ip: str) -> bytes:
     return b'END\r\n'
 
 
+# ZooKeeper four-letter-word (4LW) admin commands are sent as a bare 4-byte
+# ASCII line over TCP and answered with a readable text reply (issue #497/#490).
+_ZK_4LW = frozenset(
+    {
+        'ruok',
+        'stat',
+        'srvr',
+        'dump',
+        'mntr',
+        'conf',
+        'envi',
+        'cons',
+        'isro',
+        'wchs',
+        'wchc',
+        'wchp',
+        'crst',
+        'gtmk',
+        'stmk',
+        'dirs',
+        'srst',
+    }
+)
+
+
+def _zk_stat_block() -> bytes:
+    return (
+        b'Zookeeper version: 3.8.4-9316c2a7a97e1666d8f4593f34dd6fc36ecc436c, '
+        b'built on 2024-02-12 22:16 UTC\r\n'
+        b'Clients:\r\n\r\n'
+        b'Latency min/avg/max: 0/0.0/0\r\n'
+        b'Received: 1\r\n'
+        b'Sent: 0\r\n'
+        b'Connections: 1\r\n'
+        b'Outstanding: 0\r\n'
+        b'Zxid: 0x0\r\n'
+        b'Mode: standalone\r\n'
+        b'Node count: 5\r\n'
+    )
+
+
 def _zookeeper_respond(raw: bytes, bot_ip: str) -> bytes:
-    # Respond to a connect request (opcode 0) with a connect response.
+    """Reply to a ZooKeeper probe with a protocol-shaped answer (issue #497).
+
+    ZooKeeper clients speak either the four-letter-word (4LW) admin commands
+    over a bare TCP line (answered with readable text -- ``ruok`` -> ``imok``),
+    or the binary wire protocol (a 4-byte length-prefixed frame). We answer the
+    4LW commands with the correct text reply and the binary connect request with
+    a minimal connect response.
+    """
+    # 4LW commands: the first 4 bytes are a lowercase ASCII command word.
+    if len(raw) >= 4:
+        head = raw[:4]
+        try:
+            cmd = head.decode('ascii').strip().lower()
+        except UnicodeDecodeError:
+            cmd = ''
+        if cmd in _ZK_4LW:
+            if cmd == 'ruok':
+                return b'imok'
+            if cmd in ('stat', 'srvr'):
+                return _zk_stat_block()
+            if cmd == 'dump':
+                return b'SessionTracker dump:\r\nSession Sets (0):\r\nephemeral nodes dump:\r\n'
+            if cmd == 'isro':
+                return b'rw'
+            if cmd == 'conf':
+                return (
+                    b'clientPort=2181\r\ndataDir=/data/version-2\r\n'
+                    b'tickTime=2000\r\nmaxClientCnxns=60\r\n'
+                    b'minSessionTimeout=4000\r\nmaxSessionTimeout=40000\r\n'
+                    b'serverId=0\r\n'
+                )
+            if cmd == 'envi':
+                return (
+                    b'Environment:\r\nzookeeper.version=3.8.4\r\n'
+                    b'host.name=zookeeper\r\njava.version=17.0.10\r\n'
+                )
+            if cmd == 'mntr':
+                return (
+                    b'zk_version\t3.8.4\r\nzk_server_state\tstandalone\r\n'
+                    b'zk_num_alive_connections\t1\r\nzk_znode_count\t5\r\n'
+                )
+            # Other recognised 4LW words: mirror real ZK's terse behaviour.
+            return b'imok'
+    # Binary wire protocol: reply to a connect request with a connect response.
     if len(raw) >= 4:
         return b'\x00\x00\x00\x00' + raw[4:8] + b'\x00\x00\x00\x00'
     return b'\x00\x00\x00\x00'
@@ -293,20 +377,6 @@ def _postgres_respond(raw: bytes, bot_ip: str) -> bytes:
             return b'N'
     salt = os.urandom(4)
     return b'R' + (12).to_bytes(4, 'big') + (5).to_bytes(4, 'big') + salt
-
-
-def _elasticsearch_respond(raw: bytes, bot_ip: str) -> bytes:
-    body = (
-        b'{"name":"manyfaced-node","cluster_name":"manyfaced",'
-        b'"version":{"number":"7.17.0","build_flavor":"default"},'
-        b'"tagline":"You Know, for Search"}'
-    )
-    return (
-        b'HTTP/1.1 200 OK\r\n'
-        b'Content-Type: application/json\r\n'
-        b'Content-Length: ' + str(len(body)).encode() + b'\r\n'
-        b'Connection: close\r\n\r\n' + body
-    )
 
 
 def _oracle_respond(raw: bytes, bot_ip: str) -> bytes:
@@ -461,8 +531,12 @@ _FACE_DEFS: dict[int, tuple] = {
     11211: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _memcached_respond, False, None),
     2181: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _zookeeper_respond, False, None),
     5432: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _postgres_respond, False, None),
-    9200: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
-    15672: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _elasticsearch_respond, False, None),
+    # Elasticsearch (9200) and RabbitMQ management (15672) are real HTTP
+    # services, NOT binary protocols. Routing them through the non-HTTP face
+    # registry threw away the rich HTTP emulation already in the repo
+    # (ElasticHandler / RabbitMQHandler) and produced corrupt captures
+    # (issue #461/#468). They are served by the HTTP router instead — see
+    # is_http_port() below and the Elasticsearch/RabbitMQ route tables.
     # NFS / rpcbind (issue #454/#457): client-first RPC reply.
     2049: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _nfs_respond, False, None),
     # EPMD (Erlang Port Mapper, rabbitmq companion; issue #451/#458): client-first.
@@ -569,7 +643,23 @@ def is_http_port(listen_port: int | None) -> bool:
     if get_face(listen_port) is not None:
         return False
     ext = _ports.external_port(listen_port)
-    return int(ext) in (80, 443, 8080, 8443, 5000, 7001, 7002, 8888, 9090)
+    # Elasticsearch (9200) and RabbitMQ management (15672) are real HTTP
+    # services (issue #461/#468) — treat them as HTTP faces so the rich
+    # HTTP emulation (ElasticHandler / RabbitMQHandler) is used instead of
+    # the generic non-HTTP path.
+    return int(ext) in (
+        80,
+        443,
+        8080,
+        8443,
+        5000,
+        7001,
+        7002,
+        8888,
+        9090,
+        9200,
+        15672,
+    )
 
 
 def _is_non_http_overlap() -> list[int]:

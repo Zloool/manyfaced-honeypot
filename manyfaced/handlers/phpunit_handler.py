@@ -138,18 +138,21 @@ OK (1 test, 1 assertion)
 </html>"""
 
     def _eval_stdin_response(self) -> str:
-        """Mimic the PHP error emitted when eval-stdin.php executes untrusted
-        POST body input (the CVE-2017-9841 RCE vector).  Contains ``Error``
-        so probes can be trivially fingerprinted/captured."""
-        return (
-            '<br>\n'
-            '<b>Fatal error</b>:  Uncaught Error: Call to undefined function '
-            "in eval()'d code:1<br>\n"
-            'Stack trace:<br>\n'
-            '#0 /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php(1): eval()<br>\n'
-            '#1 {main}<br>\n'
-            "  thrown in <b>eval()'d code</b> on line 1<br>\n"
-        )
+        """Mimic the PHP result of ``eval(file_get_contents('php://input'))``.
+
+        CVE-2017-9841's ``eval-stdin.php`` literally ``eval()``s the POST body.
+        The classic probe body is ``<?php echo(md5("Hello PHPUnit")); ?>`` —
+        valid PHP that returns the md5 hash, NOT a fatal error. Returning a
+        canned "Fatal error: Call to undefined function" was a honeypot tell
+        (the snippet is valid and would never fatal) and hard-coded a path that
+        didn't match the requested file (issue #494). We now return the authentic
+        eval result so the probe is captured without a fingerprintable tell.
+        """
+        import hashlib
+
+        # Mimics PHPUnit's eval output for the classic probe payload; not a
+        # security use of MD5, so this is a deliberate false-positive skip.
+        return hashlib.md5(b'Hello PHPUnit').hexdigest()  # nosec B324
 
     def _login_failed_response(self) -> bytes:
         """PHPUnit has no login flow; kept for API symmetry with base class."""
