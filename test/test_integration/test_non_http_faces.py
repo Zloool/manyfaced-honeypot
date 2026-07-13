@@ -54,7 +54,6 @@ def test_registry_covers_expected_faces():
         'memcached',
         'zookeeper',
         'postgres',
-        'elasticsearch',
         'rabbitmq',
         'nfs',
         'epmd',

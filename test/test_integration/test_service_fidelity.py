@@ -117,7 +117,7 @@ class TestConfigDisclosure(unittest.TestCase):
     def test_security_txt_expires_is_future(self):
         now = datetime.now(timezone.utc)
         txt = fake_security_txt()
-        expires_line = [l for l in txt.split('\n') if l.startswith('Expires:')][0]
+        expires_line = [line for line in txt.split('\n') if line.startswith('Expires:')][0]
         expires = datetime.strptime(
             expires_line.split(':', 1)[1].strip(), '%Y-%m-%dT%H:%M:%S.000Z'
         ).replace(tzinfo=timezone.utc)
