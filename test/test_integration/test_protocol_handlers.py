@@ -158,6 +158,28 @@ class TestTelnetHandler(unittest.TestCase):
         prompt = generate_password_prompt()
         self.assertEqual(prompt, b'\r\nPassword: ')
 
+    def test_telnet_greeting_uses_do_echo(self):
+        """Greeting must start with IAC DO ECHO, not IAC WILL ECHO (#467)."""
+        greeting = generate_telnet_greeting('127.0.0.1')
+        self.assertIn(b'\xff\xfd\x03', greeting)  # IAC DO ECHO
+        self.assertNotIn(b'\xff\xfb\x03', greeting)  # must NOT be IAC WILL ECHO
+
+    def test_telnet_negotiation_accepts_echo(self):
+        """Client DO ECHO -> server answers WILL ECHO; client WILL ECHO -> DO ECHO (#467)."""
+        from manyfaced.handlers.telnet_handler import (
+            DO,
+            IAC,
+            WILL,
+            _handle_telnet_negotiation,
+        )
+
+        # Client asks server to DO ECHO (rfc854 correct client behaviour).
+        resp = _handle_telnet_negotiation(IAC + DO + b'\x03', '127.0.0.1')
+        self.assertEqual(resp, IAC + WILL + b'\x03')
+        # Client offers WILL ECHO (server asks it to echo).
+        resp2 = _handle_telnet_negotiation(IAC + WILL + b'\x03', '127.0.0.1')
+        self.assertEqual(resp2, IAC + DO + b'\x03')
+
 
 class TestRDPHandler(unittest.TestCase):
     """Test RDP protocol handler."""
@@ -184,6 +206,44 @@ class TestRDPHandler(unittest.TestCase):
         """Greeting should return TPKT/X.224 response."""
         greeting = generate_rdp_greeting('10.0.0.3')
         self.assertGreater(len(greeting), 0)
+
+    def test_rdp_tpkt_length_matches_actual_bytes(self):
+        """Every RDP generator's TPKT length field must equal the actual bytes.
+
+        Regression for #470: the TPKT length was hard-coded (31 / 47) and did
+        not match the on-the-wire byte count, so real RDP clients desync.
+        """
+        for name, gen in (
+            ('initial', generate_rdp_greeting('127.0.0.1')),
+            (
+                'nla',
+                generate_rdp_response(
+                    b'\x03\x00\x00\x1f\x0e\xe0' + b'<TSRequest>nla</TSRequest>', '127.0.0.1'
+                ),
+            ),
+            (
+                'connection_confirm',
+                generate_rdp_response(b'\x03\x00\x00\x1f' + b'\x00' * 17, '127.0.0.1'),
+            ),
+        ):
+            frame = gen
+            # TPKT version + reserved = 2 bytes; length is the next 2 bytes (big-endian),
+            # counting the bytes AFTER the 4-byte TPKT header (x224 + payload).
+            self.assertEqual(frame[:2], b'\x03\x00', f'{name}: not a TPKT header')
+            tpkt_len = struct.unpack('!H', frame[2:4])[0]
+            self.assertEqual(
+                tpkt_len,
+                len(frame) - 4,
+                f'{name}: TPKT length {tpkt_len} != actual {len(frame) - 4}',
+            )
+
+    def test_rdp_nla_challenge_has_tpkt_framing(self):
+        """NLA challenge must be wrapped in a TPKT + X.224 envelope (#470)."""
+        raw = b'\x03\x00\x00\x1f' + b'<TSRequest>nla-token</TSRequest>'
+        resp = generate_rdp_response(raw, '127.0.0.1')
+        # Must start with a TPKT header, not bare ASN.1 SEQUENCE (0x30).
+        self.assertEqual(resp[:2], b'\x03\x00')
+        self.assertNotEqual(resp[4:5], b'\x30')
 
 
 class TestVNCHandler(unittest.TestCase):
@@ -212,6 +272,32 @@ class TestVNCHandler(unittest.TestCase):
         """Greeting should return version string."""
         greeting = generate_vnc_greeting('10.0.0.3')
         self.assertIn(b'RFB', greeting)
+
+    def test_vnc_version_negotiation_is_consistent(self):
+        """Greeting and negotiation must agree on the same version (#463)."""
+        greeting = generate_vnc_greeting('127.0.0.1')
+        # Client sends 003.003 (the most common real probe); server must reply
+        # with its canonical version, and it must match the greeting exactly.
+        reply = generate_vnc_response(b'RFB 003.003\n', '127.0.0.1')
+        self.assertEqual(reply, greeting)
+        self.assertEqual(reply, b'RFB 003.008\n')
+
+    def test_vnc_security_selection_count_byte(self):
+        """Security-type reply must include the leading count byte (#463)."""
+        # Real client frame after version = count(1) + type(2 = VNC Auth).
+        resp = generate_vnc_response(b'\x01\x02', '127.0.0.1')
+        # First byte = count (1), second byte = chosen type (2), then 16-byte challenge.
+        self.assertEqual(resp[0:1], b'\x01')
+        self.assertEqual(resp[1:2], b'\x02')
+        self.assertEqual(len(resp), 1 + 1 + 16)
+
+    def test_vnc_security_selection_guard_matches_count(self):
+        """The security-type guard must fire on the count frame, not \x02/\x03 (#463)."""
+        # Client sends count=2 with two types (1=None, 2=VNC Auth).
+        resp = generate_vnc_response(b'\x02\x01\x02', '127.0.0.1')
+        # Must be a security-type list (count byte), NOT a second version string.
+        self.assertNotIn(b'RFB', resp)
+        self.assertEqual(resp[0:1], b'\x01')
 
 
 class TestProtocolHandlerIntegration(unittest.TestCase):

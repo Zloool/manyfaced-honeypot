@@ -398,8 +398,23 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int):
     assert isinstance(spec, FaceSpec)
     request_time = str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f'))
 
+    # Use the *wire* verb for request_command, not the face's nominal name.
+    # Non-HTTP ports (e.g. SMTP 25/10025) routinely receive HTTP probes
+    # (masscan/censys `GET /`, `POST /`) and other verbs; labelling every
+    # capture with spec.name (e.g. always 'SMTP') mis-classified 41 HTTP +
+    # 7 JSON/masscan rows. Parse the first whitespace-delimited token of the
+    # raw frame; fall back to the face name if it isn't a recognisable verb.
+    wire_command = spec.name.upper()
+    try:
+        first_line = raw_bytes.decode('latin-1', errors='replace').splitlines()[0]
+        token = first_line.split()[0].upper()
+        if token and token.isalpha():
+            wire_command = token
+    except Exception:
+        pass
+
     class _ParsedNonHTTP:
-        command = spec.name.upper()
+        command = wire_command
         path = '/'
         version = ''
         headers: dict[str, str] = {}

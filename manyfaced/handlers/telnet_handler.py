@@ -180,8 +180,14 @@ def _handle_telnet_negotiation(raw_data: bytes, bot_ip: str) -> bytes:
 
             # Bot sends DO or WILL — we respond with WONT or DONT (refuse)
             if command == DO:
-                response += IAC + WONT + option
-                logger.debug('Refused telnet option %s from %s', option.hex(), bot_ip)
+                # A client DO ECHO asks US (the server) to echo what the user
+                # types. The server MUST accept echo (so the login prompt works),
+                # so answer DO ECHO with WILL ECHO rather than WONT.
+                if option == OPT_ECHO:
+                    response += IAC + WILL + option
+                else:
+                    response += IAC + WONT + option
+                    logger.debug('Refused telnet option %s from %s', option.hex(), bot_ip)
             elif command == WILL:
                 # Echo and binary we accept, others refuse
                 if option in (OPT_ECHO, OPT_BINARY):
@@ -206,9 +212,12 @@ def _generate_login_prompt() -> bytes:
         Login prompt with IAC sequences as bytes.
     """
     banner = random.choice(TELNET_BANNERS)
-    # Send banner, then IAC WONT ECHO (server controls echo), then login prompt
+    # Send banner, then IAC DO ECHO (ask the *client* to echo what the user
+    # types - per RFC 854 echo is the client's responsibility), then login
+    # prompt. (Old code sent IAC WILL ECHO, a server->server option assertion
+    # that is protocol-impossible for echo and confused strict clients.)
     return (
-        b'\xff\xfb\x03'  # IAC WILL ECHO — server will send DO ECHO back
+        b'\xff\xfd\x03'  # IAC DO ECHO - server wants the client to echo
         b'\xff\xfb\x01'  # IAC WILL BINARY
         b'\xff\xfd\x18' + banner.encode('utf-8') + b'\r\nlogin: '  # IAC DO TTYPE
     )
