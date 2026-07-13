@@ -25,7 +25,7 @@ from typing import Any
 from manyfaced.db.storage import detected_id_name
 from manyfaced.web import dashboard_data as _data
 from manyfaced.web.dashboard_assets import CSS, JS
-from manyfaced.web.dashboard_data import port_service_name
+from manyfaced.web.dashboard_data import port_service_name, _PAGE_MAX
 
 _RANGES = (('1h', '1H'), ('24h', '24H'), ('7d', '7D'), ('30d', '30D'))
 
@@ -517,7 +517,12 @@ def render_log_pager(payload: dict) -> str:
     page = int(payload.get('page', 1))
     size = int(payload.get('log_page_size', 50))
     total = int(payload.get('log_window_total', 0))
-    total_pages = max(1, (total + size - 1) // size)
+    # Issue #538: the server clamps the requested page to _PAGE_MAX before
+    # querying (see dashboard._clamp_page), so the pager must never advertise
+    # pages past that bound — otherwise clicking a deep page number hits a
+    # server-clamped OFFSET and silently shows the last allowed page. Clamp the
+    # advertised depth to match the server's clamp.
+    total_pages = max(1, min(_PAGE_MAX, (total + size - 1) // size))
     if total_pages <= 1:
         return ''
     pages = []

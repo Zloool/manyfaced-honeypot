@@ -17,6 +17,14 @@ from typing import Any
 from manyfaced.common import ports as _ports
 from manyfaced.common import status as _status
 
+# Issue #413: cap pager depth so a page=N request can't drive an unbounded
+# OFFSET scan on the request thread (which bypasses the warm 30s cache).
+# Shared with dashboard.py (_clamp_page) and dashboard_render.py
+# (render_log_pager) — declared here because dashboard_render can't import it
+# from dashboard without creating a circular import (dashboard imports
+# dashboard_render at module load).
+_PAGE_MAX = 100
+
 # ---------------------------------------------------------------------------
 # Port -> friendly protocol name (display only; independent of detected_id,
 # which identifies the *matched face*, not the raw port).

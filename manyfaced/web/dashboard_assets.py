@@ -271,12 +271,17 @@ JS = r"""
   // chunks. The boundary can't be predicted ahead of time by anything that
   // ends up embedded in <content> (e.g. attacker-controlled capture text),
   // so it can't be used to forge a fake section split.
-  function fetchFragment(range, port, page, ip, host){
+  function fetchFragment(range, port, page, ip, host, search, method){
     var url = '?token='+encodeURIComponent(CFG.token)+'&format=fragment&range='+encodeURIComponent(range);
     if (port != null) url += '&port='+encodeURIComponent(port);
     if (page != null) url += '&page='+encodeURIComponent(page);
     if (ip != null) url += '&ip='+encodeURIComponent(ip);
     if (host != null) url += '&host='+encodeURIComponent(host);
+    // Issue #585: pass the capture-log search box + method filter to the
+    // server so they scope at the SQL level (like ip/host already do) instead
+    // of only matching the already-loaded DOM rows.
+    if (search) url += '&search='+encodeURIComponent(search);
+    if (method && method !== 'ALL') url += '&method='+encodeURIComponent(method);
     return fetch(url, {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(text){
       var nl = text.indexOf('\n');
       if (nl < 0) return {};
@@ -350,8 +355,13 @@ JS = r"""
   function refreshAlive(lastCapture){
     var flags = $all('.hero-flag');
     var pill = $('#live-pill');
-    // parse the ISO timestamp (handles ' ' or 'T' separators, with/without frac)
-    var ts = lastCapture ? Date.parse(lastCapture.replace(' ', 'T')) : NaN;
+    // parse the ISO timestamp. The server emits UTC; if it lacks an explicit
+    // offset/Z we append one so Date.parse treats it as UTC, not browser-local
+    // (issue #584 — a local-time parse shifts the age by the UTC offset and
+    // flips the badge to STALE/OFFLINE).
+    var norm = lastCapture ? lastCapture.replace(' ', 'T') : '';
+    if (norm && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(norm)) norm += 'Z';
+    var ts = norm ? Date.parse(norm) : NaN;
     var now = Date.now();
     var label, cls, rel;
     if (!lastCapture || isNaN(ts)){
@@ -395,7 +405,7 @@ JS = r"""
     state.page = 1;
     setActive(rangeRow, 'data-range', state.range);
     fetchFragment(state.range, state.port).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','payloads-rows']);
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
     });
   });
 
@@ -532,11 +542,11 @@ JS = r"""
   }
 
   // Re-fetch the capture-log sections from the server with the current
-  // ip/host scope (issue #366). Reuses the fragment machinery so the log
-  // rows, pager, and filter chips all refresh in place.
+  // ip/host/search/method scope (issue #366/#585). Reuses the fragment
+  // machinery so the log rows, pager, and filter chips all refresh in place.
   function refreshLog(){
     state.page = 1;
-    fetchFragment(state.range, state.port, state.page, state.ip, state.host)
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method)
       .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']); });
   }
 
@@ -547,7 +557,11 @@ JS = r"""
     if (searchDebounce) clearTimeout(searchDebounce);
     searchDebounce = setTimeout(function(){
       state.search = searchInput.value.trim().toLowerCase();
-      applyFilters();
+      // Issue #585: route the search through the server (refreshLog) so it
+      // scopes at the SQL level across the whole window, not just the DOM rows
+      // already loaded on the current page. applyFilters() still runs inside
+      // applyFragment() to keep the live summary accurate.
+      refreshLog();
     }, 150);
   });
 
@@ -557,7 +571,9 @@ JS = r"""
     if (!btn) return;
     state.method = btn.getAttribute('data-method');
     setActive(methodRow, 'data-method', state.method);
-    applyFilters();
+    // Issue #585: re-fetch from the server so the method filter scopes at the
+    // SQL level (matches ip/host behaviour) rather than only the loaded page.
+    refreshLog();
   });
 
   var sortRow = $('#sort-row');
@@ -628,8 +644,8 @@ JS = r"""
     if (kind === 'ip'){ state.ip = null; refreshLog(); return; }
     if (kind === 'host'){ state.host = null; refreshLog(); return; }
     if (kind === 'window') state.window = null;
-    if (kind === 'method'){ state.method = 'ALL'; setActive(methodRow, 'data-method', 'ALL'); }
-    if (kind === 'search'){ state.search = ''; if (searchInput) searchInput.value = ''; }
+    if (kind === 'method'){ state.method = 'ALL'; setActive(methodRow, 'data-method', 'ALL'); refreshLog(); return; }
+    if (kind === 'search'){ state.search = ''; if (searchInput) searchInput.value = ''; refreshLog(); return; }
     $all('.intel-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.ioc-row.active').forEach(function(r){ r.classList.remove('active'); });
     $all('.vol-row.focus').forEach(function(r){ r.classList.remove('focus'); });
