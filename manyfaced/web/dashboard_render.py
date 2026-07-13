@@ -605,6 +605,48 @@ def _render_log_section(payload: dict) -> str:
 """
 
 
+def render_payloads_pager(payload: dict) -> str:
+    """Issue #612: paginator for the Payloads panel, mirroring the capture log.
+
+    Offset/numbered paging over the ranked candidate set (bounded by the
+    candidate-scan cap in dashboard.py, so it can't be driven unbounded — see
+    ``_clamp_page``/``_PAGE_MAX``). Hidden when the whole set fits on one page.
+    """
+    page = int(payload.get('payloads_page', 1))
+    size = int(payload.get('payloads_page_size', 50))
+    total = int(payload.get('payloads_window_total', 0))
+    total_pages = max(1, (total + size - 1) // size)
+    if total_pages <= 1:
+        return ''
+    pages = []
+    shown: list[int] = []
+    for p in (1, page - 1, page, page + 1, total_pages):
+        if 1 <= p <= total_pages and p not in shown:
+            shown.append(p)
+    shown.sort()
+    prev_class = 'seg-btn sm' + ('' if page > 1 else ' disabled')
+    pages.append(
+        f'<button class="{prev_class}" data-page="{max(1, page - 1)}" data-nav="prev"{" disabled" if page <= 1 else ""}>&lsaquo; PREV</button>'
+    )
+    last = 0
+    for p in shown:
+        if last and p - last > 1:
+            pages.append('<span class="pager-ellipsis">…</span>')
+        active = ' active' if p == page else ''
+        pages.append(f'<button class="seg-btn sm{active}" data-page="{p}">{p}</button>')
+        last = p
+    next_class = 'seg-btn sm' + ('' if page < total_pages else ' disabled')
+    pages.append(
+        f'<button class="{next_class}" data-page="{min(total_pages, page + 1)}" data-nav="next"{" disabled" if page >= total_pages else ""}>NEXT &rsaquo;</button>'
+    )
+    return (
+        f'<div class="payloads-pager" data-page="{page}" data-total-pages="{total_pages}" '
+        f'data-total="{total}" data-size="{size}">'
+        + ''.join(pages)
+        + f'<span class="pager-info">page {page} / {total_pages}</span></div>'
+    )
+
+
 def render_payloads_rows(payload: dict) -> str:
     """Render the Payloads panel rows (issue #368 follow-up).
 
@@ -672,18 +714,21 @@ def _render_payloads_section(payload: dict) -> str:
     """
     payloads = payload.get('payloads') or []
     rows_html = render_payloads_rows(payload)
+    pager_html = render_payloads_pager(payload)
+    total = int(payload.get('payloads_window_total', 0))
     empty_hidden = ' hidden' if payloads else ''
     return f"""
 <section id="payloads" class="section">
   <div class="section-head">
     <div class="section-title">PAYLOADS</div>
     <div class="rule"></div>
-    <div class="section-hint" id="payloads-summary" data-full="raw + decoded captured request bytes ({len(payloads)} shown)">raw + decoded captured request bytes ({len(payloads)} shown)</div>
+    <div class="section-hint" id="payloads-summary" data-full="raw + decoded captured request bytes ({total} total)">raw + decoded captured request bytes ({total} total)</div>
   </div>
   <div class="payloads-box">
     <div id="payloads-rows">{rows_html}</div>
     <div id="payloads-empty" class="log-empty"{empty_hidden}>// no payloads match the current filters</div>
   </div>
+  <div id="payloads-pager">{pager_html}</div>
 </section>
 """
 
@@ -760,6 +805,9 @@ def render_fragment(payload: dict) -> bytes:
         'logPage': payload['page'],
         'logPageSize': payload['log_page_size'],
         'logWindowTotal': payload['log_window_total'],
+        'payloadsPage': payload.get('payloads_page', 1),
+        'payloadsPageSize': payload.get('payloads_page_size', 50),
+        'payloadsWindowTotal': payload.get('payloads_window_total', 0),
     }
     sections = {
         'vol-box': render_vol_box(payload),
@@ -768,6 +816,7 @@ def render_fragment(payload: dict) -> bytes:
         'log-rows': render_log_rows(payload),
         'log-pager': render_log_pager(payload),
         'payloads-rows': render_payloads_rows(payload),
+        'payloads-pager': render_payloads_pager(payload),
         'meta': json.dumps(meta),
     }
     parts = [boundary]

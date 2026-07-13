@@ -682,10 +682,64 @@ def test_build_payloads_drops_benign_and_favicon_and_ranks_crit_above_info():
     assert 'GET /admin' not in joined
 
 
-def test_build_payloads_respects_limit():
+def test_build_payloads_returns_full_ranked_list_not_sliced():
+    """Issue #612: _build_payloads returns the FULL ranked survivor list (no
+    25-row cap). Paging is applied separately by _page_payloads, so the panel
+    can be served page-by-page against the cached ranked list."""
     rows = [_row(f'GET /x{i}?u=http://203.0.113.{i}/p HTTP/1.1') for i in range(100)]
     out = _dash_mod._build_payloads(rows)
-    assert len(out) == _dash_mod._PAYLOADS_LIMIT
+    assert len(out) == 100
+
+
+def test_page_payloads_slices_to_page_size_and_clamps_depth():
+    """Issue #612: _page_payloads offsets by page and is bounded by the
+    candidate-scan cap (mirrors _clamp_page / _PAGE_MAX for the capture log)."""
+    rows = [_row(f'GET /x{i}?u=http://203.0.113.{i}/p HTTP/1.1') for i in range(120)]
+    ranked = _dash_mod._build_payloads(rows)
+    # Page 1 -> first page worth (50 by default).
+    p1 = _dash_mod._page_payloads(ranked, 1)
+    assert len(p1) == _dash_mod._PAYLOADS_PAGE_SIZE
+    assert p1[0]['raw'] == ranked[0]['raw']
+    # Page 2 -> next slice, no overlap with page 1 (rows 50..99).
+    p2 = _dash_mod._page_payloads(ranked, 2)
+    assert len(p2) == 50
+    assert p2[0]['raw'] == ranked[50]['raw']
+    # Page 3 -> the final 20-row remainder (rows 100..119).
+    p3 = _dash_mod._page_payloads(ranked, 3)
+    assert len(p3) == 20
+    assert p3[0]['raw'] == ranked[100]['raw']
+    # Clamping: a huge page request can't drive an unbounded scan — it's
+    # bounded by the candidate list length.
+    assert _dash_mod._page_payloads(ranked, 9999) == []
+
+
+def test_dashboard_payloads_pager_wired_into_payload():
+    """Issue #612: the render payload carries the pager fields and
+    render_payloads_pager emits a #payloads-pager with prev/next + page X / Y
+    when the ranked set spans more than one page."""
+    ranked = _dash_mod._build_payloads(
+        [_row(f'GET /x{i}?u=http://203.0.113.{i}/p HTTP/1.1') for i in range(120)]
+    )
+    payload = {
+        'payloads': _dash_mod._page_payloads(ranked, 1),
+        'payloads_page': 1,
+        'payloads_page_size': _dash_mod._PAYLOADS_PAGE_SIZE,
+        'payloads_window_total': len(ranked),
+    }
+    from manyfaced.web import dashboard_render as _render_mod
+
+    pager = _render_mod.render_payloads_pager(payload)
+    assert 'payloads-pager' in pager
+    assert 'page 1 / 3' in pager  # 120 rows / 50 = 3 pages
+    assert 'NEXT' in pager
+    # Single-page set -> pager hidden (empty string).
+    single = {
+        'payloads': _dash_mod._page_payloads(ranked, 1, page_size=200),
+        'payloads_page': 1,
+        'payloads_page_size': 200,
+        'payloads_window_total': len(ranked),
+    }
+    assert _render_mod.render_payloads_pager(single) == ''
 
 
 def test_fetch_interesting_raws_shape_and_benign_filter(tmp_path, monkeypatch):

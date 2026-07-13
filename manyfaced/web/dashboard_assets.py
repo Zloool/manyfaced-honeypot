@@ -168,6 +168,9 @@ main{max-width:1416px;margin:0 auto;padding:0 22px 90px}
 .log-pager{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:14px;justify-content:center}
 .log-pager .seg-btn[disabled]{opacity:.4;cursor:default}
 .log-pager .seg-btn{min-width:34px}
+.payloads-pager{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:14px;justify-content:center}
+.payloads-pager .seg-btn[disabled]{opacity:.4;cursor:default}
+.payloads-pager .seg-btn{min-width:34px}
 .pager-ellipsis{color:#3f7a55;padding:0 4px}
 .pager-info{font-size:11px;color:#4e8768;margin-left:8px;font-variant-numeric:tabular-nums}
 
@@ -241,7 +244,8 @@ JS = r"""
   'use strict';
   var CFG = window.__MFD__ || {};
   var state = { range: CFG.range || '24h', port: null, country: null, service: null, ip: null,
-                host: null, window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1 };
+                host: null, window: null, method: 'ALL', sort: 'newest', search: '', paused: false, page: 1,
+                payloadsPage: 1 };
   // Hero canvas readout (real requests/hour, fed from payload.stats.hour_total
   // and refreshed on each live tick). Module-level so applyMeta can update it.
   var heroRph = '0';
@@ -271,7 +275,7 @@ JS = r"""
   // chunks. The boundary can't be predicted ahead of time by anything that
   // ends up embedded in <content> (e.g. attacker-controlled capture text),
   // so it can't be used to forge a fake section split.
-  function fetchFragment(range, port, page, ip, host, search, method){
+  function fetchFragment(range, port, page, ip, host, search, method, payloadsPage){
     var url = '?token='+encodeURIComponent(CFG.token)+'&format=fragment&range='+encodeURIComponent(range);
     if (port != null) url += '&port='+encodeURIComponent(port);
     if (page != null) url += '&page='+encodeURIComponent(page);
@@ -282,6 +286,8 @@ JS = r"""
     // of only matching the already-loaded DOM rows.
     if (search) url += '&search='+encodeURIComponent(search);
     if (method && method !== 'ALL') url += '&method='+encodeURIComponent(method);
+    // Issue #612: scoped Payloads-panel page, independent of the log page.
+    if (payloadsPage != null) url += '&payloads_page='+encodeURIComponent(payloadsPage);
     return fetch(url, {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(text){
       var nl = text.indexOf('\n');
       if (nl < 0) return {};
@@ -315,6 +321,7 @@ JS = r"""
     wireVolumeRows();
     wireIocRows();
     wireLogPager();
+    wirePayloadsPager();
     applyFilters();
   }
 
@@ -334,6 +341,16 @@ JS = r"""
     }
     // Keep the pager state in sync with the rendered page (issue #316).
     if (meta.logPage != null) state.page = meta.logPage;
+    // Issue #612: Payloads panel pager state is independent of the log.
+    if (meta.payloadsPage != null) state.payloadsPage = meta.payloadsPage;
+    // Keep the Payloads summary accurate to the active toolbar filters.
+    if (meta.payloadsWindowTotal != null){
+      var pSummary = $('#payloads-summary');
+      if (pSummary){
+        var total = meta.payloadsWindowTotal;
+        pSummary.setAttribute('data-full', 'raw + decoded captured request bytes (' + total + ' total)');
+      }
+    }
     // Real liveness: drive the hero "SYSTEM ONLINE" badge + nav LIVE pill off
     // the last capture time instead of a fixed hard-coded green (issue #409).
     refreshAlive(meta.lastCapture);
@@ -403,22 +420,24 @@ JS = r"""
     state.range = btn.getAttribute('data-range');
     state.window = null;
     state.page = 1;
+    state.payloadsPage = 1;
     setActive(rangeRow, 'data-range', state.range);
-    fetchFragment(state.range, state.port).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method, state.payloadsPage).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']);
     });
   });
 
   function setPortFilter(port){
     state.port = (port === '' || port == null) ? null : Number(port);
     state.page = 1;
+    state.payloadsPage = 1;
     $all('.chip-port').forEach(function(b){
       b.classList.toggle('active', (b.getAttribute('data-port')||'') === String(state.port==null?'':state.port));
     });
     $all('.intel-row[data-filter-type="port"]').forEach(function(r){
       r.classList.toggle('active', Number(r.getAttribute('data-filter-value')) === state.port);
     });
-    fetchFragment(state.range, state.port).then(function(frag){ applyFragment(frag, ['vol-box']); });
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method, state.payloadsPage).then(function(frag){ applyFragment(frag, ['vol-box','payloads-rows','payloads-pager']); });
     applyFilters();
   }
 
@@ -546,8 +565,9 @@ JS = r"""
   // machinery so the log rows, pager, and filter chips all refresh in place.
   function refreshLog(){
     state.page = 1;
-    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method)
-      .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']); });
+    state.payloadsPage = 1;
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method, state.payloadsPage)
+      .then(function(frag){ applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']); });
   }
 
   // ---------------- log toolbar ----------------
@@ -665,8 +685,10 @@ JS = r"""
     // IoC click server-side scopes both to an ip/host (issue #366/#368), and
     // clearing state.ip/state.host client-side alone leaves that stale scoped
     // data on screen until the server is asked again with no filter.
-    fetchFragment(state.range, null, state.page).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
+    state.page = 1;
+    state.payloadsPage = 1;
+    fetchFragment(state.range, null, state.page, state.ip, state.host, state.search, state.method, state.payloadsPage).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']);
     });
   }
 
@@ -693,8 +715,35 @@ JS = r"""
 
   function setLogPage(p){
     state.page = p;
-    fetchFragment(state.range, state.port, p, state.ip, state.host).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager']);
+    fetchFragment(state.range, state.port, p, state.ip, state.host, state.search, state.method, state.payloadsPage).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']);
+    });
+  }
+
+  // ---------------- payloads panel pager (issue #612) ----------------
+  function wirePayloadsPager(){
+    // Mirrors wireLogPager(): the pager lives in #payloads-pager, so refreshed
+    // pagers always replace the same node and this delegated listener survives
+    // in-place. Fail loud if the container is missing so a future refactor that
+    // drops the id can't silently kill Payloads pagination.
+    var wrap = $('#payloads-pager');
+    if (!wrap){ console.error('[dashboard] #payloads-pager container missing — payloads pagination disabled'); return; }
+    if (wrap.__wired) return;
+    wrap.__wired = true;
+    wrap.addEventListener('click', function(e){
+      var btn = e.target.closest('.payloads-pager [data-page]');
+      if (!btn || btn.disabled) return;
+      var p = parseInt(btn.getAttribute('data-page'), 10);
+      if (!p || p === state.payloadsPage) return;
+      setPayloadsPage(p);
+    });
+    wrap.__wire = true;
+  }
+
+  function setPayloadsPage(p){
+    state.payloadsPage = p;
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method, p).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']);
     });
   }
 
@@ -1024,8 +1073,8 @@ JS = r"""
     // "I want to freeze everything" case; this covers the narrower "I'm
     // filtering/paging and don't want the log to shift under me" case.
     if (liveRefreshBlocked()) return;
-    fetchFragment(state.range, state.port, state.page, state.ip, state.host).then(function(frag){
-      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows']);
+    fetchFragment(state.range, state.port, state.page, state.ip, state.host, state.search, state.method, state.payloadsPage).then(function(frag){
+      applyFragment(frag, ['vol-box','intel-grid','log-rows','log-pager','payloads-rows','payloads-pager']);
     }).catch(function(){ /* transient network hiccup — try again next tick */ });
   }
   setInterval(refreshLive, 20000);
