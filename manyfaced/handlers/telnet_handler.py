@@ -54,7 +54,12 @@ def extract_telnet_credentials(raw_data: bytes) -> Tuple[str, str] | None:
         Tuple of (username, password) if both are detected, else None.
     """
     try:
-        text = raw_data.decode('utf-8', errors='replace')
+        # Strip IAC negotiation sequences first so the remaining text is pure
+        # username/password content. A single frame is often a mix of IAC bytes
+        # and the trailing username (e.g. ``IAC WILL ECHO ... root``); without
+        # stripping, the username is captured as ``\xff\x01...root`` (issue #598).
+        cleaned = _strip_iac(raw_data)
+        text = cleaned.decode('utf-8', errors='replace')
     except Exception:
         return None
 
@@ -113,10 +118,60 @@ def extract_telnet_credentials(raw_data: bytes) -> Tuple[str, str] | None:
     return None
 
 
+def _strip_iac(raw_data: bytes) -> bytes:
+    """Return ``raw_data`` with all IAC (Interpret As Command) sequences removed.
+
+    An IAC sequence is ``IAC`` (0xff) followed by a command byte and, for most
+    commands, an option byte. Subnegotiation (``IAC SB ... IAC SE``) is stripped
+    across its whole span.
+
+    Args:
+        raw_data: Raw Telnet bytes that may contain IAC negotiation.
+
+    Returns:
+        The remaining payload bytes (the human-readable username/login text).
+    """
+    out = bytearray()
+    i = 0
+    n = len(raw_data)
+    while i < n:
+        if raw_data[i : i + 1] == IAC:
+            if i + 1 >= n:
+                break
+            cmd = raw_data[i + 1]
+            if cmd == SB:  # 0xfa: subnegotiation, runs until IAC SE
+                # Skip IAC SB <opt>, then everything up to IAC SE (0xff 0xf0)
+                i += 2
+                while i + 1 < n and not (raw_data[i] == IAC[0] and raw_data[i + 1] == SE):
+                    i += 1
+                i += 2  # consume IAC SE
+                continue
+            # Two-byte commands (WILL/WONT/DO/DONT) and option variants: skip
+            # IAC + command + option. Single-byte commands (e.g. 0xf0 SE) skip
+            # only IAC + command.
+            if cmd in (SE,):
+                i += 2
+            else:
+                i += 3
+            continue
+        out.append(raw_data[i])
+        i += 1
+    return bytes(out)
+
+
 def generate_telnet_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> bytes:
     """Generate a realistic Telnet response for the given probe data.
 
-    Handles IAC negotiation and login prompt generation.
+    Handles IAC negotiation AND the embedded username/login so a real telnet
+    bot (Mirai/etc.) gets a believable auth exchange instead of a silent drop.
+
+    A single frame is often a mix of IAC negotiation bytes and the trailing
+    username the bot just typed (e.g. ``IAC WILL ECHO ... root\
+\\n``). The
+    previous implementation short-circuited any frame containing ``0xff`` to
+    negotiation-only reflexive ACKs, discarding the username and never emitting
+    a ``Password:`` prompt (issue #598). We now always honour the negotiation
+    first, then parse the residual text to decide which prompt to send.
 
     Args:
         raw_data: Raw bytes received from the bot connection.
@@ -125,12 +180,17 @@ def generate_telnet_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byte
     Returns:
         Protocol-compliant Telnet response as bytes.
     """
-    # Check if this is an IAC negotiation request
     raw_bytes = raw_data.encode('latin-1') if isinstance(raw_data, str) else raw_data
-    if b'\xff' in raw_bytes:
-        return _handle_telnet_negotiation(raw_bytes, bot_ip)
 
-    # Check for login/password input (credential capture)
+    response = b''
+    had_iac = b'\xff' in raw_bytes
+
+    # 1) Always honour any IAC negotiation present (reflexive ACKs). This is the
+    #    server's first duty on every frame that carries 0xff.
+    if had_iac:
+        response += _handle_telnet_negotiation(raw_bytes, bot_ip)
+
+    # 2) Parse the residual (non-IAC) text for embedded credentials.
     creds = extract_telnet_credentials(raw_bytes)
     if creds and creds[0] and creds[1]:
         logger.info(
@@ -138,17 +198,38 @@ def generate_telnet_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byte
             bot_ip,
             creds[0],
         )
+        # Full username+password observed in one frame -> believable auth
+        # failure, then re-prompt a fresh login so the bot keeps trying.
+        response += generate_auth_failure() + _generate_login_prompt()
+        return response
 
-    # If we have partial credentials (just username or just password), log it
-    if creds and (creds[0] or creds[1]):
+    if creds and creds[0]:
         logger.info(
             'Partial Telnet credentials from %s: user=%s',
             bot_ip,
             creds[0],
         )
+        # Username seen but no password yet -> ask for the password. This is the
+        # exact Mirai frame path (IAC ... then the username) that used to be
+        # dropped by the old short-circuit.
+        response += generate_password_prompt()
+        return response
 
-    # Default: send login prompt
-    return _generate_login_prompt()
+    # 3) No recognisable credential text in this frame.
+    residual = _strip_iac(raw_bytes).strip()
+    if residual:
+        # Some free-text we could not classify -> give the login prompt so the
+        # bot is not left hanging.
+        response += _generate_login_prompt()
+    elif not had_iac:
+        # No IAC and no text (e.g. the initial empty connection frame, or a
+        # bare CR/LF keepalive): this is the server-first greeting request, so
+        # emit the login prompt/banner. We only suppress the banner for *pure*
+        # negotiation frames (had_iac and no residual) to avoid echoing a
+        # duplicate banner on every IAC exchange.
+        response += _generate_login_prompt()
+
+    return response
 
 
 def _handle_telnet_negotiation(raw_data: bytes, bot_ip: str) -> bytes:

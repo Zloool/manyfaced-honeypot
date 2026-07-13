@@ -32,7 +32,9 @@ from manyfaced.handlers.redis_handler import (
     generate_redis_response,
 )
 from manyfaced.handlers.telnet_handler import (
+    _strip_iac,
     extract_telnet_credentials,
+    generate_auth_failure,
     generate_password_prompt,
     generate_telnet_greeting,
     generate_telnet_response,
@@ -179,6 +181,42 @@ class TestTelnetHandler(unittest.TestCase):
         # Client offers WILL ECHO (server asks it to echo).
         resp2 = _handle_telnet_negotiation(IAC + WILL + b'\x03', '127.0.0.1')
         self.assertEqual(resp2, IAC + DO + b'\x03')
+
+    def test_telnet_mirai_frame_emits_password_prompt(self):
+        """A Mirai-style IAC+username frame must yield a Password: prompt.
+
+        Regression for issue #598: the old handler short-circuited any frame
+        containing 0xff to negotiation-only reflexive ACKs, dropping the
+        embedded username and never emitting a Password: prompt.
+        """
+        # Typical Mirai first auth frame: IAC negotiation + the typed username.
+        raw_data = (
+            b'\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1f'  # IAC WILL BIN/WILL ECHO/DO NAWS
+            b'root\x0d\x0a'
+        )
+        response = generate_telnet_response(raw_data, '10.0.0.99')
+        # Must NOT be negotiation-only -- it has to ask for the password.
+        self.assertIn(b'Password: ', response)
+        # The username must be reflected back in the server log/state path
+        # (i.e. the frame was parsed, not discarded).
+        creds = extract_telnet_credentials(raw_data)
+        self.assertIsNotNone(creds)
+        self.assertEqual(creds[0], 'root')
+
+    def test_telnet_strip_iac_keeps_username(self):
+        """_strip_iac must remove IAC bytes but preserve the typed username."""
+        raw_data = b'\xff\xfb\x01\xff\xfb\x03root\x0d\x0a'
+        self.assertEqual(_strip_iac(raw_data), b'root\x0d\x0a')
+
+    def test_telnet_full_credentials_frame_fails_auth_then_reprompts(self):
+        """A frame carrying both username and password gets an auth failure.
+
+        Then the handler re-prompts a fresh login so the bot keeps trying.
+        """
+        raw_data = b'\xff\xfb\x01\x0d\x0alogin: admin\x0d\x0aPassword: secret123'
+        response = generate_telnet_response(raw_data, '10.0.0.100')
+        self.assertIn(generate_auth_failure().split(b'\x0d\x0a')[0], response)
+        self.assertIn(b'login: ', response)
 
 
 class TestRDPHandler(unittest.TestCase):
