@@ -150,7 +150,9 @@ OK (1 test, 1 assertion)
         """
         import hashlib
 
-        return hashlib.md5(b'Hello PHPUnit').hexdigest()
+        # Mimics PHPUnit's eval output for the classic probe payload; not a
+        # security use of MD5, so this is a deliberate false-positive skip.
+        return hashlib.md5(b'Hello PHPUnit').hexdigest()  # nosec B324
 
     def _login_failed_response(self) -> bytes:
         """PHPUnit has no login flow; kept for API symmetry with base class."""
