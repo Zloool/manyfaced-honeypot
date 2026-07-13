@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
-from manyfaced.common.status import BOT_TIMEOUT
+from manyfaced.common.status import BOT_TIMEOUT, EMPTY_CONNECTION, HTTP_ON_NONHTTP_PORT
 from manyfaced.common.utils import receive_first_frame, receive_timeout
 from manyfaced.handlers.http_handler import (
     HTTPHandler,
@@ -413,21 +413,33 @@ def _handle_non_http_connection(
         message if isinstance(message, bytes) else message.encode('latin-1', errors='replace')
     )
 
+    # ── Issue #596: HTTP-on-non-HTTP re-sniff for ALL non-HTTP faces ───────
+    # An HTTP frame (GET/POST/…) arriving on a non-HTTP port (SSH 22, MySQL
+    # 3306, MSSQL 1433, Redis 6379, …) is a protocol mismatch, not a genuine
+    # probe of that service. Previously only the ssh branch re-classified such
+    # frames as HTTP_ON_NONHTTP_PORT; every other face silently labeled them
+    # with the service's UNKNOWN_* sentinel, hiding scanners/censys/masscan
+    # HTTP sweeps on DB ports. Re-sniff every face identically (the ssh branch
+    # below keeps its exact prior behavior).
+    from manyfaced.common.protocol import is_http_request  # noqa: PLC0415
+
+    http_on_nonhttp = is_http_request(raw_bytes)
+
     # ── SSH: banner already sent in PRELUDE; drive binary credential capture,
     #    then record. SSH has no follow-up reply to send. ───────────────────
     if spec.name == 'ssh':
         # Issue #445: an HTTP request arriving on the SSH port is a protocol
         # mismatch, not a real SSH scanner. Flag it with a distinct detected_id
         # so analysis can separate HTTP-on-SSH-port probes from genuine SSH
-        # banner scans instead of silently labeling them unknown SSH.
-        from manyfaced.common.protocol import is_http_request  # noqa: PLC0415
+        # banner scans instead of silently labeling them unknown SSH. Uses the
+        # same http_on_nonhttp re-sniff computed above (issue #596) so every
+        # face shares identical HTTP-on-non-HTTP logic.
         from manyfaced.common.status import (  # noqa: PLC0415
-            HTTP_ON_NONHTTP_PORT,
             SSH_CLIENT,
         )
 
         detected_id = SSH_CLIENT
-        if is_http_request(raw_bytes):
+        if http_on_nonhttp:
             detected_id = HTTP_ON_NONHTTP_PORT
             logger.info('HTTP-on-SSH-port mismatch from %s (flagged, not mislabeled)', bot_ip)
         creds = _capture_credentials(connection_socket, bot_ip, spec.greeting)
@@ -489,6 +501,36 @@ def _handle_non_http_connection(
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port, reply=b''.join(replies))
         if creds:
             bs.login = creds if isinstance(creds, str) else str(creds)
+        # ── Issue #596: HTTP-on-non-HTTP re-sniff (client-first faces) ────
+        # Client-first faces (redis/memcached/mongo/…) must ALSO reclassify an
+        # HTTP frame to HTTP_ON_NONHTTP_PORT, exactly like the server-first and
+        # ssh branches. An HTTP request arriving on e.g. the Redis port is a
+        # protocol mismatch, not a genuine Redis probe (issue #596).
+        if http_on_nonhttp:
+            bs.isDetected = HTTP_ON_NONHTTP_PORT
+            logger.info(
+                'HTTP-on-%s-port mismatch from %s (flagged, not mislabeled)',
+                spec.name,
+                bot_ip,
+            )
+        # ── Issue #601: client-first silent-capture guard ──────────────────
+        # A client-first connect (redis/memcached/mongo/zookeeper/postgres/
+        # epmd/nfs) that sends NO frame before idling is currently recorded as
+        # a normal UNKNOWN_NON_HTTP session with EMPTY request_raw AND empty
+        # bot_profile_data — indistinguishable from EMPTY_CONNECTION, hiding
+        # data loss. If the whole exchange captured nothing (no frame at all),
+        # stamp it EMPTY_CONNECTION and attach a minimal, auditable
+        # bot_profile_data note so analysts can separate a real no-frame
+        # connect from a genuine capture failure.
+        elif not raw_bytes:
+            bs.isDetected = EMPTY_CONNECTION
+            bs.bot_profile_data = {
+                spec.name: {
+                    'dialogue': [],
+                    'note': 'client-first frame not captured',
+                    'captured': False,
+                }
+            }
         _enrich_and_send_bear(bs, bot_ip)
         return
 
@@ -523,6 +565,24 @@ def _handle_non_http_connection(
     if creds:
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
         bs.login = creds
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Issue #596: HTTP-on-non-HTTP re-sniff (server-first faces) ────────
+    # MySQL/MSSQL/AMQP/Oracle/RDP/… are server-first, so the HTTP-on-port
+    # mismatch can only be detected from the client's frame. If an HTTP request
+    # arrived on one of these ports (e.g. GET / on 3306), reclassify it to
+    # HTTP_ON_NONHTTP_PORT instead of the service's UNKNOWN_* sentinel — the
+    # same distinct flag the SSH branch uses. This is the missing re-sniff that
+    # previously let HTTP-on-3306 fall through to UNKNOWN_NON_HTTP.
+    if http_on_nonhttp:
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs.isDetected = HTTP_ON_NONHTTP_PORT
+        logger.info(
+            'HTTP-on-%s-port mismatch from %s (flagged, not mislabeled)',
+            spec.name,
+            bot_ip,
+        )
         _enrich_and_send_bear(bs, bot_ip)
         return
 

@@ -579,3 +579,179 @@ def test_dispatch_redis_hello_ping_set_sequence():
     assert replies[0].startswith(b'%7'), f'HELLO reply not a RESP3 map: {replies[0]!r}'
     assert replies[1] == b'+PONG' + CRLF, f'PING reply wrong: {replies[1]!r}'
     assert replies[2] == b'+OK' + CRLF, f'SET reply wrong: {replies[2]!r}'
+
+
+# ---------------------------------------------------------------------------
+# Issue #601: client-first silent-capture guard
+#
+# A client-first connect (redis/memcached/mongo/postgres/epmd/nfs) that sends
+# NO frame before idling must NOT be recorded as a normal UNKNOWN_NON_HTTP
+# session with empty request_raw + empty bot_profile_data (indistinguishable
+# from a real capture). It must be stamped EMPTY_CONNECTION and carry a minimal
+# auditable bot_profile_data so the silent loss is visible.
+# ---------------------------------------------------------------------------
+
+
+def _capture_bear_non_http(name, client_says, server_port):
+    """Run the real dispatch but intercept the BearStorage instead of sending
+    a report to the server (no network/geo). Returns the built BearStorage."""
+    import manyfaced.client.client as client_mod
+    from manyfaced.handlers.http_handler import _enrich_and_send_bear
+
+    args = SimpleNamespace(server=19999, server_host='127.0.0.1')
+    set_enrich_args(args)
+    spec = (
+        get_face(server_port)
+        if name is None
+        else next(s for s in FACE_REGISTRY.values() if s.name == name)
+    )
+
+    captured: dict[str, object] = {}
+
+    def _intercept(bs, _ip):
+        captured['bs'] = bs
+
+    # Patch ONLY the send side so the dispatch runs the real capture logic.
+    real_send = client_mod._enrich_and_send_bear
+    client_mod._enrich_and_send_bear = _intercept  # type: ignore[assignment]
+    try:
+        lsn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lsn.bind(('127.0.0.1', 0))
+        lsn.listen(1)
+        real_port = lsn.getsockname()[1]
+        cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        cli.connect(('127.0.0.1', real_port))
+        srv_sock, _ = lsn.accept()
+
+        def server_side():
+            try:
+                _handle_non_http_connection(srv_sock, args, '9.9.9.9', None, server_port, spec)
+            finally:
+                srv_sock.close()
+
+        t = threading.Thread(target=server_side, daemon=True)
+        t.start()
+        try:
+            if client_says:
+                cli.settimeout(4)
+                cli.sendall(client_says)
+        finally:
+            cli.settimeout(4)
+            try:
+                cli.recv(8192)
+            except Exception:
+                pass
+            cli.close()
+            lsn.close()
+            t.join(timeout=3)
+    finally:
+        client_mod._enrich_and_send_bear = real_send  # type: ignore[assignment]
+        # Restore the real implementation we masked above.
+        client_mod._enrich_and_send_bear = _enrich_and_send_bear
+    return captured.get('bs')
+
+
+def test_client_first_empty_frame_is_empty_connection():
+    # A client-first face (redis 6379) that connects but sends no frame must
+    # be recorded as EMPTY_CONNECTION, not a silent empty UNKNOWN_NON_HTTP.
+    bs = _capture_bear_non_http('redis', None, 6379)
+    assert bs is not None, 'no BearStorage was built'
+    from manyfaced.common.status import EMPTY_CONNECTION
+
+    assert bs.isDetected == EMPTY_CONNECTION, (
+        f'empty client-first frame should be EMPTY_CONNECTION, got {bs.isDetected}'
+    )
+    # And it must carry an auditable, non-empty bot_profile_data so analysts
+    # can distinguish a no-frame connect from a genuine capture failure.
+    assert bs.bot_profile_data is not None, 'bot_profile_data must be populated'
+    prof = bs.bot_profile_data['redis']
+    assert prof['note'] == 'client-first frame not captured'
+    assert prof['captured'] is False
+
+
+def test_client_first_real_frame_not_empty_connection():
+    # A client-first face that DOES send a frame is a normal capture — must NOT
+    # be reclassified as EMPTY_CONNECTION.
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    bs = _capture_bear_non_http('redis', ping, 6379)
+    assert bs is not None
+    from manyfaced.common.status import EMPTY_CONNECTION, UNKNOWN_REDIS
+
+    assert bs.isDetected == UNKNOWN_REDIS, (
+        f'real client-first frame must stay UNKNOWN_REDIS, got {bs.isDetected}'
+    )
+    assert bs.isDetected != EMPTY_CONNECTION
+    # bot_profile_data now always carries at least the minimal request_command.
+    assert bs.bot_profile_data is not None
+    assert bs.bot_profile_data['redis']['captured'] is True
+
+
+def test_build_bear_storage_always_emits_bot_profile_data():
+    # Issue #601 part 2: _build_bear_storage must ALWAYS emit a minimal
+    # bot_profile_data (wire request_command + captured flag), even with an
+    # empty frame and no reply.
+    from manyfaced.handlers.http_handler import _build_bear_storage
+
+    spec = get_face(6379)
+    bs = _build_bear_storage('1.2.3.4', spec, b'', 6379, reply=b'')
+    assert bs.bot_profile_data is not None, 'bot_profile_data must never be None'
+    assert bs.bot_profile_data['redis']['request_command'] == 'REDIS'
+    assert bs.bot_profile_data['redis']['captured'] is False
+    # With a real frame it carries the dialogue + captured=True.
+    ping = b'*1' + CRLF + b'$4' + CRLF + b'PING' + CRLF
+    bs2 = _build_bear_storage('1.2.3.4', spec, ping, 6379, reply=b'+PONG' + CRLF)
+    assert bs2.bot_profile_data['redis']['captured'] is True
+    assert bs2.bot_profile_data['redis']['dialogue']
+
+
+# ---------------------------------------------------------------------------
+# Issue #596: HTTP-on-non-HTTP re-sniff for ALL non-HTTP faces
+#
+# An HTTP request (GET /) arriving on a non-HTTP port must be reclassified to
+# HTTP_ON_NONHTTP_PORT, not the face's UNKNOWN_* sentinel. Previously only the
+# SSH branch did this; MySQL 3306 / MSSQL 1433 / etc. fell through to
+# UNKNOWN_NON_HTTP. Verify across server-first (mysql) and client-first (redis).
+# ---------------------------------------------------------------------------
+
+
+def test_http_on_3306_is_http_on_nonhttp_port():
+    # A GET / pushed at the MySQL port must be flagged HTTP_ON_NONHTTP_PORT.
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('mysql', b'GET / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 3306)
+    assert bs is not None, 'no BearStorage was built for HTTP-on-3306'
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on 3306 should be HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
+
+
+def test_http_on_mssql_is_http_on_nonhttp_port():
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('mssql', b'POST / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 1433)
+    assert bs is not None
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on 1433 should be HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
+
+
+def test_http_on_redis_is_http_on_nonhttp_port():
+    # Even client-first faces must re-sniff an HTTP frame.
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('redis', b'GET / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 6379)
+    assert bs is not None
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on redis port should be HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
+
+
+def test_real_http_request_still_http_on_ssh():
+    # Regression: the SSH branch keeps its prior HTTP_ON_NONHTTP_PORT behavior.
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('ssh', b'GET / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 22)
+    assert bs is not None
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on 22 should remain HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
