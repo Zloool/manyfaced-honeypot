@@ -54,7 +54,39 @@ class TestDetectProtocolNewProtocols:
         )
         assert detect_protocol(raw) == 'dns'
 
-    def test_http2_preface_not_dns(self):
+    def test_sip_options_detected(self):
+        """SIP OPTIONS request-line must be detected as 'sip', not 'http' (issue #599)."""
+        raw = b'OPTIONS sip:manyfaced SIP/2.0\r\nVia: SIP/2.0/UDP\r\n\r\n'
+        assert detect_protocol(raw) == 'sip'
+
+    def test_sip_invite_detected(self):
+        """SIP INVITE request-line must be detected as 'sip', not 'http' (issue #599)."""
+        raw = b'INVITE sip:user@host SIP/2.0\r\n'
+        assert detect_protocol(raw) == 'sip'
+
+    def test_rtsp_options_detected(self):
+        """RTSP OPTIONS request-line must be detected as 'rtsp', not 'http' (issue #599)."""
+        raw = b'OPTIONS / RTSP/1.0\r\nCSeq: 1\r\n\r\n'
+        assert detect_protocol(raw) == 'rtsp'
+
+    def test_rtsp_describe_detected(self):
+        """RTSP DESCRIBE request-line must be detected as 'rtsp', not 'http' (issue #599)."""
+        raw = b'DESCRIBE rtsp://host/stream RTSP/1.0\r\nCSeq: 2\r\n\r\n'
+        assert detect_protocol(raw) == 'rtsp'
+
+    def test_ldap_bind_detected(self):
+        """LDAP bind request (ASN.1 SEQUENCE + bind tag) detected as 'ldap', not 'http' (issue #599)."""
+        # SEQUENCE(0x30) len(0x14=20) + INTEGER(0x02) 0x01 0x01 (msgID) + app bind(0x60) ...
+        raw = b'\x30\x14\x02\x01\x01\x60\x0f\x02\x01\x03\x04\x08admin\x80\x04\x00'
+        assert detect_protocol(raw) == 'ldap'
+
+    def test_http_still_detected_after_reorder(self):
+        """Genuine HTTP requests must still be detected as 'http' after the reordering."""
+        assert detect_protocol(b'GET / HTTP/1.1\r\nHost: x\r\n\r\n') == 'http'
+        assert detect_protocol(b'POST /login HTTP/1.1\r\n\r\n') == 'http'
+        assert detect_protocol(b'OPTIONS * HTTP/1.1\r\n\r\n') == 'http'
+        assert detect_protocol(b'CONNECT host:22 HTTP/1.1\r\n\r\n') == 'http'
+
         """HTTP/2 connection preface should be detected as 'http2', not 'dns'."""
         raw = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x18\x04\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x04\x00\x00Bh\x00\x06\x00\x04\x00\x00\x00\x03\x00\x00\x00\n'
         assert detect_protocol(raw) == 'http2'
@@ -320,7 +352,53 @@ class TestHandlerRouting:
         call_args = MockBS.call_args
         assert call_args is not None  # BearStorage was created (no crash)
 
-    def test_existing_ftp_still_routes_to_unknown_non_http(self, handler):
+    def test_sip_routes_to_unknown_sip_not_elasticsearch(self, handler):
+        """SIP OPTIONS arriving on an HTTP port must NOT be stored as ES (1013).
+
+        Before the fix (issue #599) SIP's leading 'OPTIONS ' matched the generic
+        HTTP method regex, so the probe fell through to the GET / fallback and was
+        stored under ELASTIC_HTTP (1013). After #599 it is detected as 'sip' and
+        stored under UNKNOWN_SIP.
+        """
+        from manyfaced.common.status import ELASTIC_HTTP, UNKNOWN_NON_HTTP, UNKNOWN_SIP
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        raw = b'OPTIONS sip:manyfaced SIP/2.0\r\nVia: SIP/2.0/UDP\r\n\r\n'
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            handler.handle_request(raw, bot_ip='7.8.9.10')
+
+        call_args = MockBS.call_args
+        detected_id = call_args[0][4]
+        assert detected_id == UNKNOWN_SIP
+        assert detected_id != ELASTIC_HTTP
+        assert detected_id != UNKNOWN_NON_HTTP
+
+    def test_rtsp_routes_to_non_http_not_elasticsearch(self, handler):
+        """RTSP OPTIONS arriving on an HTTP port must NOT be stored as ES (1013).
+
+        Before the fix (issue #599) RTSP had no signature, so its leading
+        'OPTIONS /' matched the HTTP method regex and was stored under
+        ELASTIC_HTTP. After #599 it is detected as 'rtsp'.
+        """
+        from manyfaced.common.status import ELASTIC_HTTP
+
+        mock_bs = MagicMock()
+        mock_bs.dns_name = ''
+        mock_bs.country = ''
+        mock_bs.continent = ''
+
+        raw = b'OPTIONS / RTSP/1.0\r\nCSeq: 1\r\n\r\n'
+        with patch('manyfaced.handlers.http_handler.BearStorage', return_value=mock_bs) as MockBS:
+            handler.handle_request(raw, bot_ip='8.9.10.11')
+
+        call_args = MockBS.call_args
+        detected_id = call_args[0][4]
+        assert detected_id != ELASTIC_HTTP
+
         """Existing FTP probes should still use UNKNOWN_NON_HTTP."""
         from manyfaced.common.status import UNKNOWN_NON_HTTP
 

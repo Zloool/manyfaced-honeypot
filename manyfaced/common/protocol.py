@@ -31,6 +31,42 @@ _PROTOCOL_SIGNATURES = [
     ('vnc', re.compile(rb'^(RFB \d\.\d)', re.IGNORECASE), b'RFB 003.003'),
     # TLS ClientHello: 0x16 (handshake) + 0x03 xx (version) + 2-byte length
     ('tls', re.compile(rb'^\x16\x03'), None),
+    # ── Non-HTTP request-line / binary protocols that share a leading token
+    #    with the generic HTTP method regex MUST be matched BEFORE it (issue #599).
+    #    RTSP and SIP both use verbs like OPTIONS/DESCRIBE that the http regex
+    #    would otherwise swallow, and LDAP is a binary ASN.1 bind that must not
+    #    fall through to the HTTP path.
+    # RTSP — request-line verb followed by an RTSP/{version} token (RFC 2326/7826).
+    (
+        'rtsp',
+        re.compile(
+            rb'^(OPTIONS|DESCRIBE|SETUP|PLAY|PAUSE|TEARDOWN|ANNOUNCE|SET_PARAMETER|GET_PARAMETER|RECORD|REDIRECT)\s.*RTSP/'
+        ),
+        b'OPTIONS / RTSP/1.0',
+    ),
+    # LDAP bind request — ASN.1 SEQUENCE (0x30) + length + INTEGER messageID
+    # (0x02 0x01 <any>) + application bind tag (0x60). Placed before HTTP so an
+    # LDAP-on-HTTP-port probe is not mislabeled as HTTP (issue #599). The leading
+    # 0x30 also matches SNMP/DNS-but-binary patterns; the \x60 bind tag is the
+    # discriminatоr that keeps it LDAP-specific.
+    (
+        'ldap',
+        re.compile(rb'^\x30.{1,8}\x02\x01.\x60'),
+        b'\x30\x14\x02\x01\x01\x60\x0f',
+    ),
+    # SIP — SIP request-line verb followed by a SIP/SIPS URI (sip[s]:) e.g.
+    # "OPTIONS sip:nm@host SIP/2.0", OR a "SIP/2.0 200 OK" status line.
+    # The URI must be a SIP URI (not "*" or "/path"), otherwise HTTP asterisk-form
+    # "OPTIONS * HTTP/1.1" would be swallowed here (issue #599). Placed BEFORE
+    # the generic HTTP method regex so real SIP is detected as 'sip', and BEFORE
+    # DNS.
+    (
+        'sip',
+        re.compile(
+            rb'^(?:(?:INVITE|ACK|BYE|CANCEL|OPTIONS|REGISTER|SUBSCRIBE|NOTIFY|PUBLISH|MESSAGE|INFO|REFER|PRACK)\s+sips?:|SIP/2\.0)'
+        ),
+        b'OPTIONS sip:nm@mn2 SIP/2.0',
+    ),
     # HTTP before DNS — "GET/POST..." starts with ASCII letters that are valid DNS label bytes
     (
         'http',
@@ -43,17 +79,6 @@ _PROTOCOL_SIGNATURES = [
         'http2',
         re.compile(rb'^PRI \* HTTP/2\.0\r\n\r\nSM\r\n\r\n'),
         b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n',
-    ),
-    # SIP (UDP) — request-line verbs or a SIP/2.0 status line. SIP runs over
-    # UDP 5060; detected here so UDP payloads can be classified even though the
-    # UDP face dispatch is port-keyed (issue #388/#389). Placed BEFORE the DNS
-    # signature because some SIP packets can otherwise trip the loose DNS check.
-    (
-        'sip',
-        re.compile(
-            rb'^(INVITE|ACK|BYE|CANCEL|OPTIONS|REGISTER|SUBSCRIBE|NOTIFY|PUBLISH|MESSAGE|INFO|REFER|PRACK|SIP/2\.0)'
-        ),
-        b'OPTIONS sip:manyfaced SIP/2.0',
     ),
     # SNMP (UDP) — version byte + community string. SNMPv1/v2c: 0x30 (SEQUENCE)
     # 0x02 0x01 0x00/0x01 (version) ... then 0x04 (OCTET STRING = community).

@@ -29,6 +29,7 @@ from manyfaced.common.status import (
     UNKNOWN_MONGODB,
     UNKNOWN_NON_HTTP,
     UNKNOWN_REDIS,
+    UNKNOWN_SIP,
     UNKNOWN_SMB,
     UNKNOWN_TLS,
     UNKNOWN_TELNET,
@@ -191,6 +192,12 @@ class HTTPHandler:
             'telnet': UNKNOWN_TELNET,
             'rdp': UNKNOWN_RDP,
             'vnc': UNKNOWN_VNC,
+            # SIP/RTSP/LDAP arrive on HTTP/TLS ports and are now detected by
+            # their real protocol (issue #599 reorders detect_protocol so the
+            # generic HTTP method regex no longer swallows them). Keep them out
+            # of UNKNOWN_NON_HTTP so analysis can separate them from genuinely
+            # unrecognized input. rtsp/ldap detected_ids land in #600.
+            'sip': UNKNOWN_SIP,
         }.get(protocol, UNKNOWN_NON_HTTP)
 
         raw_data = protocol_info.get('raw', b'')
