@@ -462,27 +462,40 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int, r
     # Persist the protocol reply so analysts can see what the honeypot actually
     # said to the attacker (issue #502). Recorded as a single dialogue entry on
     # the bot_profile_data so it rides the report exactly like the HTTP path.
-    if reply:
-        bs.bot_profile_data = {
-            spec.name: {
-                'dialogue': [
-                    {
-                        'sequence': 1,
-                        'request': {
-                            'path': '/',
-                            'method': spec.name.upper(),
-                            'raw': raw_bytes.decode('latin-1', errors='replace')[:5000],
-                            'headers': {},
-                        },
-                        'response': {
-                            'raw': reply.decode('latin-1', errors='replace')[:5000],
-                            'size': len(reply),
-                            'detected': spec.detected_id,
-                        },
-                    }
-                ]
-            }
+    #
+    # Issue #601: always emit at least a MINIMAL bot_profile_data carrying the
+    # wire request_command and a `captured` flag, even when no reply was sent.
+    # Previously the field was left None unless `reply` was truthy, so a
+    # client-first/non-HTTP capture with an empty or reply-less frame (e.g. a
+    # raw GET / on a DB port, or a client-first connect that sent no frame)
+    # landed with EMPTY bot_profile_data — indistinguishable from a real
+    # EMPTY_CONNECTION and hiding silent data loss. The minimal record keeps
+    # every capture auditable and distinct from an empty connection.
+    profile: dict[str, object] = {
+        spec.name: {
+            'request_command': wire_command,
+            'captured': bool(raw_bytes),
         }
+    }
+    if reply:
+        profile[spec.name]['dialogue'] = [  # type: ignore[index]
+            {
+                'sequence': 1,
+                'request': {
+                    'path': '/',
+                    'method': spec.name.upper(),
+                    'raw': raw_bytes.decode('latin-1', errors='replace')[:5000],
+                    'headers': {},
+                },
+                'response': {
+                    'raw': reply.decode('latin-1', errors='replace')[:5000],
+                    'size': len(reply),
+                    'detected': spec.detected_id,
+                },
+            }
+        ]
+        profile[spec.name]['captured'] = True  # type: ignore[index]
+    bs.bot_profile_data = profile  # type: ignore[assignment]
     return bs
 
 
