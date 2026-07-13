@@ -41,6 +41,8 @@ the dispatch loop stays uniform and the handlers need no edits (DRY).
 from __future__ import annotations
 
 import logging
+import os
+import struct
 from dataclasses import dataclass
 from typing import Callable
 
@@ -276,10 +278,21 @@ def _zookeeper_respond(raw: bytes, bot_ip: str) -> bytes:
 
 
 def _postgres_respond(raw: bytes, bot_ip: str) -> bytes:
-    # On a startup packet, answer with an AuthRequest (MD5, type='R', len=12,
-    # method=5). Real Postgres then expects an MD5 password — we don't need to
-    # drive the whole exchange, just look like it began.
-    return b'R' + (12).to_bytes(4, 'big', signed=False) + (5).to_bytes(4, 'big', signed=False)
+    # Be version-aware where cheap (#499): a Postgres server first receives
+    # either a `StartupMessage` or an `SSLRequest`
+    # (\x00\x00\x00\x08\x04\xd2\x16\x2f). For an SSLRequest we MUST answer
+    # with a single 'N' (TLS not supported) or 'S' before the client proceeds;
+    # otherwise libpq blocks waiting for the flag byte. For a StartupMessage we
+    # answer with an AuthRequest (MD5, type='R', len=12, method=5) plus the
+    # mandatory 4-byte salt = 13 bytes total, so libpq can drive the MD5
+    # exchange. The reply is protocol-correct; credentials are not captured
+    # here (out of scope for this fidelity fix).
+    if len(raw) >= 8 and raw[:4] == (8).to_bytes(4, 'big'):
+        code = struct.unpack('>i', raw[4:8])[0]
+        if code == 80877103:  # SSLRequest
+            return b'N'
+    salt = os.urandom(4)
+    return b'R' + (12).to_bytes(4, 'big') + (5).to_bytes(4, 'big') + salt
 
 
 def _elasticsearch_respond(raw: bytes, bot_ip: str) -> bytes:
@@ -380,6 +393,22 @@ def _greeting_only_respond(raw: bytes, bot_ip: str) -> bytes:
     return b''
 
 
+# MySQL: the server greeting (seq 0) is sent by `_mysql_greeting`. A real MySQL
+# client then sends a HandshakeResponse41 (seq 1) and waits for the server's
+# reply (seq 2) — an OK / ERR / AuthMore packet. Replying with nothing (the old
+# `_greeting_only_respond`) made the client hang until BOT_TIMEOUT. We answer
+# with a wire-valid ERR_Packet (Access denied) so the handshake completes and
+# the client closes cleanly. Credentials are intentionally NOT captured here
+# (out of scope for this fidelity fix); the reply is protocol-correct only.
+def _mysql_respond(raw: bytes, bot_ip: str) -> bytes:
+    err_code = 1045  # ER_ACCESS_DENIED_ERROR
+    sql_state = b'28000'
+    message = b'Access denied for user'
+    payload = b'\xff' + struct.pack('<H', err_code) + b'#' + sql_state + message
+    # 3-byte length (LE) + 1-byte sequence id = 2 (greeting 0, client resp 1).
+    return len(payload).to_bytes(3, 'little') + b'\x02' + payload
+
+
 def _no_reply(raw: bytes, bot_ip: str) -> bytes:
     """Explicit empty reply (e.g. SSH, where client.py drives credential capture)."""
     return b''
@@ -422,7 +451,7 @@ _FACE_DEFS: dict[int, tuple] = {
     5901: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False, None),
     3389: (UNKNOWN_RDP, SERVER_FIRST, _rdp_greeting, _rdp_respond, True, None),
     1433: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mssql_greeting, _greeting_only_respond, True, None),
-    3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _greeting_only_respond, True, None),
+    3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _mysql_respond, True, None),
     5672: (UNKNOWN_NON_HTTP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False, None),
     # Oracle TNS (issue #440): server-first Refuse packet greeting.
     1521: (UNKNOWN_NON_HTTP, SERVER_FIRST, _oracle_greeting, _oracle_respond, False, None),

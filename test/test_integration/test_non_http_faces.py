@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -195,19 +196,50 @@ def test_elasticsearch_get_responds_http():
 def test_postgres_startup_gets_auth_request():
     import struct
 
-    pkt = (
-        struct.pack('!ii', 8, 80877103)
-        + struct.pack('!ii', 96, 196608)
-        + (b'user\x00postgres\x00database\x00postgres\x00\x00')
-    )
+    # A real Postgres StartupMessage: int32 length, int32 protocol 196608
+    # (0x00030000, protocol 3.0), then NUL-terminated key/value params ending
+    # with an empty key.
+    params = b'user\x00postgres\x00database\x00postgres\x00\x00'
+    body = struct.pack('!I', 196608) + params
+    pkt = struct.pack('!I', 4 + len(body)) + body
     reply = _client_first_reply('postgres', pkt)
+    # Real libpq MD5 AuthRequest is exactly 13 bytes: 'R' + int32(12) + int32(5)
+    # + 4-byte salt. The old reply declared length 12 but sent only 4 body
+    # bytes, desyncing libpq (issue #482).
     assert reply[:1] == b'R', f'postgres reply was {reply!r}'
+    assert len(reply) == 13, f'postgres AuthRequest wrong length: {len(reply)}'
+    assert reply[1:5] == (12).to_bytes(4, 'big'), f'postgres length field wrong: {reply!r}'
+    assert reply[5:9] == (5).to_bytes(4, 'big'), f'postgres method field wrong: {reply!r}'
+
+
+def test_postgres_sslrequest_gets_flag():
+    # A Postgres SSLRequest (code 80877103) must be answered with a single
+    # 'N' (TLS not supported) flag byte so libpq can proceed (issue #499).
+    ssl_req = (8).to_bytes(4, 'big') + (80877103).to_bytes(4, 'big')
+    reply = _client_first_reply('postgres', ssl_req)
+    assert reply == b'N', f'postgres SSLRequest reply was {reply!r}'
 
 
 def test_mongodb_hello_responds():
-    hello = bytes([0x3D]) + bytes(23)
+    # The MongoDB face previously emitted a broken 16-byte header (opcode in
+    # the length field) and malformed hello JSON (unterminated
+    # authMechanisms array). Verify the reply now has a valid header whose
+    # declared length matches the bytes on the wire and a valid JSON body
+    # (issues #431/#433/#437).
+    import json
+    import struct
+
+    hello = b'{"hello":1,"client":{}}'
     reply = _client_first_reply('mongodb', hello)
-    assert b'isWritablePrimary' in reply or len(reply) > 16, f'mongo reply was {reply!r}'
+    assert len(reply) > 16, f'mongo reply too short: {reply!r}'
+    declared_len = struct.unpack('<I', reply[:4])[0]
+    assert declared_len == len(reply), f'mongo header length {declared_len} != actual {len(reply)}'
+    # opcode at offset 12 must be OP_REPLY (1)
+    assert struct.unpack('<I', reply[12:16])[0] == 1, f'mongo opcode wrong: {reply!r}'
+    body = reply[16:].decode('utf-8', errors='replace')
+    parsed = json.loads(body)
+    assert parsed.get('isWritablePrimary') is True, f'mongo body was {body!r}'
+    assert 'ok' in parsed and parsed['ok'] == 1.0
 
 
 def test_zookeeper_connect_responds():
@@ -354,6 +386,71 @@ def test_dispatch_postgres_not_http():
     assert got, f'Postgres face sent nothing: {got!r}'
     assert not got.startswith(b'HTTP'), f'Postgres 5432 served HTTP (double-ownership!): {got!r}'
     assert got[:1] == b'R', f'Postgres reply not an AuthRequest: {got!r}'
+
+
+def test_dispatch_mysql_greeting_and_auth_request_reaches_client():
+    # MySQL is server-first: the greeting (seq 0) is sent on accept, then the
+    # client's HandshakeResponse41 (seq 1) must be answered with an ERR/OK
+    # packet (seq 2). The old face replied with nothing and the client hung
+    # until BOT_TIMEOUT (issue #438). Assert the full greeting + auth-request
+    # PDU arrives and the auth-request is a wire-valid ERR packet.
+    import socket as _sock
+    import struct
+
+    from manyfaced.handlers.http_handler import set_enrich_args
+
+    args = SimpleNamespace(server=19999, server_host='127.0.0.1')
+    set_enrich_args(args)
+    spec = get_face(3306)
+
+    lsn = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    lsn.bind(('127.0.0.1', 0))
+    lsn.listen(1)
+    real_port = lsn.getsockname()[1]
+
+    client = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    client.connect(('127.0.0.1', real_port))
+    srv_sock, _ = lsn.accept()
+
+    def server_side():
+        try:
+            _handle_non_http_connection(srv_sock, args, '9.9.9.9', None, 3306, spec)
+        finally:
+            srv_sock.close()
+
+    t = threading.Thread(target=server_side, daemon=True)
+    t.start()
+    try:
+        # Minimal HandshakeResponse41-shaped frame so the dispatch loop has
+        # something to respond to.
+        client_handshake = struct.pack('<I', 0xFFFF_FFFF) + b'root\x00' + b'\x14' + (b'\x00' * 20)
+        client.settimeout(4)
+        client.sendall(client_handshake)
+        # Read until we have both the greeting (0x0a) and the ERR packet (0xff),
+        # or until the socket idles — they may arrive in separate segments.
+        buf = b''
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline and (b'\x0a' not in buf or b'\xff' not in buf):
+            try:
+                chunk = client.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            buf += chunk
+        got = buf
+    finally:
+        client.close()
+        lsn.close()
+        t.join(timeout=3)
+
+    assert got, f'MySQL face sent nothing: {got!r}'
+    # The greeting PDU is `<3-byte len><1-byte seq><payload>`; the protocol
+    # version byte (0x0a) is the first payload byte (offset 4).
+    assert got[4:5] == b'\x0a', f'MySQL greeting missing: {got!r}'
+    # The full PDU must contain the ERR packet the server sends after the
+    # client's handshake: an ERR_Packet begins with 0xff.
+    assert b'\xff' in got, f'MySQL auth-request (ERR) missing: {got!r}'
 
 
 def _dispatch_multi(make_spec, client_frames, server_port):

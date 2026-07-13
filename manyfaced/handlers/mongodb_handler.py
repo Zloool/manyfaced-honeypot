@@ -8,6 +8,7 @@ Protocol reference: https://www.mongodb.com/docs/manual/reference/mongodb-wire-p
 
 from __future__ import annotations
 
+import itertools
 import logging
 import random
 import re
@@ -16,43 +17,41 @@ from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
+# MongoDB OP_REPLY opcode (legacy wire protocol, still accepted by all drivers
+# for hello/ismaster in the fallback path).
+OP_REPLY = 1
 
-def _build_message(body: bytes) -> bytes:
-    """Build a complete MongoDB wire protocol message.
+# Monotonic request-id counter so each reply carries a distinct, parseable id
+# (drivers echo responseTo; 0 is legal but a counter avoids accidental reuse).
+_request_id = itertools.count(1)
 
-    Format: {length(4 LE)+flags(4 LE)+cursor_id(8 BE)+response_to(4 LE)+opcode(4 LE)}
+
+def _build_message(body: bytes, opcode: int = OP_REPLY) -> bytes:
+    """Build a complete MongoDB wire protocol message with a valid 16-byte header.
+
+    The standard header is::
+
+        messageLength(4 LE) + requestID(4 LE) + responseTo(4 LE) + opcode(4 LE)
+
+    where ``messageLength`` is the TOTAL length of the message *including* the
+    header. The body is the reply payload (for OP_REPLY: responseFlags(4) +
+    cursorID(8) + numberReturned(4) + documents…; we keep the legacy body as a
+    JSON document so it round-trips through a JSON parser in tests/real clients).
 
     Args:
         body: The message body (without the 16-byte header).
+        opcode: The MongoDB opcode (default OP_REPLY = 1).
 
     Returns:
         Complete wire protocol message as bytes.
     """
-    length = 16 + len(body)
+    message_length = 16 + len(body)
+    request_id = next(_request_id)
     return (
-        struct.pack('<I', length)
-        + b'\x00\x00\x00\x00'
-        + struct.pack('<q', 0)
-        + struct.pack('<i', 0)
-        + struct.pack('<I', 1)
-        + body
-    )
-
-
-def _build_op_reply(body: bytes) -> bytes:
-    """Build an OP_REPLY message (legacy wire protocol).
-
-    Args:
-        body: The reply body.
-
-    Returns:
-        Complete OP_REPLY message as bytes.
-    """
-    return (
-        struct.pack('<I', 1)
-        + b'\x00\x00\x00\x00'
-        + struct.pack('<q', 0)
-        + struct.pack('<i', 0)
+        struct.pack('<I', message_length)
+        + struct.pack('<I', request_id)
+        + struct.pack('<I', 0)  # responseTo
+        + struct.pack('<I', opcode)
         + body
     )
 
@@ -113,7 +112,7 @@ def generate_mongodb_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byt
     try:
         text = raw_data.decode('utf-8', errors='replace')
     except Exception:
-        return _build_op_reply(b'')
+        return _build_message(b'')
 
     # Detect authentication commands and capture credentials
     if re.search(r'(?:authenticate|saslStart|SCRAM)', text, re.IGNORECASE):
@@ -125,38 +124,37 @@ def generate_mongodb_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byt
                 creds[0],
             )
 
-    # saslStart command — return authentication challenge
+    # saslStart command — return a wire-valid SCRAM authentication challenge.
+    # The SCRAM first-server-message is `r=...,s=...,i=...`. We echo the
+    # client-provided nonce (the part after the last ',' in the client's
+    # `r=`) and append our own server nonce; if the client did not send one
+    # we generate a fresh one. The client identity `n=` is left to the
+    # client (we do not inject a magic octet).
     if re.search(r'saslStart', text, re.IGNORECASE):
-        mechanisms = ['SCRAM-SHA-1', 'SCRAM-SHA-256']
-        mechanism = random.choice(mechanisms)
+        mechanism = random.choice(['SCRAM-SHA-1', 'SCRAM-SHA-256'])
+        client_nonce = ''
+        cm = re.search(r'"r":"([^"]*)"', text)
+        if cm:
+            # client nonce is everything before the last ','
+            client_nonce = cm.group(1).rsplit(',', 1)[0]
         nonce = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=24))
-
-        if mechanism == 'SCRAM-SHA-1':
-            body_str = (
-                '{"done":false,'
-                '"conversationId":1,'
-                f'"mechanism":"{mechanism}",'
-                f'"payload":"{nonce}n,,n={bot_ip.split(".")[-1]},r={nonce}"'
-                '}'
-            )
-        else:
-            body_str = (
-                '{"done":false,'
-                '"conversationId":1,'
-                f'"mechanism":"{mechanism}",'
-                f'"payload":"n,,n=*,r={nonce}"'
-                '}'
-            )
-
-        return _build_op_reply(body_str.encode('utf-8'))
+        combined = (client_nonce + nonce) if client_nonce else nonce
+        salt = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=24))
+        iterations = 4096
+        payload = f'r={combined},s={salt},i={iterations}'
+        body_str = (
+            f'{{"done":false,"conversationId":1,"mechanism":"{mechanism}","payload":"{payload}"}}'
+        )
+        return _build_message(body_str.encode('utf-8'))
 
     # authenticate command (legacy) — return auth failure
     if re.search(r'(?:authenticate|auth)', text, re.IGNORECASE):
         body_str = '{"ok":0.0,"code":18,"errmsg":"Authentication failed.","data":null}'
-        return _build_op_reply(body_str.encode('utf-8'))
+        return _build_message(body_str.encode('utf-8'))
 
-    # ismaster / hello command — respond as primary replica set member
-    if re.search(r'(?:ismaster|hello)\s*[:\s]', text, re.IGNORECASE):
+    # ismaster / hello command — respond as primary replica set member.
+    # The authMechanisms array is properly closed so the body is valid JSON.
+    if re.search(r'(?:ismaster|hello)\s*["\s:]', text, re.IGNORECASE):
         ts = str(int(random.randint(1700000000, 1900000000)))
         body_str = (
             '{"isWritablePrimary":true,'
@@ -174,25 +172,25 @@ def generate_mongodb_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byt
             '"minWireVersion":0,'
             '"maxWireVersion":21,'
             '"readOnlySecondaryElects":false,'
-            '"authMechanisms":["MONGODB-CR","SCRAM-SHA-1","SCRAM-SHA-256",'
-            '"saslSupportedMechs":"PLAIN",'
+            '"authMechanisms":["MONGODB-CR","SCRAM-SHA-1","SCRAM-SHA-256"],'
+            '"saslSupportedMechs":["PLAIN"],'
             '"compression":[],"ok":1.0'
             '}'
         )
-        return _build_op_reply(body_str.encode('utf-8'))
+        return _build_message(body_str.encode('utf-8'))
 
     # find / count / aggregate — return empty result set
     if re.search(r'(?:find|count|aggregate|distinct)', text, re.IGNORECASE):
         body_str = '{"cursor":{"id":0,"ns":"test.collection","firstBatch":[]},"ok":1.0}'
-        return _build_op_reply(body_str.encode('utf-8'))
+        return _build_message(body_str.encode('utf-8'))
 
     # insert — acknowledge success
     if re.search(r'(?:insert|bulkWrite)', text, re.IGNORECASE):
         body_str = '{"n":1,"writeConcernError":null,"ok":1.0}'
-        return _build_op_reply(body_str.encode('utf-8'))
+        return _build_message(body_str.encode('utf-8'))
 
     # Default: OP_REPLY with empty body
-    return _build_op_reply(b'')
+    return _build_message(b'')
 
 
 def generate_mongodb_greeting(bot_ip: str = '127.0.0.1') -> bytes:
