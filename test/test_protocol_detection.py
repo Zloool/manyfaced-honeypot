@@ -67,9 +67,23 @@ class TestDetectProtocolNewProtocols:
         assert detect_protocol(raw) == 'mongodb'
 
     def test_mongodb_wire_protocol_op_msg(self):
-        """MongoDB OP_MSG (opcode=1000 LE = \xe8\x03\x00\x00 at offset 20) should be detected."""
+        """MongoDB OP_MSG alias opcode (1000 LE = \xe8\x03\x00\x00 at offset 20) should be detected."""
         raw = b'\x50\x00\x00\x00' + b'\x00' * 16 + b'\xe8\x03\x00\x00'
         assert detect_protocol(raw) == 'mongodb'
+
+    def test_mongodb_wire_protocol_op_msg_real(self):
+        """MongoDB OP_MSG (the modern default driver opcode=2013 / 0x07dd) must be detected (issue #597).
+
+        OP_MSG (opcode 2013, LE encoding \xdd\x07\x00\x00 at offset 20) is what every
+        current MongoDB driver actually sends; the old detector only knew legacy
+        OP_QUERY/OP_REPLY so OP_MSG probes were mis-classified.
+        """
+        # header length=0x50 (80), then 16 bytes of flags/cursor/responseTo, then opcode=2013.
+        raw = b'\x50\x00\x00\x00' + b'\x00' * 16 + b'\xdd\x07\x00\x00'
+        assert detect_protocol(raw) == 'mongodb'
+        # get_protocol_info must also classify it as mongodb.
+        info = get_protocol_info(raw)
+        assert info['protocol'] == 'mongodb'
 
     def test_mongodb_wire_protocol_op_reply(self):
         """MongoDB OP_REPLY (opcode=1 LE = \x01\x00\x00\x00 at offset 20) should be detected."""
