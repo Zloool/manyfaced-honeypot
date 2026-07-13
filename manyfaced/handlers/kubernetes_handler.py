@@ -24,6 +24,8 @@ from urllib.parse import unquote
 
 import logging
 
+import json
+
 from manyfaced.handlers.base_handler import HTTPHandlerBase
 
 from manyfaced.common.status import KUBERNETES_HTTP
@@ -76,39 +78,122 @@ class KubernetesHandler(HTTPHandlerBase):
             if credentials:
                 return self._login_failed_response(), detected
 
-        # Route to the appropriate Kubernetes response.
-        body, content_type = self._route(decoded)
+        # Route to the appropriate Kubernetes response. Real kube-apiserver
+        # enforces auth: anonymous requests to protected /api/v1/* endpoints
+        # return 401/403 Status objects, and unknown /api/... paths return 404
+        # with kind:Status. A real cluster with anonymous-auth disabled (the
+        # default) never answers those with 200 (issue #489).
+        body, content_type, status_code, status_text = self._route(decoded, headers or {})
 
         return (
-            self._build_http_response(body, 200, 'OK', content_type),
+            self._build_http_response(body, status_code, status_text, content_type),
             self.DETECTED_ID,
         )
 
     # ------------------------------------------------------------------ #
-    # Routing                                                            #
-    # ------------------------------------------------------------------ #
 
-    def _route(self, decoded_path: str) -> tuple[str, str]:
-        """Return (body, content_type) for a decoded, lower-cased path."""
+    def _route(
+        self, decoded_path: str, headers: dict[str, str] | None = None
+    ) -> tuple[str, str, int, str]:
+        """Return (body, content_type, status_code, status_text) for a path.
+
+        Mirrors real kube-apiserver authz + routing (issue #489):
+          * protected /api/v1/* (secrets, namespaces, pods, ...) -> 403 Forbidden
+            Status when unauthenticated (anonymous-auth is disabled by default).
+          * unauthenticated /api/v1/namespaces write/etc. also 403.
+          * unknown /api/... or /apis/... paths -> 404 Status (kind:"Status").
+          * public discovery docs (/, /api, /apis, /healthz, /readyz) -> 200.
+          * dashboard paths -> 200 HTML.
+        """
+        json_ct = 'application/json'
+
+        # Public discovery endpoints stay 200.
         if decoded_path in ('/', ''):
-            return self._root_discovery(), self.JSON_CONTENT_TYPE
+            return self._root_discovery(), json_ct, 200, 'OK'
         if decoded_path == '/api':
-            return self._api_versions(), self.JSON_CONTENT_TYPE
-        if decoded_path == '/api/v1':
-            return self._api_v1(), self.JSON_CONTENT_TYPE
-        if decoded_path.startswith('/api/v1/namespaces'):
-            return self._api_v1_namespaces(), self.JSON_CONTENT_TYPE
+            return self._api_versions(), json_ct, 200, 'OK'
         if decoded_path == '/apis':
-            return self._apis(), self.JSON_CONTENT_TYPE
+            return self._apis(), json_ct, 200, 'OK'
         if decoded_path == '/healthz':
-            return self._healthz(), 'text/plain; charset=utf-8'
+            return self._healthz(), 'text/plain; charset=utf-8', 200, 'OK'
         if decoded_path == '/readyz':
-            return self._readyz(), 'text/plain; charset=utf-8'
+            return self._readyz(), 'text/plain; charset=utf-8', 200, 'OK'
         if decoded_path == '/dashboard':
-            return self._dashboard_login(), self.HTML_CONTENT_TYPE
+            return self._dashboard_login(), self.HTML_CONTENT_TYPE, 200, 'OK'
         if decoded_path.startswith('/kubernetes/'):
-            return self._dashboard_env_error(), self.HTML_CONTENT_TYPE
-        return self._api_v1(), self.JSON_CONTENT_TYPE
+            return self._dashboard_env_error(), self.HTML_CONTENT_TYPE, 200, 'OK'
+
+        # Protected core API: any /api/v1/* resource (secrets, namespaces,
+        # pods, ...) must require auth. Anonymous requests (no Authorization
+        # header) are rejected with 403 Forbidden Status (issue #489).
+        if decoded_path == '/api/v1' or decoded_path.startswith('/api/v1/'):
+            if self._is_authenticated(headers):
+                # Authenticated-but-missing: 404 for unknown subresources,
+                # but the well-known collections still resolve. Default to a
+                # believable 403 to keep the "require auth" signal consistent.
+                return self._api_v1(), json_ct, 200, 'OK'
+            return (
+                self._status_object(
+                    403,
+                    'Forbidden',
+                    'forbidden',
+                    'User "system:anonymous" cannot get path "%s"' % decoded_path,
+                ),
+                json_ct,
+                403,
+                'Forbidden',
+            )
+
+        # Anything else under /api or /apis that we don't recognise is an
+        # unknown API path on a real cluster -> 404 Status (issue #489).
+        if decoded_path.startswith('/api') or decoded_path.startswith('/apis'):
+            return (
+                self._status_object(
+                    404,
+                    'Not Found',
+                    'NotFound',
+                    'the server could not find the requested resource: %s' % decoded_path,
+                ),
+                json_ct,
+                404,
+                'Not Found',
+            )
+
+        # Unknown top-level path: a real apiserver answers 404 Status too.
+        return (
+            self._status_object(
+                404,
+                'Not Found',
+                'NotFound',
+                'the server could not find the requested resource: %s' % decoded_path,
+            ),
+            json_ct,
+            404,
+            'Not Found',
+        )
+
+    def _is_authenticated(self, headers: dict[str, str] | None) -> bool:
+        """Return True if the request carries an Authorization header."""
+        if not headers:
+            return False
+        lowered = {k.lower(): headers[k] for k in headers}
+        auth = lowered.get('authorization')
+        return bool(auth and auth.strip())
+
+    def _status_object(self, code: int, status: str, reason: str, message: str) -> str:
+        """Build a kube-apiserver ``Status`` JSON error object."""
+        return json.dumps(
+            {
+                'kind': 'Status',
+                'apiVersion': 'v1',
+                'metadata': {},
+                'status': status,
+                'message': message,
+                'reason': reason,
+                'code': code,
+            },
+            separators=(',', ':'),
+        )
 
     # ------------------------------------------------------------------ #
     # kube-apiserver JSON responses                                      #

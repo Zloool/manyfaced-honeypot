@@ -440,6 +440,7 @@ def _handle_non_http_connection(
     #    promptly; credentials offered on any frame are captured. ──────────
     if spec.direction == 'client-first':
         creds: object = None
+        replies: list[bytes] = []
         # Process the first (prelude) frame.
         if raw_bytes and spec.respond is not None:
             try:
@@ -448,6 +449,7 @@ def _handle_non_http_connection(
                 logger.debug('face %s respond error: %s', spec.name, e)
                 reply = b''
             if reply:
+                replies.append(reply)
                 try:
                     connection_socket.sendall(reply)
                 except socket.error:
@@ -473,11 +475,12 @@ def _handle_non_http_connection(
                     logger.debug('face %s respond error: %s', spec.name, e)
                     reply2 = b''
                 if reply2:
+                    replies.append(reply2)
                     try:
                         connection_socket.sendall(reply2)
                     except socket.error:
                         break
-        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port, reply=b''.join(replies))
         if creds:
             bs.login = creds if isinstance(creds, str) else str(creds)
         _enrich_and_send_bear(bs, bot_ip)
