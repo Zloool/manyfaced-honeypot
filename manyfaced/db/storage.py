@@ -57,6 +57,84 @@ def sanitize_host_filter(host: str | None) -> str | None:
     return host
 
 
+# Minimum length for the capture-log free-text search (issue #585). A query
+# shorter than this is rejected so a single-char search can't drive a
+# leading-wildcard LIKE scan across the whole capture table; the dashboard's
+# search box still matches legitimate substrings fine.
+_SEARCH_FILTER_MIN_LEN = 2
+
+
+def sanitize_search_filter(search: str | None) -> str | None:
+    """Issue #585: drop a search term that would force a full-table LIKE scan.
+
+    Returns the term unchanged for a safe substring match, or ``None`` to drop
+    the ``LIKE`` clause when the value is empty/whitespace, too short
+    (< ``_SEARCH_FILTER_MIN_LEN``) or begins with a wildcard (``%`` / ``*``).
+    The term is matched case-insensitively against the same columns the client
+    already concatenates into ``data-search`` (ip/path/detected service/UA/
+    raw/port/country), so server-scoped results match client-side matches.
+    """
+    if not search:
+        return None
+    term = search.strip()
+    if not term or term.startswith(('%', '*')):
+        return None
+    if len(term) < _SEARCH_FILTER_MIN_LEN:
+        return None
+    return term
+
+
+# Methods that map to a literal request_command value (issue #585). 'OTHER'
+# covers everything else (null command / RAW / PUT / unknown verbs), matching
+# the dashboard's data-method="OTHER" bucket.
+_METHOD_LITERALS = ('GET', 'POST')
+
+
+def _append_search_method_clauses(
+    clauses: list[str],
+    params: list[str],
+    search: str | None,
+    method: str | None,
+    like: str = 'LIKE ?',
+    param_placeholder: str = '?',
+) -> None:
+    """Append the search/method WHERE fragments shared by both backends.
+
+    ``search`` is matched case-insensitively across the columns the dashboard
+    already concatenates into each row's ``data-search`` blob (issue #585):
+    bot_ip, request_path, detected-service name, bot_user_agent, request_raw,
+    listen_port, bot_country. ``method`` is ``GET``/``POST`` (literal command)
+    or ``OTHER`` (anything else, including null/RAW). The ``like``/placeholder
+    args let PostgreSQL reuse the same helper with ``ILIKE %s`` / ``%s`` syntax.
+    """
+    safe_search = sanitize_search_filter(search)
+    if safe_search is not None:
+        # OR across the same fields the client-side data-search blob covers so
+        # a match in ANY column counts (ip/path/raw/UA/port/country/detected-id).
+        search_clauses = [
+            f'bot_ip {like}',
+            f'request_path {like}',
+            f'request_raw {like}',
+            f'bot_user_agent {like}',
+            f'CAST(listen_port AS TEXT) {like}',
+            f'bot_country {like}',
+            # detected_id integer matches the friendly service name the client
+            # also folds into data-search (e.g. a "488" probe -> 'FTP' name).
+            f'CAST(detected_id AS TEXT) {like}',
+        ]
+        clauses.append('(' + ' OR '.join(search_clauses) + ')')
+        for _ in search_clauses:
+            params.append(f'%{safe_search}%')
+    if method == 'OTHER':
+        clauses.append(
+            '(request_command IS NULL OR UPPER(request_command) NOT IN (%s))'
+            % (', '.join(f"'{m}'" for m in _METHOD_LITERALS))
+        )
+    elif method in _METHOD_LITERALS:
+        clauses.append(f'UPPER(request_command) = {param_placeholder}')
+        params.append(method)
+
+
 # Hosts that are never real C2 drop targets — mirrors dashboard._C2_IGNORE_HOSTS
 # so handler-extracted hosts filtered here match the raw-scan panel.
 _C2_PROFILE_IGNORE_RE = re.compile(
@@ -327,6 +405,8 @@ class StorageBackend(ABC):
         offset: int = 0,
         ip: str | None = None,
         host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
@@ -339,16 +419,30 @@ class StorageBackend(ABC):
                 to a single attacker IP clicked from the IoC panel.
             host: Optional ``request_raw`` substring filter (issue #366) — scope
                 the log to requests that carried a C2/download host.
+            search: Optional free-text substring filter (issue #585) — scope the
+                log to rows whose ip/path/detected-service/UA/raw/port/country
+                contain the term (case-insensitive).
+            method: Optional method filter (issue #585) — ``'GET'``/``'POST'``
+                match that ``request_command``; ``'OTHER'`` matches any command
+                that isn't GET/POST (including null/RAW).
         """
         raise NotImplementedError('recent_records not implemented by this backend')
 
     def count_recent(
-        self, since: str | None = None, ip: str | None = None, host: str | None = None
+        self,
+        since: str | None = None,
+        ip: str | None = None,
+        host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316) so older rows stay
         reachable. Concrete subclasses override this; the base raises.
+        ``ip``/``host``/``search``/``method`` mirror :meth:`recent_records`
+        (issues #366/#585) so the pager total stays correct when the log is
+        scoped.
         """
         raise NotImplementedError('count_recent not implemented by this backend')
 
@@ -1049,6 +1143,8 @@ class SQLiteStorage(StorageBackend):
         offset: int = 0,
         ip: str | None = None,
         host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
@@ -1061,6 +1157,12 @@ class SQLiteStorage(StorageBackend):
             host: Optional request_raw substring filter (issue #366) -
                 scope the log to requests that carried a C2/download host
                 (the exact rows the host was extracted from).
+            search: Optional free-text substring filter (issue #585) - scope
+                the log to rows matching the term across ip/path/raw/UA/port/
+                country/detected-id (case-insensitive).
+            method: Optional method filter (issue #585) - 'GET'/'POST' match
+                that request_command; 'OTHER' matches any non-GET/POST command
+                (including null/RAW).
         """
         if self._conn is None:
             return []
@@ -1079,6 +1181,9 @@ class SQLiteStorage(StorageBackend):
         if safe_host is not None:
             clauses.append('request_raw LIKE ?')
             params.append('%' + safe_host + '%')
+        # Issue #585: capture-log search box + method filter scope at the SQL
+        # level so they match across the whole window, not just loaded rows.
+        _append_search_method_clauses(clauses, params, search, method)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
         try:
@@ -1092,14 +1197,19 @@ class SQLiteStorage(StorageBackend):
             return []
 
     def count_recent(
-        self, since: str | None = None, ip: str | None = None, host: str | None = None
+        self,
+        since: str | None = None,
+        ip: str | None = None,
+        host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316) so older rows inside
         the selected time range stay reachable beyond the rendered page size.
-        ip/host mirror :meth:`recent_records` (issue #366) so the pager total
-        stays correct when the log is scoped to an IoC indicator.
+        ip/host/search/method mirror :meth:`recent_records` (issues #366/#585)
+        so the pager total stays correct when the log is scoped.
         """
         if self._conn is None:
             return 0
@@ -1118,6 +1228,9 @@ class SQLiteStorage(StorageBackend):
         if safe_host is not None:
             clauses.append('request_raw LIKE ?')
             params.append('%' + safe_host + '%')
+        # Issue #585: capture-log search box + method filter scope at the SQL
+        # level so they match across the whole window, not just loaded rows.
+        _append_search_method_clauses(clauses, params, search, method)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT COUNT(*) FROM honeypot_bears' + where
         try:
@@ -1273,7 +1386,15 @@ class SQLiteStorage(StorageBackend):
             return None
         try:
             row = self._conn.execute('SELECT MAX(timestamp) FROM honeypot_bears').fetchone()
-            return row[0] if row and row[0] else None
+            ts = row[0] if row and row[0] else None
+            # Issue #584: timestamps are stored in UTC without an offset
+            # (client writes datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')).
+            # Append a trailing 'Z' so the dashboard's Date.parse() reads it as
+            # UTC instead of browser-local time — otherwise the liveness badge
+            # computes a wrong age and flips to STALE/OFFLINE.
+            if ts and not (ts.endswith('Z') or '+' in ts[-6:] or ts.endswith('z')):
+                ts = ts + 'Z'
+            return ts
         except (sqlite3.Error, sqlite3.OperationalError):
             logger.exception('Error reading last capture timestamp from SQLite storage')
             return None
@@ -1756,12 +1877,14 @@ class PostgreSQLStorage(StorageBackend):
         offset: int = 0,
         ip: str | None = None,
         host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> list[dict]:
         """Return the most recent bear records (newest first).
 
         Mirrors :meth:`SQLiteStorage.recent_records`; adds optional ip
         (bot_ip) and host (request_raw substring) filters for IoC-panel
-        log scoping (issue #366).
+        log scoping (issue #366), plus search/method filters (issue #585).
         """
         if self._conn is None and not self._ensure_connected():
             return []
@@ -1779,6 +1902,11 @@ class PostgreSQLStorage(StorageBackend):
         if safe_host is not None:
             clauses.append('request_raw ILIKE %s')
             params.append('%' + safe_host + '%')
+        # Issue #585: capture-log search box + method filter scope at the SQL
+        # level (ILIKE = case-insensitive, matching the client data-search).
+        _append_search_method_clauses(
+            clauses, params, search, method, like='ILIKE %s', param_placeholder='%s'
+        )
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         sql = 'SELECT * FROM honeypot_bears' + where + ' ORDER BY timestamp DESC LIMIT %s OFFSET %s'
         try:
@@ -1793,13 +1921,18 @@ class PostgreSQLStorage(StorageBackend):
             return []
 
     def count_recent(
-        self, since: str | None = None, ip: str | None = None, host: str | None = None
+        self,
+        since: str | None = None,
+        ip: str | None = None,
+        host: str | None = None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> int:
         """Count honeypot_bears rows within the optional ``since`` window.
 
         Used to drive capture-log pagination (issue #316). Mirrors
-        :meth:`SQLiteStorage.count_recent`; ip/host match
-        :meth:`recent_records` (issue #366).
+        :meth:`SQLiteStorage.count_recent`; ip/host/search/method match
+        :meth:`recent_records` (issues #366/#585).
         """
         if self._conn is None and not self._ensure_connected():
             return 0
@@ -1817,8 +1950,13 @@ class PostgreSQLStorage(StorageBackend):
         if safe_host is not None:
             clauses.append('request_raw ILIKE %s')
             params.append('%' + safe_host + '%')
+        # Issue #585: capture-log search box + method filter scope at the SQL
+        # level (ILIKE = case-insensitive, matching the client data-search).
+        _append_search_method_clauses(
+            clauses, params, search, method, like='ILIKE %s', param_placeholder='%s'
+        )
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
-        sql = 'SELECT COUNT(*) FROM honeypot_bears' + where + ''
+        sql = 'SELECT COUNT(*) FROM honeypot_bears' + where
         try:
             with self._read_cursor() as cur:
                 cur.execute(sql, params)
@@ -1947,7 +2085,13 @@ class PostgreSQLStorage(StorageBackend):
             with self._read_cursor() as cur:
                 cur.execute('SELECT MAX(timestamp) FROM honeypot_bears')  # nosec B608
                 row = cur.fetchone()
-                return row[0] if row and row[0] else None
+                ts = row[0] if row and row[0] else None
+                # Issue #584: timestamps are stored in UTC without an offset.
+                # Append a trailing 'Z' so the dashboard's Date.parse() reads it
+                # as UTC instead of browser-local time (liveness badge bug).
+                if ts and not (ts.endswith('Z') or '+' in ts[-6:] or ts.endswith('z')):
+                    ts = ts + 'Z'
+                return ts
         except psycopg2.Error:  # noqa: BLE001
             logger.exception('PostgreSQL last_capture_ts error')
             return None

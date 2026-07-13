@@ -1252,7 +1252,9 @@ class TestNonbenignPortsAndLiveness:
             self._seed_row(cur, 80, '2026-07-10 08:00:00.000000', 'unknown')
             self._seed_row(cur, 22, '2026-07-10 11:30:00.000000', 'unknown')
             storage._conn.commit()
-            assert storage.last_capture_ts() == '2026-07-10 11:30:00.000000'
+            # Issue #584: timestamps are stored timezone-less UTC, so the
+            # server appends a trailing 'Z' for unambiguous client parsing.
+            assert storage.last_capture_ts() == '2026-07-10 11:30:00.000000Z'
         finally:
             storage.close()
 

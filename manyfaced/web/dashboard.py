@@ -104,7 +104,7 @@ _PAYLOADS_LIMIT = 25
 # OFFSET scan on the request thread (which bypasses the warm 30s cache).
 # Beyond this we clamp to the last allowed page; OFFSET stays bounded at
 # (_PAGE_MAX - 1) * _LOG_PAGE_SIZE.
-_PAGE_MAX = 100
+from manyfaced.web.dashboard_data import _PAGE_MAX
 
 # Issue #413: minimum host-filter length / leading-wildcard guard. A host
 # shorter than this — or one the caller prefixed with a wildcard — would force
@@ -430,6 +430,8 @@ def _build_payload(
     page: int = 1,
     ip: str | None = None,
     host: str | None = None,
+    search: str | None = None,
+    method: str | None = None,
     shared: Any | None = None,
 ) -> dict:
     """Run the (slow) queries once and shape a full render payload.
@@ -444,7 +446,9 @@ def _build_payload(
     optionally scope the *capture log* to a single attacker IP or to
     requests that carried a C2/download host — the server-side pivot from
     an IoC panel entry to the actual requests it was extracted from
-    (issue #366). Passed through to ``count_recent``/``recent_records``.
+    (issue #366). ``search``/``method`` additionally scope the log at the
+    SQL level (issue #585). All four are passed through to
+    ``count_recent``/``recent_records``.
     """
     range_str = range_str if range_str in _VOLUME_RANGES else '24h'
     page = max(1, int(page or 1))
@@ -472,10 +476,18 @@ def _build_payload(
         # hold far more than one rendered page. We count the whole window once
         # (cheap, index-bound) and page the raw rows by offset so older
         # captures stay reachable.
-        window_total = store.count_recent(since=vol_since, ip=ip, host=host)
+        window_total = store.count_recent(
+            since=vol_since, ip=ip, host=host, search=search, method=method
+        )
         log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
         raw_recent = store.recent_records(
-            limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
+            limit=_LOG_PAGE_SIZE,
+            since=vol_since,
+            offset=log_offset,
+            ip=ip,
+            host=host,
+            search=search,
+            method=method,
         )
         log_rows = _data.group_log_rows(raw_recent)
     finally:
@@ -628,26 +640,41 @@ def _build_shared(store: Any, token: str) -> _Shared:
     return s
 
 
-def _payload_with_scope(payload: dict, page: int, ip: str | None, host: str | None) -> dict:
+def _payload_with_scope(
+    payload: dict,
+    page: int,
+    ip: str | None,
+    host: str | None,
+    search: str | None = None,
+    method: str | None = None,
+) -> dict:
     """Cheap on-request override: recompute just the page/ip/host-scoped log +
     payloads sections against an already-cached base (range, page=1, no ip/host)
     payload, instead of rebuilding the whole thing from scratch.
 
     The overview stats, C2 host scan, and volume bars in ``payload`` don't
-    depend on page/ip/host at all (see ``_build_payload``), so re-running them
-    on every pager click or IoC-row click was pure waste — and, worse, it hits
-    SQLite directly on the request thread, which can block for seconds behind
-    the live writer's WAL lock (the exact thing the background-cache refresher
-    exists to avoid; see the module docstring / comment above
-    ``_REFRESH_INTERVAL``).
+    depend on page/ip/host/search/method at all (see ``_build_payload``), so
+    re-running them on every pager click or IoC-row click was pure waste — and,
+    worse, it hits SQLite directly on the request thread, which can block for
+    seconds behind the live writer's WAL lock (the exact thing the
+    background-cache refresher exists to avoid; see the module docstring /
+    comment above ``_REFRESH_INTERVAL``).
     """
     store = _storage.get_storage(integrity_check=False, busy_timeout=60000, init_schema=False)
     try:
         vol_since = _volume_window(payload['range'])
-        window_total = store.count_recent(since=vol_since, ip=ip, host=host)
+        window_total = store.count_recent(
+            since=vol_since, ip=ip, host=host, search=search, method=method
+        )
         log_offset = max(0, page - 1) * _LOG_PAGE_SIZE
         raw_recent = store.recent_records(
-            limit=_LOG_PAGE_SIZE, since=vol_since, offset=log_offset, ip=ip, host=host
+            limit=_LOG_PAGE_SIZE,
+            since=vol_since,
+            offset=log_offset,
+            ip=ip,
+            host=host,
+            search=search,
+            method=method,
         )
         log_rows = _data.group_log_rows(raw_recent)
         interesting = store.fetch_interesting_raws(
@@ -782,15 +809,26 @@ def _refresh_cache(token: str) -> None:
 _DASHBOARD_DEFAULT_RANGE = '24h'
 
 
-def _cache_key(range_str: str, page: int, ip: str | None = None, host: str | None = None) -> str:
-    # Include the IoC scoping filters (issue #366) so a cached payload built
-    # for one IP/host is never served to a different filter (or to the
-    # unfiltered log).
+def _cache_key(
+    range_str: str,
+    page: int,
+    ip: str | None = None,
+    host: str | None = None,
+    search: str | None = None,
+    method: str | None = None,
+) -> str:
+    # Include the IoC scoping filters (issue #366) and the capture-log
+    # search/method filters (issue #585) so a cached payload built for one
+    # scope is never served to a different filter (or to the unfiltered log).
     scope = ''
     if ip:
         scope += f'#ip={ip}'
     if host:
         scope += f'#host={host}'
+    if search:
+        scope += f'#search={search}'
+    if method:
+        scope += f'#method={method}'
     return f'{range_str}#p{page}{scope}'
 
 
@@ -830,18 +868,25 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         access_logger.info('%s - %s', self.client_address[0], format % args)
 
     def _scoped_payload(
-        self, range_str: str, token: str, page: int, ip: str | None, host: str | None
+        self,
+        range_str: str,
+        token: str,
+        page: int,
+        ip: str | None,
+        host: str | None,
+        search: str | None = None,
+        method: str | None = None,
     ) -> dict:
-        """Return the payload for (range, page, ip, host).
+        """Return the payload for (range, page, ip, host, search, method).
 
         Unscoped page 1 uses the background-refreshed cache directly. Any
-        pager/IoC scope reuses that same cached base payload and layers the
+        pager/IoC/scope reuses that same cached base payload and layers the
         cheap ``_payload_with_scope`` override on top, instead of running the
         full aggregate/C2 rebuild on the request thread for every page click
         or IP/host filter (that rebuild used to run on *every* such request,
         including the 20s live-poll tick — see _payload_with_scope docstring).
         """
-        if page == 1 and not ip and not host:
+        if page == 1 and not ip and not host and not search and not method:
             key = _cache_key(range_str, page, ip, host)
             cached = _get_cached(_PAYLOAD_CACHE, key)
             if cached is not None:
@@ -853,7 +898,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         base = _get_cached(_PAYLOAD_CACHE, _cache_key(range_str, 1, None, None))
         if base is not None:
-            return _payload_with_scope(base, page, ip, host)
+            return _payload_with_scope(base, page, ip, host, search, method)
 
         # Cold start (background refresher hasn't primed this range yet) —
         # fall back to a full rebuild just this once.
@@ -911,10 +956,24 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # Issue #413: drop a host filter that would force a leading-wildcard
         # full-table LIKE scan (too short, or caller-supplied wildcard prefix).
         host_filter = _normalize_host_filter((qs.get('host') or [None])[0] or None)
+        # Issue #585: capture-log free-text search + method filter scope at the
+        # SQL level (like ip/host) instead of only matching the loaded page.
+        search_filter = (qs.get('search') or [None])[0] or None
+        method_filter = (qs.get('method') or [None])[0] or None
+        if method_filter not in ('GET', 'POST', 'OTHER', None):
+            method_filter = None
 
         try:
             if fmt == 'fragment':
-                payload = self._scoped_payload(range_str, token or '', page, ip_filter, host_filter)
+                payload = self._scoped_payload(
+                    range_str,
+                    token or '',
+                    page,
+                    ip_filter,
+                    host_filter,
+                    search_filter,
+                    method_filter,
+                )
                 if port_filter is not None:
                     payload = _payload_with_port(payload, port_filter)
                 body = _render.render_fragment(payload)
@@ -924,7 +983,15 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             if page > 1:
                 # Deeper pages aren't pre-cached; reuse the range's cached
                 # overview/volume/C2 data and only re-query the paged rows.
-                payload = self._scoped_payload(range_str, token or '', page, ip_filter, host_filter)
+                payload = self._scoped_payload(
+                    range_str,
+                    token or '',
+                    page,
+                    ip_filter,
+                    host_filter,
+                    search_filter,
+                    method_filter,
+                )
                 body = _render.render_page(payload).encode('utf-8')
                 self._send(body, 'text/html; charset=utf-8')
                 return
@@ -932,7 +999,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             body = _get_cached(_HTML_CACHE, range_str)
             if body is None:
                 payload = _build_payload(
-                    range_str, token or '', page=1, ip=ip_filter, host=host_filter
+                    range_str,
+                    token or '',
+                    page=1,
+                    ip=ip_filter,
+                    host=host_filter,
+                    search=search_filter,
+                    method=method_filter,
                 )
                 body = _render.render_page(payload).encode('utf-8')
                 with _CACHE_LOCK:

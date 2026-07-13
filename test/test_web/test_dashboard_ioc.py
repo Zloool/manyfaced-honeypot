@@ -250,10 +250,12 @@ class _FakeAggregateStore:
     def last_capture_ts(self):  # noqa: ANN001, ANN002
         return '2026-07-09 23:59:59.000000'
 
-    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
+    def count_recent(self, since=None, ip=None, host=None, search=None, method=None):  # noqa: ANN001, ANN002
         return 0
 
-    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
+    def recent_records(
+        self, limit=50, since=None, offset=0, ip=None, host=None, search=None, method=None
+    ):  # noqa: ANN001, ANN002
         return []
 
 
@@ -611,10 +613,12 @@ class _CountingStore:
     def volume_series(self, since=None, bucket='hour', port=None):  # noqa: ANN001, ANN002
         return []
 
-    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
+    def count_recent(self, since=None, ip=None, host=None, search=None, method=None):  # noqa: ANN001, ANN002
         return 0
 
-    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
+    def recent_records(
+        self, limit=50, since=None, offset=0, ip=None, host=None, search=None, method=None
+    ):  # noqa: ANN001, ANN002
         return []
 
 
@@ -706,10 +710,12 @@ class _FakePagerStore(_FakeAggregateStore):
         super().__init__()
         self._total = total
 
-    def count_recent(self, since=None, ip=None, host=None):  # noqa: ANN001, ANN002
+    def count_recent(self, since=None, ip=None, host=None, search=None, method=None):  # noqa: ANN001, ANN002
         return self._total
 
-    def recent_records(self, limit=50, since=None, offset=0, ip=None, host=None):  # noqa: ANN001, ANN002
+    def recent_records(
+        self, limit=50, since=None, offset=0, ip=None, host=None, search=None, method=None
+    ):  # noqa: ANN001, ANN002
         # Two distinct rows per page; never empty so the log section renders.
         return [
             {
