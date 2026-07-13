@@ -18,9 +18,7 @@ from unittest.mock import MagicMock, patch
 # Those secrets are only present in CI when configured; skip the run()
 # integration tests when they are absent so the suite stays green in
 # environments without them (backlog #528, test-harness hygiene).
-SECRETS_PRESENT = bool(
-    os.environ.get('HONEY_HIVEPASS') and os.environ.get('HONEY_DEFAULT_KEY')
-)
+SECRETS_PRESENT = bool(os.environ.get('HONEY_HIVEPASS') and os.environ.get('HONEY_DEFAULT_KEY'))
 
 import pytest
 
@@ -186,7 +184,9 @@ class TestRunGenerateConfig(unittest.TestCase):
         mock_cfg.generate_config_file.assert_called_once()
 
 
-@unittest.skipUnless(SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set')
+@unittest.skipUnless(
+    SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set'
+)
 class TestRunAutoDetect(unittest.TestCase):
     """Test run() with no CLI args (auto-detect both client and server)."""
 
@@ -220,7 +220,9 @@ class TestRunAutoDetect(unittest.TestCase):
                             self.assertEqual(mock_process_cls.call_count, 2)
 
 
-@unittest.skipUnless(SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set')
+@unittest.skipUnless(
+    SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set'
+)
 class TestRunExplicitArgs(unittest.TestCase):
     """Test run() with explicit --client or --server args."""
 
@@ -287,7 +289,9 @@ class TestRunExplicitArgs(unittest.TestCase):
                             self.assertEqual(call_args.kwargs.get('name'), 'server')
 
 
-@unittest.skipUnless(SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set')
+@unittest.skipUnless(
+    SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set'
+)
 class TestRunPortModeFromConfig(unittest.TestCase):
     """Test that auto-detect applies port_mode and top_ports from settings."""
 
@@ -330,7 +334,9 @@ class TestRunPortModeFromConfig(unittest.TestCase):
                             self.assertEqual(mock_args.top_ports, '80,443')
 
 
-@unittest.skipUnless(SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set')
+@unittest.skipUnless(
+    SECRETS_PRESENT, 'skipping run() integration test: HONEY_HIVEPASS/HONEY_DEFAULT_KEY not set'
+)
 class TestRunChildSupervision(unittest.TestCase):
     """Test the supervision loop: backoff + crash-loop guard (#180)."""
 
