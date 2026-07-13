@@ -448,6 +448,23 @@ def _enrich_and_send_bear(bs, bot_ip: str) -> None:
         bs.resolve_geo(bot_ip, timeout=2.0)
     except Exception:
         logger.debug('Geo resolution failed for %s', bot_ip)
+    # Backfill: the async lookup returns empty on first contact (it schedules a
+    # background worker). For captures that still lack ASN/org after the async
+    # pass (common on non-HTTP faces — SSH/FTP/Telnet/SMTP — issues #430/#449),
+    # do a blocking sync lookup so the attacker-infra attribution actually lands
+    # on the row instead of staying NULL. Guarded so it only fires when empty.
+    if not bs.asn and not bs.org:
+        try:
+            from manyfaced.common.geolocate import lookup_ip_geolocation_sync
+
+            country, continent, asn, org = lookup_ip_geolocation_sync(bot_ip, timeout=2.0)
+            if asn or org:
+                bs.country = country or bs.country
+                bs.continent = continent or bs.continent
+                bs.asn = asn
+                bs.org = org
+        except Exception:
+            logger.debug('Sync geo backfill failed for %s', bot_ip)
     try:
         bs.classification, bs.benign_source = classify(
             reverse_dns=bs.dns_name,
