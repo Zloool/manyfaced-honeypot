@@ -217,6 +217,9 @@ _DETECTED_ID_NAMES: dict[int, str] = {
     _status.UNKNOWN_RDP: 'rdp',
     _status.UNKNOWN_VNC: 'vnc',
     _status.FINGERPRINT_PROBE: 'fingerprint_probe',
+    _status.MCP_HTTP: 'mcp',
+    _status.MCP_SSE_HTTP: 'mcp_sse',
+    _status.DOCKER_HTTP: 'docker',
 }
 # Service IDs (matched handlers) are "detected"; the sentinel range is not.
 _DETECTED_SERVICE_MAX = _status.CONFIG_DISCLOSURE_HTTP

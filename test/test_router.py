@@ -345,5 +345,51 @@ class TestRouteTableCompleteness(unittest.TestCase):
         self.assertGreater(len(ROUTES), 50, 'Expected many route entries')
 
 
+class TestMCPFaceClassifiability(unittest.TestCase):
+    """Issue #555: the MCP face must be classifiable by transport in the
+    capture DB, and reachable on its natural port."""
+
+    def _make_request(self, method: str, path: str) -> str:
+        crlf = chr(13) + chr(10)
+        return f'{method} {path} HTTP/1.1{crlf}Host: example.com{crlf}{crlf}'
+
+    def test_mcp_and_sse_get_distinct_detected_ids(self):
+        """GET /sse must report MCP_SSE_HTTP (1036) and POST /mcp must report
+        MCP_HTTP (1031) — the two transports were previously indistinguishable
+        because both routes returned the same class-level DETECTED_ID."""
+        from manyfaced.common.status import MCP_HTTP, MCP_SSE_HTTP
+
+        router = Router(ROUTES)
+
+        sse = router.dispatch('/sse', self._make_request('GET', '/sse'), '1.2.3.4')
+        assert sse is not None
+        _, sse_id = sse
+        self.assertEqual(sse_id, MCP_SSE_HTTP)
+        self.assertNotEqual(sse_id, MCP_HTTP)
+
+        mcp = router.dispatch('/mcp', self._make_request('POST', '/mcp'), '1.2.3.4')
+        assert mcp is not None
+        _, mcp_id = mcp
+        self.assertEqual(mcp_id, MCP_HTTP)
+
+    def test_mcp_detected_ids_have_names(self):
+        """Both MCP detected_ids must map to friendly names (not 'unknown')
+        so the capture DB / dashboard classify them correctly."""
+        from manyfaced.db.storage import detected_id_name
+        from manyfaced.common.status import MCP_HTTP, MCP_SSE_HTTP
+
+        self.assertEqual(detected_id_name(MCP_HTTP), 'mcp')
+        self.assertEqual(detected_id_name(MCP_SSE_HTTP), 'mcp_sse')
+
+    def test_mcp_port_8000_is_http_face(self):
+        """Issue #555: 8000 (de-facto MCP Inspector default) must be treated
+        as an HTTP port so an MCP client hitting it lands in the MCP face."""
+        from manyfaced.common.faces import is_http_port
+
+        self.assertTrue(is_http_port(8000))
+        # Sanity: a non-HTTP face port is still NOT an HTTP port.
+        self.assertFalse(is_http_port(3389))
+
+
 if __name__ == '__main__':
     unittest.main()

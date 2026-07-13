@@ -825,7 +825,10 @@ def is_http_port(listen_port: int | None) -> bool:
     # Elasticsearch (9200) and RabbitMQ management (15672) are real HTTP
     # services (issue #461/#468) — treat them as HTTP faces so the rich
     # HTTP emulation (ElasticHandler / RabbitMQHandler) is used instead of
-    # the generic non-HTTP path.
+    # the generic non-HTTP path. 8000 is the de-facto Model Context Protocol
+    # (MCP) Inspector default port (issue #555) — a real MCP client targets
+    # http://host:8000/mcp, so route it to the MCP face rather than a generic
+    # web face.
     return int(ext) in (
         80,
         443,
@@ -834,6 +837,7 @@ def is_http_port(listen_port: int | None) -> bool:
         5000,
         7001,
         7002,
+        8000,
         8888,
         9090,
         9200,
