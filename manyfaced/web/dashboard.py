@@ -98,13 +98,24 @@ _TRAFFIC_MULTIPLIER = 6  # hero animation spawn-rate amplifier (visual only)
 # Capture-log page size (issue #316) — one page is rendered server-side per
 # request; older rows are reached via the paginator (offset-based).
 _LOG_PAGE_SIZE = 50
-_PAYLOADS_LIMIT = 25
+
+# Issue #612: the Payloads panel mirrors the capture-log paginator so every
+# interesting payload is reachable, not just the latest/highest-severity 25.
+# Pages are sized and depth-clamped independently of the log.
+_PAYLOADS_PAGE_SIZE = 50
+
+# Cap of the interesting-raws candidate scan that feeds the Payloads panel
+# (issue #362). The panel ranks + pages this candidate set IN MEMORY — it is
+# NOT a direct SQL window — so the reachable payload set is bounded by this
+# cap. Raising it widens reach at the cost of a larger candidate scan.
+_PAYLOADS_CANDIDATE_CAP = 500
 
 # Issue #413: cap pager depth so a page=N request can't drive an unbounded
 # OFFSET scan on the request thread (which bypasses the warm 30s cache).
 # Beyond this we clamp to the last allowed page; OFFSET stays bounded at
-# (_PAGE_MAX - 1) * _LOG_PAGE_SIZE.
-from manyfaced.web.dashboard_data import _PAGE_MAX
+# (_PAGE_MAX - 1) * _LOG_PAGE_SIZE. Shared by the log + payloads pagers
+# (issue #612).
+_PAGE_MAX = 100
 
 # Issue #413: minimum host-filter length / leading-wildcard guard. A host
 # shorter than this — or one the caller prefixed with a wildcard — would force
@@ -393,8 +404,12 @@ def _build_payloads(rows: list[dict]) -> list[dict]:
     """Shape interesting raw rows into truncated display payloads (issue #362).
 
     Drops benign-scanner rows (already excluded in SQL) plus favicon/noise
-    probes, then ranks survivors by severity (crit > warn > info) and recency
-    and truncates the top ``_PAYLOADS_LIMIT`` for display.
+    probes, then ranks survivors by severity (crit > warn > info) and recency.
+    Returns the FULL ranked list (bounded by the ``_PAYLOADS_CANDIDATE_CAP``
+    candidate scan that fed it) — NOT yet paged. Paging is applied separately
+    by :func:`_page_payloads` so the panel can be served page-by-page against
+    the cached ranked list without re-scanning SQL on every pager click
+    (issue #612).
 
     Each returned dict carries ``raw`` (truncated text) plus ``bot_ip`` /
     ``listen_port`` / ``bot_country`` / ``request_command`` / ``detected_id``
@@ -420,8 +435,22 @@ def _build_payloads(rows: list[dict]) -> list[dict]:
             'request_command': r.get('request_command') or '',
             'detected_id': r.get('detected_id'),
         }
-        for r in survivors[:_PAYLOADS_LIMIT]
+        for r in survivors
     ]
+
+
+def _page_payloads(
+    ranked: list[dict], page: int, page_size: int = _PAYLOADS_PAGE_SIZE
+) -> list[dict]:
+    """Issue #612: slice the ranked Payloads list to one page (offset-based).
+
+    ``page`` is 1-based and is clamped by :func:`_clamp_page` at the handler,
+    so the OFFSET stays bounded by the candidate-scan cap — a crafted
+    ``payloads_page=N`` can't drive an unbounded scan.
+    """
+    page = max(1, int(page))
+    off = max(0, page - 1) * page_size
+    return ranked[off : off + page_size]
 
 
 def _build_payload(
@@ -433,6 +462,7 @@ def _build_payload(
     search: str | None = None,
     method: str | None = None,
     shared: Any | None = None,
+    payloads_page: int = 1,
 ) -> dict:
     """Run the (slow) queries once and shape a full render payload.
 
@@ -461,6 +491,12 @@ def _build_payload(
         day_total = shared.day_total
         hour_total = shared.hour_total
         payloads = shared.payloads
+        # Issue #612: page the full ranked Payloads list (cached, bounded by
+        # the candidate-scan cap) instead of a hard 25-row slice, so every
+        # interesting payload is reachable via the panel's paginator.
+        payloads_page_int = _clamp_page(max(1, int(payloads_page or 1)))
+        payloads_window_total = len(payloads)
+        payloads_rows = _page_payloads(payloads, payloads_page_int)
         display_ports = shared.display_ports
         configured_ports = shared.configured_ports
         last_capture = shared.last_capture
@@ -525,7 +561,10 @@ def _build_payload(
         'ioc_since': overview_since,
         'volume_bars': volume_bars,
         'log_rows': log_rows,
-        'payloads': payloads,
+        'payloads': payloads_rows,
+        'payloads_page': payloads_page_int,
+        'payloads_page_size': _PAYLOADS_PAGE_SIZE,
+        'payloads_window_total': payloads_window_total,
         'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
     }
 
@@ -595,7 +634,7 @@ def _build_shared(store: Any, token: str) -> _Shared:
     # it, so clicking an IoC entry filters Payloads along with the capture
     # log instead of leaving it showing unrelated all-time findings
     # (issue #368).
-    interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_LIMIT * 20)
+    interesting = store.fetch_interesting_raws(since=None, limit=_PAYLOADS_CANDIDATE_CAP)
     payloads = _build_payloads(interesting)
 
     configured_ports = _config.settings.resolve_ports()
@@ -647,6 +686,7 @@ def _payload_with_scope(
     host: str | None,
     search: str | None = None,
     method: str | None = None,
+    payloads_page: int = 1,
 ) -> dict:
     """Cheap on-request override: recompute just the page/ip/host-scoped log +
     payloads sections against an already-cached base (range, page=1, no ip/host)
@@ -678,19 +718,23 @@ def _payload_with_scope(
         )
         log_rows = _data.group_log_rows(raw_recent)
         interesting = store.fetch_interesting_raws(
-            since=None, limit=_PAYLOADS_LIMIT * 20, ip=ip, host=host
+            since=None, limit=_PAYLOADS_CANDIDATE_CAP, ip=ip, host=host
         )
         payloads = _build_payloads(interesting)
     finally:
         # Do NOT close: see _build_payload's identical comment.
         pass
+    payloads_page_int = _clamp_page(max(1, int(payloads_page or 1)))
     scoped = dict(payload)
     scoped.update(
         {
             'page': page,
             'log_window_total': window_total,
             'log_rows': log_rows,
-            'payloads': payloads,
+            'payloads': _page_payloads(payloads, payloads_page_int),
+            'payloads_page': payloads_page_int,
+            'payloads_page_size': _PAYLOADS_PAGE_SIZE,
+            'payloads_window_total': len(payloads),
             'log_summary': f'{window_total} captures in this window · {len(log_rows)} rows shown (page {page})',
         }
     )
@@ -876,8 +920,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         host: str | None,
         search: str | None = None,
         method: str | None = None,
+        payloads_page: int = 1,
     ) -> dict:
-        """Return the payload for (range, page, ip, host, search, method).
+        """Return the payload for (range, page, ip, host, search, method, payloads_page).
 
         Unscoped page 1 uses the background-refreshed cache directly. Any
         pager/IoC/scope reuses that same cached base payload and layers the
@@ -885,24 +930,30 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         full aggregate/C2 rebuild on the request thread for every page click
         or IP/host filter (that rebuild used to run on *every* such request,
         including the 20s live-poll tick — see _payload_with_scope docstring).
+        ``payloads_page`` scopes the Payloads panel independently of the
+        capture-log ``page`` (issue #612).
         """
         if page == 1 and not ip and not host and not search and not method:
             key = _cache_key(range_str, page, ip, host)
             cached = _get_cached(_PAYLOAD_CACHE, key)
             if cached is not None:
                 return cached
-            payload = _build_payload(range_str, token, page=page, ip=ip, host=host)
+            payload = _build_payload(
+                range_str, token, page=page, ip=ip, host=host, payloads_page=payloads_page
+            )
             with _CACHE_LOCK:
                 _PAYLOAD_CACHE[key] = (time.time(), payload)
             return payload
 
         base = _get_cached(_PAYLOAD_CACHE, _cache_key(range_str, 1, None, None))
         if base is not None:
-            return _payload_with_scope(base, page, ip, host, search, method)
+            return _payload_with_scope(base, page, ip, host, search, method, payloads_page)
 
         # Cold start (background refresher hasn't primed this range yet) —
         # fall back to a full rebuild just this once.
-        return _build_payload(range_str, token, page=page, ip=ip, host=host)
+        return _build_payload(
+            range_str, token, page=page, ip=ip, host=host, payloads_page=payloads_page
+        )
 
     def _deny(self) -> None:
         # Generic 404 — do NOT reveal that this is an auth-gated endpoint.
@@ -962,6 +1013,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         method_filter = (qs.get('method') or [None])[0] or None
         if method_filter not in ('GET', 'POST', 'OTHER', None):
             method_filter = None
+        # Issue #612: the Payloads panel has its own paginator, independent of
+        # the capture-log `page`. Clamp depth like `page` (issue #413) so a
+        # crafted payloads_page=N can't drive an unbounded scan.
+        pp_raw = (qs.get('payloads_page') or [''])[0]
+        payloads_page = int(pp_raw) if pp_raw.isdigit() and int(pp_raw) >= 1 else 1
+        payloads_page = _clamp_page(payloads_page)
 
         try:
             if fmt == 'fragment':
@@ -973,6 +1030,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     host_filter,
                     search_filter,
                     method_filter,
+                    payloads_page,
                 )
                 if port_filter is not None:
                     payload = _payload_with_port(payload, port_filter)
@@ -991,6 +1049,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     host_filter,
                     search_filter,
                     method_filter,
+                    payloads_page,
                 )
                 body = _render.render_page(payload).encode('utf-8')
                 self._send(body, 'text/html; charset=utf-8')
@@ -1006,6 +1065,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     host=host_filter,
                     search=search_filter,
                     method=method_filter,
+                    payloads_page=payloads_page,
                 )
                 body = _render.render_page(payload).encode('utf-8')
                 with _CACHE_LOCK:
