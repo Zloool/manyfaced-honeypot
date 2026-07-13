@@ -446,14 +446,14 @@ class ElasticHandler(HTTPHandlerBase):
         now = datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
         body_bytes = body.encode('iso-8859-1')
         response = (
-            f'HTTP/1.1 {status_code} {status_text}\\r\\n'
-            f'Server: Elasticsearch/{self.VERSION}\\r\\n'
-            f'X-Elastic-Product: Elasticsearch\\r\\n'
-            f'content-type: {content_type}\\r\\n'
-            f'content-length: {len(body_bytes)}\\r\\n'
-            f'Date: {now}\\r\\n'
-            f'Connection: close\\r\\n'
-            f'\\r\\n'
+            f'HTTP/1.1 {status_code} {status_text}\r\n'
+            f'Server: Elasticsearch/{self.VERSION}\r\n'
+            f'X-Elastic-Product: Elasticsearch\r\n'
+            f'content-type: {content_type}\r\n'
+            f'content-length: {len(body_bytes)}\r\n'
+            f'Date: {now}\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
         )
         return response.encode('iso-8859-1') + body_bytes
 
