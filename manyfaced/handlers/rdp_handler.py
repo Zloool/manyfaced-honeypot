@@ -98,9 +98,6 @@ def _generate_initial_response() -> bytes:
     Returns:
         TPKT header + X.224 Connection-Confirm as bytes.
     """
-    # TPKT header: version=3, reserved=0, length=31 (total packet)
-    tpkt = b'\x03\x00' + struct.pack('!H', 31)
-
     # X.224 Connection-Confirm (CR_TPDU type 0xE0)
     x224 = (
         b'\xe0'  # CR_TPDU
@@ -111,7 +108,14 @@ def _generate_initial_response() -> bytes:
         b'\x00'  # Class options
     )
 
-    return tpkt + x224
+    # TPKT header: version=3, reserved=0, length = total payload bytes.
+    # Real RDP clients (mstsc/FreeRDP/rdesktop) parse this length to know how
+    # many bytes to read; a mismatch causes them to wait for phantom bytes and
+    # desync/abort the handshake. Compute it from the actual bytes sent.
+    payload = x224
+    tpkt = b'\x03\x00' + struct.pack('!H', len(payload))
+
+    return tpkt + payload
 
 
 def _generate_connection_confirm() -> bytes:
@@ -120,9 +124,6 @@ def _generate_connection_confirm() -> bytes:
     Returns:
         Full connection confirm sequence as bytes.
     """
-    # TPKT header
-    tpkt = b'\x03\x00' + struct.pack('!H', 47)
-
     # X.224 Connection-Confirm
     x224 = (
         b'\xe0'  # CR_TPDU
@@ -157,13 +158,20 @@ def _generate_connection_confirm() -> bytes:
         ]
     )
 
-    return tpkt + x224 + mcs
+    # TPKT length must equal len(tpkt + x224 + mcs) of the on-the-wire bytes
+    # (the TPKT length field itself excludes the 4-byte TPKT header, so it is
+    # the length of x224 + mcs).
+    payload = x224 + mcs
+    tpkt = b'\x03\x00' + struct.pack('!H', len(payload))
+
+    return tpkt + payload
 
 
 def _generate_nla_challenge() -> bytes:
     """Generate an RDP NLA (Network Level Authentication) challenge.
 
-    Returns a TSRequest with NegotiateSecurityLayer challenge.
+    Returns a TSRequest with NegotiateSecurityLayer challenge, wrapped in a
+    proper TPKT + X.224 envelope so a real client can parse it.
 
     Returns:
         NLA challenge as bytes.
@@ -179,7 +187,15 @@ def _generate_nla_challenge() -> bytes:
         + nonce  # OCTET STRING with challenge
     )
 
-    return ts_request
+    # Wrap the TSRequest in a minimal X.224 PDU so a real client can reach it.
+    # The X.224 length indicator counts the remaining PDU bytes after it.
+    x224 = b'\xf0' + bytes([len(ts_request)]) + ts_request  # Data TPDU (DT)
+
+    # TPKT length excludes the 4-byte TPKT header → len(x224).
+    payload = x224
+    tpkt = b'\x03\x00' + struct.pack('!H', len(payload))
+
+    return tpkt + payload
 
 
 def generate_rdp_greeting(bot_ip: str = '127.0.0.1') -> bytes:
