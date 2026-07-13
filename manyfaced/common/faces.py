@@ -49,10 +49,12 @@ from typing import Callable
 from manyfaced.common import ports as _ports
 from manyfaced.common.status import (
     SSH_CLIENT,
+    UNKNOWN_DNS,
     UNKNOWN_MONGODB,
     UNKNOWN_NON_HTTP,
     UNKNOWN_RDP,
     UNKNOWN_REDIS,
+    UNKNOWN_SMB,
     UNKNOWN_TELNET,
     UNKNOWN_VNC,
 )
@@ -224,6 +226,64 @@ def _mysql_greeting() -> bytes:
     pkt_len = len(payload)
     seq = b'\x00'
     return pkt_len.to_bytes(3, 'little') + seq + payload
+
+
+def _dns_greeting() -> bytes:
+    # DNS is client-first (RFC 1035) — the client sends a query, the server
+    # answers. Nothing is sent on accept (issue #600). The reply is produced in
+    # _dns_respond.
+    return b''
+
+
+def _msrpc_greeting() -> bytes:
+    # MSRPC (DCE/RPC, epmapper) is client-first: the client sends a BIND
+    # PDU, the server answers. Nothing is sent on accept (issue #600). The
+    # reply is produced in _msrpc_respond.
+    return b''
+
+
+def _netbios_greeting() -> bytes:
+    # NetBIOS Session Service (NBT) is client-first: the client sends a
+    # Session Request, the server answers. Nothing is sent on accept
+    # (issue #600). The reply is produced in _netbios_respond.
+    return b''
+
+
+def _smb_greeting() -> bytes:
+    # SMB (TCP/445) is client-first: the client sends a Negotiate Protocol
+    # request, the server answers with a Negotiate Protocol response. Nothing
+    # is sent on accept (issue #600). A minimal, protocol-shaped SMB1
+    # Negotiate response below keeps NBTSESSION/SMB scanners out of the HTTP
+    # face; full dialect negotiation is out of scope.
+    return b''
+
+
+def _imaps_greeting() -> bytes:
+    # IMAPS (993) = IMAP over TLS. Server-first: the server sends a TLS
+    # ServerHello. A TLS handshake is fragile to fake here; we send a static
+    # TLS 1.2 ServerHello (record 0x16, version 0x0303) so a scanner sees a
+    # "real" SSL service instead of an HTTP admin panel (issue #600).
+    return (
+        b'\x16\x03\x03\x00\x31'  # TLS record: handshake, TLS1.2, 0x31 bytes
+        b'\x02\x00\x00\x2d'  # ServerHello, length 0x2d
+        b'\x03\x03'  # TLS 1.2
+        + bytes(32)  # server random (zeroed)
+        + b'\x20'  # session id length 0x20
+        + bytes(32)  # session id
+        + b'\x00\x2f'  # cipher suite: TLS_RSA_WITH_AES_128_CBC_SHA
+        b'\x00'  # compression: none
+    )
+
+
+def _pop3s_greeting() -> bytes:
+    # POP3S (995) = POP3 over TLS. Same approach as IMAPS: a static TLS 1.2
+    # ServerHello greets the client (issue #600).
+    return (
+        b'\x16\x03\x03\x00\x31'
+        b'\x02\x00\x00\x2d'
+        b'\x03\x03' + bytes(32) + b'\x20' + bytes(32) + b'\x00\x2f'
+        b'\x00'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +539,106 @@ def _mysql_respond(raw: bytes, bot_ip: str) -> bytes:
     return len(payload).to_bytes(3, 'little') + b'\x02' + payload
 
 
+def _dns_respond(raw: bytes, bot_ip: str) -> bytes:
+    # DNS-over-TCP (RFC 1035): a 2-byte big-endian length prefix followed by
+    # the DNS message. Answer a query with a minimal valid response: echo the
+    # 16-bit transaction id + flags (QR=1, AA=1, RD copied) and the question
+    # count, with zero answer/authority/additional records so the scanner sees
+    # a protocol-shaped DNS reply instead of an HTTP 404 (issue #600).
+    if len(raw) < 2:
+        return b''
+    msg_len = struct.unpack('>H', raw[:2])[0]
+    body = raw[2 : 2 + msg_len] if msg_len else raw[2:]
+    if len(body) < 12:
+        return b''
+    txn_id = body[:2]
+    flags = struct.pack('>H', 0x8180)  # QR=1, AA=1, RD=1, RA=1, no error
+    qdcount = body[4:6]
+    # Respond with the same question count, zero answers.
+    header = txn_id + flags + qdcount + b'\x00\x00\x00\x00\x00\x00'
+    # Echo the question section verbatim so the reply parses.
+    question = body[12:]
+    out = header + question
+    return struct.pack('>H', len(out)) + out
+
+
+def _msrpc_respond(raw: bytes, bot_ip: str) -> bytes:
+    # MSRPC (DCE/RPC) epmapper: reply to a BIND PDU (version 4, little-endian)
+    # with an ACK. A minimal bind_ack keeps RPC endpoint-mapper scanners in the
+    # right (non-HTTP) face (issue #600). We echo the minor version and produce
+    # a structurally valid PDU so the client parses it instead of falling to
+    # the HTTP admin panel.
+    if len(raw) < 10:
+        return b''
+    # PDU type is raw[2]; 0x0b = bind, 0x00 = request.
+    minor = raw[4] if len(raw) > 4 else 0
+    # Build a minimal bind_ack: version 5, minor, PDU type 0x0c (bind_ack),
+    # little-endian, flags 0x03, data repr 0x10, frag len 0x001c, auth len 0,
+    # call id echoed.
+    call_id = raw[12:16] if len(raw) >= 16 else b'\x00\x00\x00\x00'
+    pkt = (
+        b'\x05'
+        + bytes([minor])
+        + b'\x0c'  # bind_ack
+        + b'\x03'  # flags
+        + b'\x10\x00\x00'  # data representation (LE, ASCII)
+        + b'\x1c\x00'  # frag length 28
+        + b'\x00\x00'  # auth length 0
+        + call_id
+        + b'\x10\x00'  # max xmit frag
+        + b'\x10\x00'  # max recv frag
+        + b'\x00\x00\x00\x00'  # assoc group
+        + b'\x00'  # num results 0
+    )
+    return pkt
+
+
+def _netbios_respond(raw: bytes, bot_ip: str) -> bytes:
+    # NetBIOS Session Service (RFC 1002) over TCP/139. The client sends a
+    # Session Request (type 0x81); we answer with a Positive Session Response
+    # (type 0x82, flags 0, length 0) — the same byte the existing SMB/NetBIOS
+    # face uses. Keeps NetBIOS scanners out of the HTTP face (issue #600).
+    if not raw:
+        return b''
+    if raw[0] == 0x81:  # Session Request
+        return b'\x82\x00\x00\x00'
+    # For any other NBT message (e.g. session message 0x00) just ack with a
+    # positive session response so the connection stays protocol-shaped.
+    return b'\x82\x00\x00\x00'
+
+
+def _smb_respond(raw: bytes, bot_ip: str) -> bytes:
+    # SMB (TCP/445) Negotiate Protocol request -> Negotiate Protocol response.
+    # A full dialect negotiation is out of scope, but we return a minimal SMB1
+    # Negotiate response wrapped in a NetBIOS Session Service header so the
+    # scanner sees a protocol-shaped SMB reply rather than an HTTP 404
+    # (issue #600). We always reply (do NOT key off the binary SMB signature
+    # \xffSMB) because the dispatch decodes the binary frame to str and back
+    # (client.py:409), which corrupts non-ASCII bytes — so input parsing is
+    # unreliable, but every SMB connection over 445 begins with a client
+    # Negotiate request we can safely answer.
+    smb = (
+        b'\xffSMB'
+        + b'\x72'  # Negotiate command
+        + b'\x00\x00\x00\x00'  # status NT_STATUS_SUCCESS
+        + b'\x00'  # flags
+        + b'\x00\x00'  # flags2
+        + b'\x00\x00'  # PID high
+        + b'\x00\x00\x00\x00\x00\x00'  # signature
+        + b'\x00\x00'  # reserved
+        + b'\x00\x00'  # tid
+        + b'\x00\x00'  # pid
+        + b'\x00\x00'  # uid
+        + b'\x00\x00'  # mid
+        + b'\x00\x00'  # word count (0)
+        + b'\x00\x00'  # byte count 0
+    )
+    # NetBIOS Session Service header: type 0x00 (session message), flags 0,
+    # 2-byte big-endian length of the SMB payload that follows.
+    nbt_header = b'\x00\x00' + struct.pack('>H', len(smb))
+    return nbt_header + smb
+
+
 def _no_reply(raw: bytes, bot_ip: str) -> bytes:
     """Explicit empty reply (e.g. SSH, where client.py drives credential capture)."""
     return b''
@@ -541,6 +701,19 @@ _FACE_DEFS: dict[int, tuple] = {
     2049: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _nfs_respond, False, None),
     # EPMD (Erlang Port Mapper, rabbitmq companion; issue #451/#458): client-first.
     4369: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _epmd_respond, False, None),
+    # ── Privileged-port redirect targets (issue #600) ───────────────────────
+    # These are bound as high ports via PRIVILEGED_PORT_REDIRECTS (53->10053,
+    # 135->10135, 139->10139, 445->10445, 993->10993, 995->10995) and resolved
+    # back to their external port by get_face(). They were previously absent
+    # from _FACE_DEFS and silently fell through to the generic HTTP handler.
+    # DNS / MSRPC / NetBIOS / SMB are client-first (the client speaks first);
+    # IMAPS / POP3S are TLS server-first (greeted with a static TLS ServerHello).
+    53: (UNKNOWN_DNS, CLIENT_FIRST, _dns_greeting, _dns_respond, False, None),
+    135: (UNKNOWN_SMB, CLIENT_FIRST, _msrpc_greeting, _msrpc_respond, False, None),
+    139: (UNKNOWN_SMB, CLIENT_FIRST, _netbios_greeting, _netbios_respond, False, None),
+    445: (UNKNOWN_SMB, CLIENT_FIRST, _smb_greeting, _smb_respond, False, None),
+    993: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imaps_greeting, _no_reply, False, None),
+    995: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3s_greeting, _no_reply, False, None),
 }
 
 
@@ -603,6 +776,12 @@ def _port_name(ext_port: int) -> str:
         15672: 'rabbitmq',
         2049: 'nfs',
         4369: 'epmd',
+        53: 'dns',
+        135: 'msrpc',
+        139: 'netbios',
+        445: 'smb',
+        993: 'imaps',
+        995: 'pop3s',
     }
     return names.get(ext_port, 'unknown')
 
