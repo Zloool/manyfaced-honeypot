@@ -42,7 +42,10 @@ asn = ["AS398324"]
 [[source]]
 name = "binaryedge"
 category = "scanner"
-reverse_dns = ["*.binaryedge.io"]
+# BinaryEdge scan hosts present PTRs under binaryedge.io AND a *.ninja form
+# (e.g. *.x.nl.binaryedge.ninja, *.binaryedge.ninja) — issue #595. The PTR is
+# the network-verifiable signal; both suffixes are curated BinaryEdge domains.
+reverse_dns = ["*.binaryedge.io", "*.binaryedge.ninja"]
 
 [[source]]
 name = "rapid7-sonar"
