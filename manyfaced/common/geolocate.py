@@ -258,6 +258,46 @@ def stop_geo_worker() -> None:
         _geo_worker_thread = None
 
 
+def lookup_ip_geolocation_sync(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
+    """Synchronous geolocation lookup that blocks until it has a result.
+
+    Unlike :func:`lookup_ip_geolocation` (which is hot-path safe and returns
+    immediately on a cache miss, scheduling a background worker), this performs
+    the actual lookup inline and returns the resolved (country, continent, asn,
+    org). Used by the non-HTTP capture path (SSH/FTP/Telnet/SMTP/...) which is
+    *not* latency-sensitive (issue #480) but where the recorded row must carry
+    ASN/org on first contact — the async-only path left 54-77% of SSH/MCP rows
+    with a NULL ASN despite a valid reverse-DNS PTR (issues #430 / #449).
+
+    Rate limiting is respected (the worker sleeps in-thread). Caches the result.
+
+    Args:
+        ip: IP address string.
+        timeout: HTTP request timeout in seconds.
+
+    Returns:
+        Tuple of (country_name, continent_name, asn, org). Returns
+        (``, ``, ``, ``) on failure.
+    """
+    # Private/reserved IPs have no meaningful geo data.
+    if ip in ('127.0.0.1', '::1') or ip.startswith(('10.', '192.168.', '172.')):
+        return ('', '', '', '')
+
+    # Return cached result if fresh.
+    now = time.monotonic()
+    with _geo_cache_lock:
+        entry = _geo_cache.get(ip)
+        if entry is not None and entry[4] > now:
+            return entry[0], entry[1], entry[2], entry[3]
+
+    try:
+        result = _do_geo_lookup(ip, timeout=timeout)
+    except Exception as e:  # never let a geo failure break the capture path
+        logger.warning('Synchronous geo lookup failed for %s: %s', ip, e)
+        return ('', '', '', '')
+    return result
+
+
 def batch_lookup_geolocation(
     ips: list[str], max_concurrent: int = 5
 ) -> dict[str, tuple[str, str, str, str]]:

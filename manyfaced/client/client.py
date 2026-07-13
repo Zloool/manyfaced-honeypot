@@ -226,6 +226,44 @@ def _setup_server_socket(port: int) -> 'SocketType | None':
     return server_socket
 
 
+def _record_empty_connection(bot_ip: str, listen_port: int) -> None:
+    """Persist a minimal EMPTY_CONNECTION capture for a payloadless connect (issue #488).
+
+    Builds a ``BearStorage`` stamped with the ``EMPTY_CONNECTION`` sentinel, the
+    real ``listen_port`` and ``bot_ip``, then runs it through the shared
+    enrichment pipeline (geo/DNS/classify/report) so the accept is accountable
+    in analysis instead of being silently dropped.
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from manyfaced.common.status import EMPTY_CONNECTION  # noqa: PLC0415
+    from manyfaced.handlers.http_handler import (  # noqa: PLC0415
+        _enrich_and_send_bear,
+    )
+    from manyfaced.common.bearstorage import BearStorage  # noqa: PLC0415
+    from manyfaced.common.config import settings  # noqa: PLC0415
+
+    class _ParsedEmpty:
+        command = ''
+        path = ''
+        version = ''
+        headers: dict[str, str] = {}
+        user_agent = ''
+        request_version = ''
+
+    bs = BearStorage(
+        bot_ip,
+        '',
+        str(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')),
+        _ParsedEmpty(),
+        EMPTY_CONNECTION,
+        settings.HIVELOGIN,
+    )
+    if listen_port:
+        bs.listen_port = listen_port
+    _enrich_and_send_bear(bs, bot_ip)
+
+
 def _handle_bot_connection(
     connection_socket: 'socket.socket',
     args,
@@ -272,6 +310,19 @@ def _handle_bot_connection(
 
     message = receive_timeout(connection_socket, BOT_TIMEOUT)
     if not message:
+        # Issue #488: a payloadless connect (port scan, no data within timeout)
+        # must still be recorded so it is accountable in analysis. Previously the
+        # thread returned here with NO capture, silently dropping 9.6% of accepted
+        # OTHER-PORTS connections. Emit a minimal EMPTY_CONNECTION capture with the
+        # connection metadata (bot_ip, listen_port, timestamp) so the row is not
+        # lost. The HTTP handler's _handle_empty_connection already does this for
+        # the HTTP path; mirror it here for raw (non-HTTP-decided) preludes.
+        logger.debug(
+            'Payloadless connect from %s on port %s — recording EMPTY_CONNECTION',
+            bot_ip,
+            listen_port,
+        )
+        _record_empty_connection(bot_ip, listen_port)
         return
 
     handler = HTTPHandler(args, update_event, listen_port=listen_port)
@@ -360,8 +411,23 @@ def _handle_non_http_connection(
     # ── SSH: banner already sent in PRELUDE; drive binary credential capture,
     #    then record. SSH has no follow-up reply to send. ───────────────────
     if spec.name == 'ssh':
+        # Issue #445: an HTTP request arriving on the SSH port is a protocol
+        # mismatch, not a real SSH scanner. Flag it with a distinct detected_id
+        # so analysis can separate HTTP-on-SSH-port probes from genuine SSH
+        # banner scans instead of silently labeling them unknown SSH.
+        from manyfaced.common.protocol import is_http_request  # noqa: PLC0415
+        from manyfaced.common.status import (  # noqa: PLC0415
+            HTTP_ON_NONHTTP_PORT,
+            SSH_CLIENT,
+        )
+
+        detected_id = SSH_CLIENT
+        if is_http_request(raw_bytes):
+            detected_id = HTTP_ON_NONHTTP_PORT
+            logger.info('HTTP-on-SSH-port mismatch from %s (flagged, not mislabeled)', bot_ip)
         creds = _capture_credentials(connection_socket, bot_ip, spec.greeting)
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs.isDetected = detected_id
         if creds:
             bs.login = creds
         _enrich_and_send_bear(bs, bot_ip)

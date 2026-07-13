@@ -10,6 +10,11 @@ UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 UNKNOWN_TELNET = 4294967285  # Telnet probe
 UNKNOWN_RDP = 4294967284  # RDP probe
 UNKNOWN_VNC = 4294967283  # VNC probe
+# HTTP request arriving on a non-HTTP (e.g. SSH) port — a protocol mismatch.
+# Distinct from UNKNOWN_NON_HTTP so analysis can separate a real SSH scanner
+# from an HTTP client probing an SSH port (issue #445). Placed just below the
+# occupied non-HTTP sentinel block (SNMP=4294967280) to stay out of the way.
+HTTP_ON_NONHTTP_PORT = 4294967279  # 0xFFFFFFBF
 # SIP/SNMP are UDP-only probes — the honeypot had no UDP transport before the
 # UDP face work (issue #388), so these IDs are added there. The next free
 # descending values below FINGERPRINT_PROBE (4294967282) are used to keep the
