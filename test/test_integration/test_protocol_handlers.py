@@ -35,6 +35,7 @@ from manyfaced.handlers.telnet_handler import (
     _strip_iac,
     extract_telnet_credentials,
     generate_auth_failure,
+    generate_auth_success,
     generate_password_prompt,
     generate_telnet_greeting,
     generate_telnet_response,
@@ -208,15 +209,51 @@ class TestTelnetHandler(unittest.TestCase):
         raw_data = b'\xff\xfb\x01\xff\xfb\x03root\x0d\x0a'
         self.assertEqual(_strip_iac(raw_data), b'root\x0d\x0a')
 
-    def test_telnet_full_credentials_frame_fails_auth_then_reprompts(self):
-        """A frame carrying both username and password gets an auth failure.
+    def test_telnet_full_credentials_frame_succeeds_auth(self):
+        """A frame carrying both username and password gets an auth-success.
 
-        Then the handler re-prompts a fresh login so the bot keeps trying.
+        The dialogue must look complete (a shell prompt), not a failure +
+        re-prompt, so extract_telnet_credentials has the full login:/Password:
+        exchange to parse (issue #626).
         """
         raw_data = b'\xff\xfb\x01\x0d\x0alogin: admin\x0d\x0aPassword: secret123'
         response = generate_telnet_response(raw_data, '10.0.0.100')
-        self.assertIn(generate_auth_failure().split(b'\x0d\x0a')[0], response)
-        self.assertIn(b'login: ', response)
+        self.assertIn(generate_auth_success().split(b'\x0d\x0a')[0], response)
+        # Successful auth yields a shell prompt, not a fresh login prompt: the
+        # response must end with the shell prompt rather than 'login: '.
+        self.assertTrue(response.endswith(b'$ '))
+
+    def test_telnet_root_pass_login_emits_auth_success_and_parses(self):
+        """Full 'root'/'pass' exchange yields an auth-success frame and parses.
+
+        End-to-end regression for issue #626: a complete login: root / Password:
+        pass exchange must produce a believable auth-success shell prompt, and
+        the raw exchange fed back to extract_telnet_credentials must parse to
+        ('root', 'pass') so the captured login is surfaced.
+        """
+        # A realistic Mirai-style frame: IAC negotiation + the typed username,
+        # followed by the password frame. extract_telnet_credentials operates on
+        # the whole accumulated raw exchange the CORE hands us.
+        username_frame = b'\xff\xfb\x01\xff\xfb\x03\xff\xfd\x1froot\x0d\x0a'
+        password_frame = b'\xff\xfb\x01\x0d\x0aPassword: pass\x0d\x0a'
+        raw_exchange = username_frame + password_frame
+
+        # Server first asks for the password (username seen, no password yet).
+        first = generate_telnet_response(username_frame, '10.0.0.101')
+        self.assertIn(b'Password: ', first)
+
+        # After the password arrives the dialogue completes with auth-success.
+        response = generate_telnet_response(raw_exchange, '10.0.0.101')
+        self.assertIn(b'$ ', response)  # shell prompt == auth success
+        # Sanity-check the success frame shape without over-coupling to the
+        # random banner choice.
+        self.assertTrue(response.endswith(b'$ '))
+
+        # The full exchange must be parseable into the captured credentials.
+        creds = extract_telnet_credentials(raw_exchange)
+        self.assertIsNotNone(creds)
+        self.assertEqual(creds[0], 'root')
+        self.assertEqual(creds[1], 'pass')
 
 
 class TestRDPHandler(unittest.TestCase):
