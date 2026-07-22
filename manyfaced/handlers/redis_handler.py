@@ -38,6 +38,13 @@ _HELLO_FIELDS = {
 # free of literal control chars that confuse editors / diff / patch tools).
 _CRLF = bytes([13, 10])
 
+# Optional trap password for the Redis AUTH command. When set, a client that
+# AUTHs with any other password is rejected with '-ERR invalid password' so the
+# auth round-trip is captured as a failure. When None (default) the honeypot
+# accepts every password (the attempt is still logged/captured). Tests flip this
+# to exercise both the success and failure paths.
+REDIS_AUTH_PASSWORD: str | None = None
+
 
 def extract_redis_credentials(raw_data) -> Tuple[str, str] | None:
     """Extract credentials from a Redis AUTH command in raw data.
@@ -206,11 +213,17 @@ def generate_redis_response(raw_data, bot_ip: str = '127.0.0.1') -> bytes:
                 pass
         return _hello_reply(use_proto)
 
-    # AUTH: record the attempt, then *accept* so the session continues.
+    # AUTH: record the attempt, then complete the round-trip with a consistent
+    # reply. When a trap password is configured, a wrong password is rejected so
+    # the failure path is captured; otherwise the password is always accepted so
+    # the session (and any follow-up commands) continue.
     if cmd == 'AUTH':
         creds = extract_redis_credentials(raw_bytes)
         if creds:
             logger.info('Captured Redis credentials from %s: user=%s', bot_ip, creds[0])
+        password = creds[1] if creds and len(creds) > 1 else ''
+        if REDIS_AUTH_PASSWORD is not None and password != REDIS_AUTH_PASSWORD:
+            return b'-ERR invalid password' + _CRLF
         return b'+OK' + _CRLF
 
     if cmd == 'PING':
@@ -225,6 +238,37 @@ def generate_redis_response(raw_data, bot_ip: str = '127.0.0.1') -> bytes:
         return b':0' + _CRLF
     if cmd == 'EXISTS':
         return b':0' + _CRLF
+    if cmd == 'LPUSH':
+        # A push returns the new list length.
+        return b':1' + _CRLF
+    if cmd == 'EXPIRE':
+        # 1 = the timeout was set, 0 = the key did not exist.
+        return b':1' + _CRLF
+    if cmd == 'EVAL':
+        # Lua scripts return a bulk string (here: a benign "OK" echo) so
+        # scripted clients (redis-py `eval`) get a parseable reply.
+        return _encode_resp_value('OK')
+    if cmd == 'SUBSCRIBE':
+        # RESP push-style subscribe confirmation: a 3-element array of
+        # "subscribe", the channel name, and the subscription count.
+        body = b''
+        for channel in args[1:]:
+            body += _encode_resp_value('subscribe')
+            body += _encode_resp_value(channel)
+            body += _encode_resp_value(len(args) - 1)
+        return b'*3' + _CRLF + body
+    if cmd == 'PUBLISH':
+        # Number of clients that received the message (0 = none connected).
+        return b':0' + _CRLF
+    if cmd == 'CLUSTER':
+        # CLUSTER INFO / NODES / SLOTS: return a plausible multi-bulk. For the
+        # common `CLUSTER INFO`/`CLUSTER NODES` subcommands a bulk string is
+        # expected; for anything else a benign empty multi-bulk keeps the client
+        # happy.
+        sub = args[1].upper() if len(args) > 1 else ''
+        if sub in ('INFO', 'NODES', 'SLOTS'):
+            return _encode_resp_value('')
+        return b'*0' + _CRLF
     if cmd in ('KEYS', 'CONFIG', 'CLIENT', 'INFO', 'COMMAND', 'ECHO', 'SELECT'):
         if cmd == 'COMMAND':
             return b'*0' + _CRLF
