@@ -147,6 +147,8 @@ def _backup(db_path: str, keep: int = 3) -> str | None:
     except FileNotFoundError:
         # getsize failed on a sidecar; fall through to the copy attempt.
         pass
+    # Best-effort WAL checkpoint before copy so the .bak captures committed data.
+    try:
         src = sqlite3.connect(db_path)
         src.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         src.close()

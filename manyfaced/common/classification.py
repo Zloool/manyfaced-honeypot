@@ -77,11 +77,12 @@ class _Source:
 
 # Signals that are network-verifiable and NON-SPOOFABLE (an attacker cannot
 # trivially forge them). NOTE: ``org`` is deliberately EXCLUDED — an org string
-# is spoofable (an attacker can register an org containing 'AWS'/'Azure' etc.)
-# and cloud-hosted attacker infra shares the org/ASN of legit providers, so an
-# org-substring allowlist would flip real attacks to benign (issue #352). Benign
-# therefore requires a reverse-DNS PTR match or an exact, curated ASN.
-_NETWORK_SIGNALS = ('reverse_dns', 'asn')
+# Note: benign classification requires a reverse-DNS PTR match or an exact,
+# curated ASN (see classify()). An org-substring allowlist is intentionally
+# avoided because org is spoofable (an attacker can register an org containing
+# 'AWS'/'Azure' etc.) and cloud-hosted attacker infra shares the org/ASN of
+# legit providers, so an org-substring allowlist would flip real attacks to
+# benign (issue #352).
 
 
 class ClassificationError(ValueError):
