@@ -24,6 +24,22 @@ from manyfaced.common import faces as face_module
 from manyfaced.common.faces import FACE_REGISTRY, FaceSpec, get_face, is_http_port
 from manyfaced.handlers.http_handler import set_enrich_args
 
+
+# These tests assert on the dispatch / capture contract (greeting ordering,
+# credential capture, BearStorage fields) -- NOT on actual report delivery to a
+# server. The handler path still queues a real send_report() to the configured
+# server port, which is a dead localhost port here, so send_report would spend
+# ~30s on connect retries. Stub the network send so the queue path is still
+# exercised (enrich + queue) without the slow retry. Real end-to-end report
+# delivery is covered by test_e2e_pipeline.py.
+@pytest.fixture(autouse=True)
+def _stub_report_send():
+    from unittest.mock import patch
+
+    with patch('manyfaced.client.report_sender.send_report', lambda *a, **k: None):
+        yield
+
+
 # CRLF as a bytes constant built without backslash escapes (keeps the test
 # source free of literal control chars that confuse editors/diff).
 CRLF = bytes([13, 10])

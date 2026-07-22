@@ -39,14 +39,23 @@ def _stub_resolve_geo():
     thread) or perform a synchronous reverse-DNS call (socket.gethostbyaddr,
     ~1s timeout when the IP has no PTR).
 
+    Also stub the report send (``send_report``): several tests below set
+    ``args.server = 9999`` (a dead localhost port) to exercise the
+    queue/thread-pool path. Without this stub the worker would spend ~30s on
+    connect retries to the dead port. The test still asserts the queue path is
+    taken (e.g. ``process_request`` submits a job); only the real TCP send is
+    removed. Real end-to-end report delivery is covered by test_e2e_pipeline.py.
+
     Routing/enrichment tests assert on response *content* or on
     ``resolve_geo.assert_called_once_with(...)`` — stubbing the return value
     keeps the call (so those assertions stay valid) while removing the waits.
     The geo + DNS lookups themselves are exercised by test_geolocate.py and the
-    enrichment integration tests that opt out of this fixture."""
+    enrichment integration tests that opt out of this fixture.
+    """
     with (
         patch.object(BearStorage, 'resolve_geo', return_value=('', '', '', '')),
         patch.object(BearStorage, 'resolve_dns_name', return_value=''),
+        patch('manyfaced.client.report_sender.send_report', lambda *a, **k: None),
     ):
         yield
 
