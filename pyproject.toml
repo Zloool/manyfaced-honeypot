@@ -53,7 +53,12 @@ ignore = [
 "test/*" = ["E402", "F401", "F841"]
 
 [tool.pytest.ini_options]
-addopts = "-v --timeout=60 --cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76"
+# Coverage is OPT-IN for ad-hoc local runs: it makes every run measurably
+# slower and is rarely what you want while iterating on a test. Use
+# `uv run pytest --cov` (or the `make cov` target) when you want the gate.
+# CI's `test` job passes the --cov flags explicitly so the 76% gate still
+# blocks merges (see .github/workflows/ci.yml).
+addopts = "-v --timeout=60"
 testpaths = ["test"]
 
 [tool.interrogate]

@@ -488,6 +488,41 @@ class TestReportQueueWorker:
         assert len(results) == 5, f'Expected 5 results, got {len(results)}'
         assert sorted(results) == [0, 2, 4, 6, 8]
 
+    def test_shutdown_drains_queued_items(self):
+        """Regression test for the graceful-shutdown deadlock.
+
+        Previously, ``shutdown_report_executor()`` flipped ``_report_queue_alive``
+        to False and then blocked on an unbounded ``_report_queue.join()``. Because
+        the worker loop was ``while _report_queue_alive:`` it stopped pulling
+        items the instant the flag went False, so any item still queued never got
+        ``task_done()`` and ``join()`` hung forever (manifested as a 30s
+        pytest-timeout kill of ``test_run_auto_detect_starts_both`` in the full
+        suite, where the queue is a module-level singleton left non-empty by an
+        earlier test).
+
+        This test queues an item, flips the liveness flag the way shutdown does,
+        and asserts ``shutdown_report_executor()`` returns promptly (drains the
+        pending item rather than blocking on it).
+        """
+        from manyfaced.handlers.report_queue import (
+            _get_report_queue,
+            shutdown_report_executor,
+        )
+
+        # Clean slate.
+        shutdown_report_executor()
+        q = _get_report_queue()
+        processed = []
+        q.put((lambda: processed.append(1), ()))
+
+        start = time.monotonic()
+        shutdown_report_executor()
+        elapsed = time.monotonic() - start
+
+        # Must drain the pending item (not block on the unbounded join).
+        assert processed == [1], 'shutdown left a queued item unprocessed'
+        assert elapsed < 5.0, f'shutdown deadlocked ({elapsed:.1f}s)'
+
 
 # -- Full Pipeline with Real Encryption -------------------------------------
 

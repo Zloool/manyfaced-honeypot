@@ -31,9 +31,17 @@ MAX_REPORT_THREADS = 10
 
 
 def _report_worker():
-    """Worker thread that processes items from the report queue."""
+    """Worker thread that processes items from the report queue.
+
+    Keeps draining the queue until it is empty, not just until
+    ``_report_queue_alive`` flips to False. This is critical for graceful
+    shutdown: if we stopped pulling items the instant ``alive`` went False,
+    any items still queued would never be processed, their ``task_done()``
+    would never fire, and ``join()`` in ``shutdown_report_executor()`` would
+    block forever (issue #645).
+    """
     q = _get_report_queue()
-    while _report_queue_alive:
+    while _report_queue_alive or not q.empty():
         try:
             fn, args = q.get(timeout=1)
             set_gauge('report_queue_depth', q.qsize())
@@ -72,13 +80,38 @@ def _get_report_queue() -> _queue.Queue:
     return _report_queue
 
 
+# How long shutdown waits for in-flight report sends to finish before giving
+# up. A single report send can take a while (connect timeout + retries in
+# send_report), but shutdown must never block the process indefinitely -- an
+# unbounded queue.join() is what previously deadlocked graceful shutdown.
+# Workers are daemon threads (reaped with the process), so a stuck worker is
+# simply abandoned after this window rather than stalling shutdown.
+SHUTDOWN_JOIN_TIMEOUT = 3.0
+
+
 def shutdown_report_executor():
-    """Gracefully shut down the report work queue and workers."""
+    """Gracefully shut down the report work queue and workers.
+
+    Flips the liveness flag; with the worker loop now draining until the queue
+    is empty (``while _report_queue_alive or not q.empty()``), queued items are
+    processed instead of being abandoned with ``task_done()`` never called. We
+    then join the worker threads with a hard timeout so a misbehaving task
+    (e.g. a ``send_report`` to a dead port) cannot stall shutdown forever.
+
+    The previously-unbounded ``_report_queue.join()`` was removed: it could
+    block indefinitely when an item's ``task_done()`` was never called
+    (issue #645). Workers are daemon threads, so any that are still mid-task
+    after the join window are reaped when the process exits.
+    """
     global _report_queue, _report_queue_alive, _report_workers
-    if _report_queue is not None and _report_queue_alive:
-        _report_queue_alive = False
-        # Wait for queue to drain
-        _report_queue.join()
-        _report_queue = None
-        with _report_workers_lock:
-            _report_workers.clear()
+    if _report_queue is None or not _report_queue_alive:
+        return
+    _report_queue_alive = False
+    workers = list(_report_workers)
+    # Best-effort drain: give workers a bounded window to finish in-flight
+    # sends, then abandon any still-stuck ones (daemon threads die with us).
+    for w in workers:
+        w.join(timeout=SHUTDOWN_JOIN_TIMEOUT)
+    _report_queue = None
+    with _report_workers_lock:
+        _report_workers.clear()

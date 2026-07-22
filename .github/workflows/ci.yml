@@ -80,7 +80,9 @@ jobs:
         run: uv sync --locked --extra dev --extra postgres
 
       - name: Run tests
-        run: uv run pytest -v --tb=short
+        # Coverage is opt-in for local runs (removed from pyproject addopts),
+        # so CI must pass the --cov flags explicitly to keep the 76% gate.
+        run: uv run pytest -v --tb=short --cov=manyfaced --cov-report=term-missing --cov-report=xml --cov-fail-under=76
 
   typecheck:
     # Run on PRs and manual dispatch for validation.
