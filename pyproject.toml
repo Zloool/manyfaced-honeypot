@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
-dev = ["pytest>=7.0", "pytest-timeout>=2.1", "ruff==0.15.20", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
+dev = ["pytest>=7.0", "pytest-timeout>=2.1", "ruff==0.15.22", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
 
 [project.scripts]
 manyfaced = "manyfaced.mfh:run"
