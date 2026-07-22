@@ -325,16 +325,18 @@ class TestVNCHandler(unittest.TestCase):
     """Test VNC protocol handler."""
 
     def test_vnc_version_string(self):
-        """Version string should be returned for initial connection."""
+        """Version string should be returned for an empty / unknown frame."""
         raw_data = b''
         response = generate_vnc_response(raw_data, '10.0.0.1')
         self.assertGreater(len(response), 0)
 
-    def test_vnc_auth_failure(self):
-        """Authentication attempt should return failure response."""
+    def test_vnc_auth_response_yields_result_and_serverinit(self):
+        """A 16-byte auth response should return SecurityResult(OK) + ServerInit (#651)."""
         raw_data = bytes([random.randint(0, 255) for _ in range(16)])
         response = generate_vnc_response(raw_data, '10.0.0.2')
-        self.assertGreater(len(response), 0)
+        # 4-byte SecurityResult == OK (0), followed by a non-empty ServerInit.
+        self.assertEqual(response[0:4], bytes(4))
+        self.assertGreater(len(response), 4)
 
     def test_vnc_credential_capture(self):
         """VNC auth attempt should capture credentials."""
@@ -342,37 +344,77 @@ class TestVNCHandler(unittest.TestCase):
         creds = extract_vnc_credentials(raw_data)
         self.assertIsNotNone(creds)
         self.assertEqual(creds[0], 'vnc-authenticated')
+        self.assertEqual(creds[1], raw_data.hex())
 
     def test_vnc_greeting(self):
         """Greeting should return version string."""
         greeting = generate_vnc_greeting('10.0.0.3')
         self.assertIn(b'RFB', greeting)
 
-    def test_vnc_version_negotiation_is_consistent(self):
-        """Greeting and negotiation must agree on the same version (#463)."""
+    def test_vnc_version_negotiation_sends_security_types(self):
+        """Client version must be answered with the security-types list (#651)."""
         greeting = generate_vnc_greeting('127.0.0.1')
-        # Client sends 003.003 (the most common real probe); server must reply
-        # with its canonical version, and it must match the greeting exactly.
+        self.assertEqual(greeting, b'RFB 003.008\n')
+        # On the client's version string, the server's NEXT message is the
+        # security-types list (count byte + VNC Auth), NOT a version echo.
         reply = generate_vnc_response(b'RFB 003.003\n', '127.0.0.1')
-        self.assertEqual(reply, greeting)
-        self.assertEqual(reply, b'RFB 003.008\n')
+        self.assertNotIn(b'RFB', reply)
+        self.assertEqual(reply, bytes([1, 2]))  # one type: VNC Auth (2)
 
-    def test_vnc_security_selection_count_byte(self):
-        """Security-type reply must include the leading count byte (#463)."""
-        # Real client frame after version = count(1) + type(2 = VNC Auth).
-        resp = generate_vnc_response(b'\x01\x02', '127.0.0.1')
-        # First byte = count (1), second byte = chosen type (2), then 16-byte challenge.
-        self.assertEqual(resp[0:1], b'\x01')
-        self.assertEqual(resp[1:2], b'\x02')
-        self.assertEqual(len(resp), 1 + 1 + 16)
+    def test_vnc_security_selection_yields_challenge(self):
+        """Selecting a security type must return a 16-byte auth challenge (#651)."""
+        # RFB 3.7+ client sends a single type byte (2 = VNC Auth).
+        resp = generate_vnc_response(bytes([2]), '127.0.0.1')
+        self.assertEqual(len(resp), 16)
 
-    def test_vnc_security_selection_guard_matches_count(self):
-        """The security-type guard must fire on the count frame, not \x02/\x03 (#463)."""
-        # Client sends count=2 with two types (1=None, 2=VNC Auth).
-        resp = generate_vnc_response(b'\x02\x01\x02', '127.0.0.1')
-        # Must be a security-type list (count byte), NOT a second version string.
-        self.assertNotIn(b'RFB', resp)
-        self.assertEqual(resp[0:1], b'\x01')
+    def test_vnc_full_handshake_captures_credentials(self):
+        """Drive the whole handshake and assert a credential-capable exchange (#651).
+
+        greeting -> client version -> security-types -> selection -> challenge
+        -> client DES response (captured) -> SecurityResult(OK) + ServerInit.
+        """
+        greeting = generate_vnc_greeting('10.0.0.9')
+        self.assertEqual(greeting, b'RFB 003.008\n')
+
+        # Client version -> server security-types list.
+        sec_types = generate_vnc_response(b'RFB 003.008\n', '10.0.0.9')
+        self.assertEqual(sec_types[0], 1)  # count = 1
+        self.assertIn(2, sec_types[1:])  # offers VNC Auth (type 2)
+
+        # Client selects VNC Auth (2) -> server 16-byte challenge.
+        challenge = generate_vnc_response(bytes([2]), '10.0.0.9')
+        self.assertEqual(len(challenge), 16)
+
+        # Client sends 16-byte DES response -> credentials captured.
+        des_response = bytes([random.randint(0, 255) for _ in range(16)])
+        creds = extract_vnc_credentials(des_response)
+        self.assertIsNotNone(creds)
+        self.assertEqual(creds[0], 'vnc-authenticated')
+
+        # Server replies SecurityResult(OK) + a non-empty ServerInit.
+        final = generate_vnc_response(des_response, '10.0.0.9')
+        self.assertEqual(final[0:4], bytes(4))  # SecurityResult OK
+        server_init = final[4:]
+        self.assertGreater(len(server_init), 0)
+        width, height = struct.unpack('>HH', server_init[0:4])
+        self.assertEqual((width, height), (1024, 768))
+
+    def test_vnc_http_probe_returns_http_shaped_reply(self):
+        """An HTTP probe on the VNC port must return an HTTP-shaped reply (#652)."""
+        crlf = bytes([13, 10])
+        for method in (
+            b'GET / HTTP/1.1' + crlf + crlf,
+            b'POST / HTTP/1.1' + crlf,
+            b'HEAD / HTTP/1.0' + crlf,
+        ):
+            resp = generate_vnc_response(method, '10.0.0.7')
+            self.assertTrue(resp.startswith(b'HTTP/1.1'), f'no HTTP reply for {method!r}')
+            self.assertNotIn(b'RFB', resp)
+
+    def test_vnc_masscan_probe_recognized(self):
+        """The masscan MGLNDD_<ip>_<port> probe must be recognised (#652)."""
+        resp = generate_vnc_response(b'MGLNDD_1.2.3.4_5900' + bytes([13, 10]), '10.0.0.8')
+        self.assertIn(b'RFB', resp)
 
 
 class TestProtocolHandlerIntegration(unittest.TestCase):
