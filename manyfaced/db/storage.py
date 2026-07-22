@@ -335,10 +335,9 @@ def _empty_stats() -> dict:
     }
 
 
-# Dashboard volume-chart bucket granularities (issue #234 redesign): 5-minute
-# buckets for the 1H range, hour/day for wider ranges (matches the ranges
-# offered by the UI: 1H/24H/7D/30D).
-_VOLUME_BUCKETS = ('minute5', 'hour', 'day')
+# Dashboard volume-chart bucket granularities are defined in
+# manyfaced/web/dashboard.py (_VOLUME_BUCKETS), which is the single source of
+# truth consumed by the dashboard views.
 
 
 # Process-wide lock serializing all SQLite writes. get_storage() returns a
