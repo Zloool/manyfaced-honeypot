@@ -6,15 +6,37 @@ UNKNOWN_DNS = 4294967290  # DNS-over-TCP probe
 UNKNOWN_MONGODB = 4294967289  # MongoDB wire protocol probe
 UNKNOWN_REDIS = 4294967288  # Redis RESP protocol probe
 UNKNOWN_TLS = 4294967287  # TLS ClientHello (handshake)
+UNKNOWN_VNC = 4294967283  # VNC probe
 UNKNOWN_SMB = 4294967286  # SMB/NBT (NetBIOS Session Service) probe
 UNKNOWN_TELNET = 4294967285  # Telnet probe
 UNKNOWN_RDP = 4294967284  # RDP probe
-UNKNOWN_VNC = 4294967283  # VNC probe
+# Beanstalkd work-queue probe (ports 11300-11311). Distinct from
+# UNKNOWN_NON_HTTP so the queue-daemon port range is recognisable instead of
+# being served a generic HTTP admin panel (issue #624).
+BEANSTALKD = 4294967282  # Beanstalkd work-queue probe (ports 11300-11311)
 # HTTP request arriving on a non-HTTP (e.g. SSH) port — a protocol mismatch.
 # Distinct from UNKNOWN_NON_HTTP so analysis can separate a real SSH scanner
 # from an HTTP client probing an SSH port (issue #445). Placed just below the
 # occupied non-HTTP sentinel block (SNMP=4294967280) to stay out of the way.
 HTTP_ON_NONHTTP_PORT = 4294967279  # 0xFFFFFFBF
+# MySQL probe (3306) — distinct from UNKNOWN_NON_HTTP so analysis can separate a
+# real MySQL scanner from a generic unknown-binary probe (issue #647).
+UNKNOWN_MYSQL = 4294967278
+# MSSQL (TDS) probe (1433) — distinct from UNKNOWN_NON_HTTP / UNKNOWN_MYSQL so
+# the two DB ports collapse into separate detected_ids (issue #647).
+UNKNOWN_MSSQL = 4294967277
+# Memcached probe (11211) — distinct so a Memcached probe on a non-canonical
+# port is recognisable instead of UNKNOWN_NON_HTTP (issue #639).
+UNKNOWN_MEMCACHED = 4294967276
+# ZooKeeper probe (2181) — distinct so a ZooKeeper probe on a non-canonical
+# port is recognisable instead of UNKNOWN_NON_HTTP (issue #639).
+UNKNOWN_ZOOKEEPER = 4294967275
+# EPMD (Erlang Port Mapper) probe (4369) — distinct so an EPMD probe on a
+# non-canonical port is recognisable instead of UNKNOWN_NON_HTTP (issue #639).
+UNKNOWN_EPMD = 4294967274
+# AMQP (RabbitMQ) probe (5672) — distinct so an AMQP probe on a non-canonical
+# port is recognisable instead of UNKNOWN_NON_HTTP (issue #639).
+UNKNOWN_AMQP = 4294967273
 # SIP/SNMP are UDP-only probes — the honeypot had no UDP transport before the
 # UDP face work (issue #388), so these IDs are added there. The next free
 # descending values below FINGERPRINT_PROBE (4294967282) are used to keep the

@@ -49,14 +49,21 @@ from typing import Callable
 from manyfaced.common import ports as _ports
 from manyfaced.common.status import (
     SSH_CLIENT,
+    BEANSTALKD,
+    UNKNOWN_AMQP,
     UNKNOWN_DNS,
+    UNKNOWN_EPMD,
+    UNKNOWN_MEMCACHED,
     UNKNOWN_MONGODB,
+    UNKNOWN_MSSQL,
+    UNKNOWN_MYSQL,
     UNKNOWN_NON_HTTP,
     UNKNOWN_RDP,
     UNKNOWN_REDIS,
     UNKNOWN_SMB,
     UNKNOWN_TELNET,
     UNKNOWN_VNC,
+    UNKNOWN_ZOOKEEPER,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,9 +76,20 @@ from manyfaced.handlers.redis_handler import generate_redis_response as _redis_r
 from manyfaced.handlers.mongodb_handler import generate_mongodb_response as _mongo_resp
 from manyfaced.handlers.telnet_handler import (
     generate_telnet_response as _telnet_resp,
+    extract_telnet_credentials,
 )
-from manyfaced.handlers.rdp_handler import generate_rdp_response as _rdp_resp
+from manyfaced.handlers.rdp_handler import (
+    generate_rdp_response as _rdp_resp,
+    extract_rdp_credentials,
+)
 from manyfaced.handlers.vnc_handler import generate_vnc_response as _vnc_resp
+from manyfaced.client.cred_extractors import (
+    extract_pop3_credentials,
+    extract_imap_credentials,
+    extract_ftp_credentials,
+    extract_mysql_credentials,
+    extract_mssql_credentials,
+)
 
 # Direction of the protocol handshake.
 SERVER_FIRST = 'server-first'
@@ -539,6 +557,23 @@ def _mysql_respond(raw: bytes, bot_ip: str) -> bytes:
     return len(payload).to_bytes(3, 'little') + b'\x02' + payload
 
 
+# MSSQL (TDS): after the Prelogin greeting, a real client sends either a second
+# Prelogin packet or a TDS Login (type 0x10). We answer the client's first
+# post-greeting frame -- whether it is a Prelogin ACK or a Login -- with a
+# wire-valid TDS packet so the handshake does not desync and drop (issue #647).
+# Credentials are intentionally NOT captured here; the reply is protocol-correct.
+def _mssql_respond(raw: bytes, bot_ip: str) -> bytes:
+    if len(raw) < 1:
+        return b''
+    pkt_type = raw[0]
+    # Login (0x10) or Prelogin (0x12): acknowledge with a Prelogin-style reply
+    # (type 0x12, status 0x01, spare 0x00 0x00, length 0x00 0x08).
+    if pkt_type in (0x10, 0x12):
+        return b'\x12\x01\x00\x08\x00\x00\x00\x00'
+    # SSPI/empty: keep the connection alive with a tiny Prelogin ACK.
+    return b'\x12\x01\x00\x08\x00\x00\x00\x00'
+
+
 def _dns_respond(raw: bytes, bot_ip: str) -> bytes:
     # DNS-over-TCP (RFC 1035): a 2-byte big-endian length prefix followed by
     # the DNS message. Answer a query with a minimal valid response: echo the
@@ -644,6 +679,21 @@ def _no_reply(raw: bytes, bot_ip: str) -> bytes:
     return b''
 
 
+# IMAPS (993) / POP3S (995): the greeting already sent a static TLS 1.2
+# ServerHello. After the client sends its TLS ClientHello / ClientKeyExchange,
+# reply with a TLS handshake-failure alert so the client closes cleanly and the
+# TLS attempt is recorded as a captured connection (capture_creds=False — issue
+# #625). Building the alert by hand (no CRLF in a TLS record) keeps the bytes
+# binary-safe: a TLSv1.2 record, alert content-type (0x15), level 2 (fatal),
+# description 40 (handshake_failure), 2-byte length.
+def _imaps_respond(raw: bytes, bot_ip: str) -> bytes:
+    return b'\x15\x03\x03\x00\x02\x02\x28'
+
+
+def _pop3s_respond(raw: bytes, bot_ip: str) -> bytes:
+    return b'\x15\x03\x03\x00\x02\x02\x28'
+
+
 # ---------------------------------------------------------------------------
 # Registry construction.
 #
@@ -660,6 +710,58 @@ def _no_reply(raw: bytes, bot_ip: str) -> bytes:
 # _is_non_http_overlap below). The two sets must be disjoint.
 # ---------------------------------------------------------------------------
 
+
+# Beanstalkd work-queue (issue #624): ports 11300-11311 are in
+# DEFAULT_TOP_PORTS and labeled Beanstalkd but had NO _FACE_DEFS entry, so they
+# fell through to the generic HTTP handler. Wire them to a real Beanstalkd
+# text-protocol face (server-first banner + client-first reply).
+def _beanstalkd_greeting() -> bytes:
+    return b'beanstalkd' + bytes([13, 10])
+
+
+def _beanstalkd_respond(raw: bytes, bot_ip: str) -> bytes:
+    """Answer common Beanstalkd text-protocol commands plausibly (issue #624)."""
+    crlf = bytes([13, 10])
+    text = raw.decode('latin-1', errors='replace').strip()
+    cmd = text.split(' ', 1)[0].lower() if text else ''
+    if cmd == 'put':
+        return b'INSERTED 1' + crlf
+    if cmd in ('reserve', 'reserve-with-timeout'):
+        return b'RESERVED 1 0' + crlf + crlf
+    if cmd in ('peek', 'peek-ready', 'peek-delayed', 'peek-buried'):
+        return b'NOT_FOUND' + crlf
+    if cmd == 'delete':
+        return b'DELETED' + crlf
+    if cmd in ('release', 'bury', 'kick', 'touch'):
+        return b'RELEASED' + crlf
+    if cmd in ('stats', 'stats-tube'):
+        return (
+            b'---'
+            + crlf
+            + b'current-jobs-ready: 0'
+            + crlf
+            + b'current-jobs-reserved: 0'
+            + crlf
+            + b'current-tubes: 1'
+            + crlf
+            + b'current-connections: 1'
+            + crlf
+            + b'pid: 1'
+            + crlf
+            + b'version: 1.12'
+            + crlf
+        )
+    if cmd in ('list-tubes', 'list-tubes-watched', 'list-tube-used'):
+        return b'---' + crlf + b'- default' + crlf
+    if cmd in ('use', 'watch', 'ignore'):
+        if cmd == 'use':
+            return b'USING default' + crlf
+        return b'WATCHING 1' + crlf
+    if cmd == 'quit':
+        return b''
+    return b'OK' + crlf
+
+
 # External port -> (detected_id, direction, greeting-fn, respond-fn,
 # capture_creds, extract_creds-or-None). Only non-HTTP faces are listed; HTTP
 # ports resolve to None and fall through to the existing HTTP path.
@@ -672,24 +774,66 @@ _FACE_DEFS: dict[int, tuple] = {
         True,
         None,
     ),  # SSH: client.py drives after greeting
-    23: (UNKNOWN_TELNET, SERVER_FIRST, _telnet_greeting, _telnet_respond, True, None),
-    21: (UNKNOWN_NON_HTTP, SERVER_FIRST, _ftp_greeting, _ftp_respond, True, None),
+    23: (
+        UNKNOWN_TELNET,
+        SERVER_FIRST,
+        _telnet_greeting,
+        _telnet_respond,
+        True,
+        extract_telnet_credentials,
+    ),
+    21: (
+        UNKNOWN_NON_HTTP,
+        SERVER_FIRST,
+        _ftp_greeting,
+        _ftp_respond,
+        True,
+        extract_ftp_credentials,
+    ),
     25: (UNKNOWN_NON_HTTP, SERVER_FIRST, _smtp_greeting, _smtp_respond, False, None),
-    110: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3_greeting, _pop3_respond, True, None),
-    143: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imap_greeting, _imap_respond, True, None),
+    110: (
+        UNKNOWN_NON_HTTP,
+        SERVER_FIRST,
+        _pop3_greeting,
+        _pop3_respond,
+        True,
+        extract_pop3_credentials,
+    ),
+    143: (
+        UNKNOWN_NON_HTTP,
+        SERVER_FIRST,
+        _imap_greeting,
+        _imap_respond,
+        True,
+        extract_imap_credentials,
+    ),
     5900: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False, None),
     5901: (UNKNOWN_VNC, SERVER_FIRST, _vnc_greeting, _vnc_respond, False, None),
-    3389: (UNKNOWN_RDP, SERVER_FIRST, _rdp_greeting, _rdp_respond, True, None),
-    1433: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mssql_greeting, _greeting_only_respond, True, None),
-    3306: (UNKNOWN_NON_HTTP, SERVER_FIRST, _mysql_greeting, _mysql_respond, True, None),
-    5672: (UNKNOWN_NON_HTTP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False, None),
+    3389: (UNKNOWN_RDP, SERVER_FIRST, _rdp_greeting, _rdp_respond, True, extract_rdp_credentials),
+    1433: (
+        UNKNOWN_MSSQL,
+        SERVER_FIRST,
+        _mssql_greeting,
+        _mssql_respond,
+        True,
+        extract_mssql_credentials,
+    ),
+    3306: (
+        UNKNOWN_MYSQL,
+        SERVER_FIRST,
+        _mysql_greeting,
+        _mysql_respond,
+        True,
+        extract_mysql_credentials,
+    ),
+    5672: (UNKNOWN_AMQP, SERVER_FIRST, _amqp_greeting, _greeting_only_respond, False, None),
     # Oracle TNS (issue #440): server-first Refuse packet greeting.
     1521: (UNKNOWN_NON_HTTP, SERVER_FIRST, _oracle_greeting, _oracle_respond, False, None),
     # client-first faces (high ports, no privilege redirect needed)
     6379: (UNKNOWN_REDIS, CLIENT_FIRST, lambda: b'', _redis_respond, True, _redis_extract),
     27017: (UNKNOWN_MONGODB, CLIENT_FIRST, lambda: b'', _mongo_respond, False, None),
-    11211: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _memcached_respond, False, None),
-    2181: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _zookeeper_respond, False, None),
+    11211: (UNKNOWN_MEMCACHED, CLIENT_FIRST, lambda: b'', _memcached_respond, False, None),
+    2181: (UNKNOWN_ZOOKEEPER, CLIENT_FIRST, lambda: b'', _zookeeper_respond, False, None),
     5432: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _postgres_respond, False, None),
     # Elasticsearch (9200) and RabbitMQ management (15672) are real HTTP
     # services, NOT binary protocols. Routing them through the non-HTTP face
@@ -700,7 +844,7 @@ _FACE_DEFS: dict[int, tuple] = {
     # NFS / rpcbind (issue #454/#457): client-first RPC reply.
     2049: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _nfs_respond, False, None),
     # EPMD (Erlang Port Mapper, rabbitmq companion; issue #451/#458): client-first.
-    4369: (UNKNOWN_NON_HTTP, CLIENT_FIRST, lambda: b'', _epmd_respond, False, None),
+    4369: (UNKNOWN_EPMD, CLIENT_FIRST, lambda: b'', _epmd_respond, False, None),
     # ── Privileged-port redirect targets (issue #600) ───────────────────────
     # These are bound as high ports via PRIVILEGED_PORT_REDIRECTS (53->10053,
     # 135->10135, 139->10139, 445->10445, 993->10993, 995->10995) and resolved
@@ -712,8 +856,24 @@ _FACE_DEFS: dict[int, tuple] = {
     135: (UNKNOWN_SMB, CLIENT_FIRST, _msrpc_greeting, _msrpc_respond, False, None),
     139: (UNKNOWN_SMB, CLIENT_FIRST, _netbios_greeting, _netbios_respond, False, None),
     445: (UNKNOWN_SMB, CLIENT_FIRST, _smb_greeting, _smb_respond, False, None),
-    993: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imaps_greeting, _no_reply, False, None),
-    995: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3s_greeting, _no_reply, False, None),
+    993: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imaps_greeting, _imaps_respond, False, None),
+    995: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3s_greeting, _pop3s_respond, False, None),
+    # Beanstalkd work-queue (issue #624): ports 11300-11311 are in
+    # DEFAULT_TOP_PORTS and labeled Beanstalkd but had NO _FACE_DEFS entry, so
+    # they fell through to the generic HTTP handler. Wire them to a real
+    # Beanstalkd text-protocol face (BEANSTALKD detected_id).
+    11300: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11301: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11302: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11303: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11304: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11305: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11306: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11307: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11308: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11309: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11310: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
+    11311: (BEANSTALKD, CLIENT_FIRST, _beanstalkd_greeting, _beanstalkd_respond, False, None),
 }
 
 
@@ -782,6 +942,18 @@ def _port_name(ext_port: int) -> str:
         445: 'smb',
         993: 'imaps',
         995: 'pop3s',
+        11300: 'beanstalkd',
+        11301: 'beanstalkd',
+        11302: 'beanstalkd',
+        11303: 'beanstalkd',
+        11304: 'beanstalkd',
+        11305: 'beanstalkd',
+        11306: 'beanstalkd',
+        11307: 'beanstalkd',
+        11308: 'beanstalkd',
+        11309: 'beanstalkd',
+        11310: 'beanstalkd',
+        11311: 'beanstalkd',
     }
     return names.get(ext_port, 'unknown')
 

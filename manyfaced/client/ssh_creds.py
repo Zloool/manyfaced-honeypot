@@ -36,8 +36,10 @@ def _capture_ssh_credentials(connection_socket: 'SocketType', bot_ip: str) -> st
                 if not data:
                     break
                 all_data += data
-                # Check if we have enough data to parse
-                if len(all_data) > 500:
+                # Keep accumulating until the client stops sending, but bound the
+                # buffer so a misbehaving client can't make us buffer forever.
+                # 4 KiB comfortably holds a full USERAUTH_REQUEST with keys/certs.
+                if len(all_data) > 4096:
                     break
             except socket_timeout:
                 break
@@ -74,73 +76,80 @@ def _capture_ssh_credentials(connection_socket: 'SocketType', bot_ip: str) -> st
 def _parse_ssh_binary_protocol(data: bytes) -> str | None:
     """Parse SSH binary protocol to extract authentication credentials.
 
-    Looks for SSH_MSG_USERAUTH_REQUEST (type 50/0x32) messages which contain
-    username and service information.
-
-    Args:
-        data: Raw SSH protocol data as bytes.
-
-    Returns:
-        String with extracted credentials, or None if not found.
+    The client sends SSH binary packets: ``[4-byte length][1-byte pad]``
+    followed by the payload. The first payload byte is the message code; a
+    ``USERAUTH_REQUEST`` carries code ``0x32`` (50) and the structure
+    ``username(string) service(string) method(string) ...``. We walk the
+    length-prefixed frames instead of doing a brittle ``find(b'\\x32')`` so a
+    ``0x32`` byte inside padding/length fields does not mislead the parser
+    (issue #628). Real clients send ``SSH-2.0-*`` banners, and we must also
+    handle ``SSH-1.99-*`` compatibility banners.
     """
     try:
-        # Look for SSH_MSG_USERAUTH_REQUEST (byte 0x32 = 50)
-        # Format: length(4 bytes) | type(1 byte) | string(username) | ...
-        idx = data.find(b'\x32')  # 0x32 = 50
-
-        if idx >= 0 and idx + 5 < len(data):
-            # Extract username from the message
-            # After type byte, next is a string (4-byte length + content)
-            try:
-                # Skip to after the message type
-                pos = idx + 1
-
-                # Read username string (4-byte length prefix)
-                if pos + 4 <= len(data):
-                    username_len = int.from_bytes(data[pos : pos + 4], 'big')
-                    pos += 4
-
-                    if pos + username_len <= len(data):
-                        username = data[pos : pos + username_len].decode('utf-8', errors='replace')
-
-                        # Look for password in subsequent data
-                        password = None
-                        pos += username_len
-
-                        # Skip service name string (usually "ssh-connection")
-                        if pos + 4 <= len(data):
-                            service_len = int.from_bytes(data[pos : pos + 4], 'big')
-                            pos += 4 + service_len
-
-                            # Skip auth method string (usually "password")
-                            if pos + 4 <= len(data):
-                                auth_method_len = int.from_bytes(data[pos : pos + 4], 'big')
-                                pos += 4 + auth_method_len
-
-                                # Now we should be at the password data
-                                # For password auth, there's a boolean (1 byte) then string
-                                if pos < len(data):
-                                    has_password = data[pos]
-                                    pos += 1
-
-                                    if has_password == 1 and pos + 4 <= len(data):
-                                        pwd_len = int.from_bytes(data[pos : pos + 4], 'big')
-                                        pos += 4
-
-                                        if pos + pwd_len <= len(data):
-                                            password = data[pos : pos + pwd_len].decode(
-                                                'utf-8', errors='replace'
-                                            )
-
-                        if username:
-                            if password:
-                                return f'user={username}, pass={password}'
-                            return f'user={username}'
-            except (IndexError, ValueError) as e:
-                logger.debug('Failed to parse SSH binary protocol: %s', e)
+        off = 0
+        n = len(data)
+        while off + 4 <= n:
+            # Respect the SSH-2.0 banner line (ends in \\n); binary frames start
+            # after it. If we are still in the banner region, skip to the first
+            # binary-looking offset.
+            pkt_len = int.from_bytes(data[off : off + 4], 'big')
+            if pkt_len <= 0 or pkt_len > 4096:
+                # Not a frame boundary here (likely banner text or mid-frame);
+                # advance one byte and retry.
+                off += 1
+                continue
+            end = off + 4 + pkt_len
+            if end > n:
+                break
+            payload = data[off + 5 : end]  # skip 4-byte length + 1-byte pad
+            if payload and payload[0] == 0x32:  # USERAUTH_REQUEST
+                return _parse_userauth_request(payload[1:])
+            off = end
     except Exception as e:
-        logger.debug('SSH binary protocol parsing error: %s', e)
+        logger.debug('SSH binary protocol framing error: %s', e)
+    return None
 
+
+def _parse_userauth_request(payload: bytes) -> str | None:
+    """Extract username (+password when ``password`` auth is used) from a
+    USERAUTH_REQUEST payload (message code already stripped)."""
+    try:
+        pos = 0
+
+        def _read_string(buf: bytes, p: int):
+            if p + 4 > len(buf):
+                return None, p
+            slen = int.from_bytes(buf[p : p + 4], 'big')
+            p += 4
+            if p + slen > len(buf):
+                return None, p
+            return buf[p : p + slen], p + slen
+
+        username, pos = _read_string(payload, pos)
+        if username is None:
+            return None
+        # service name string (usually "ssh-connection")
+        _, pos = _read_string(payload, pos)
+        # auth method string (e.g. "password", "none", "publickey")
+        method, pos = _read_string(payload, pos)
+        if method is None:
+            return f'user={username.decode("utf-8", errors="replace")}'
+        method_s = method.decode('latin-1', errors='replace')
+        if method_s == 'password':
+            # boolean (1 byte) then password string
+            if pos < len(payload):
+                has_password = payload[pos]
+                pos += 1
+                if has_password == 1:
+                    password, _ = _read_string(payload, pos)
+                    if password is not None:
+                        return (
+                            f'user={username.decode("utf-8", errors="replace")}, '
+                            f'pass={password.decode("utf-8", errors="replace")}'
+                        )
+        return f'user={username.decode("utf-8", errors="replace")}'
+    except Exception as e:
+        logger.debug('Failed to parse USERAUTH_REQUEST: %s', e)
     return None
 
 
