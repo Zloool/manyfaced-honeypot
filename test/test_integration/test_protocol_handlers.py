@@ -132,6 +132,89 @@ class TestMongoDBHandler(unittest.TestCase):
         greeting = generate_mongodb_greeting('10.0.0.4')
         self.assertEqual(greeting, b'')
 
+    def _build_op_msg_request(self, command_doc: dict) -> bytes:
+        """Helper: build a well-formed OP_MSG request carrying ``command_doc``.
+
+        The frame is a real on-the-wire OP_MSG (opcode 2013) with a single
+        kind-0 body section holding ``command_doc`` as BSON.
+        """
+        from manyfaced.handlers.mongodb_handler import (
+            _bson_encode_doc,
+            _build_op_msg,
+        )
+
+        # Use a throwaway request id so we don't disturb the shared counter.
+        request_id = 0xDEADBEEF
+        message_length = 16 + 4 + 1 + len(_bson_encode_doc(command_doc))
+        body = struct.pack('<I', 0)  # flagBits (no checksum)
+        body += b'\x00' + _bson_encode_doc(command_doc)  # kind 0 body section
+        # hand-build the header so we can set a known request id / opcode
+        return (
+            struct.pack('<I', message_length)
+            + struct.pack('<I', request_id)
+            + struct.pack('<I', 0)  # responseTo
+            + struct.pack('<I', 2013)  # OP_MSG
+            + body
+        )
+
+    def _decode_op_msg_reply(self, raw: bytes) -> dict:
+        """Decode a kind-0 OP_MSG reply body into a python dict (for assertions)."""
+        from manyfaced.handlers.mongodb_handler import _bson_decode_doc
+
+        # header(16) + flagBits(4) + sectionKind(1) + BSON doc
+        (opcode,) = struct.unpack_from('<I', raw, 12)
+        self.assertEqual(opcode, 2013)
+        return _bson_decode_doc(raw, 21)[0]
+
+    def test_mongodb_op_msg_hello_reply_is_op_msg(self):
+        """A modern driver's OP_MSG hello must get an OP_MSG (2013) reply (#646).
+
+        Regression: the handler used to always answer OP_MSG with a legacy
+        OP_REPLY (opcode 1), which makes every 4.2+ driver bail out of the
+        handshake immediately.
+        """
+        from manyfaced.handlers.mongodb_handler import OP_MSG
+
+        raw = self._build_op_msg_request({'hello': 1, 'client': {'driver': {'name': 'pymongo'}}})
+        response = generate_mongodb_response(raw, '10.0.0.5')
+        # Opcode must be OP_MSG (2013), never the legacy OP_REPLY (1).
+        (opcode,) = struct.unpack_from('<I', response, 12)
+        self.assertEqual(opcode, OP_MSG)
+        self.assertNotEqual(opcode, 1)
+        # The reply must be a valid hello-style document that the driver can
+        # parse, echoing the request id as responseTo.
+        (response_to,) = struct.unpack_from('<I', response, 8)
+        self.assertEqual(response_to, 0xDEADBEEF)
+        doc = self._decode_op_msg_reply(response)
+        self.assertEqual(doc.get('ok'), 1.0)
+        self.assertTrue(doc.get('ismaster'))
+        self.assertTrue(doc.get('helloOk'))
+
+    def test_mongodb_op_msg_ismaster_alias_reply(self):
+        """OP_MSG isMaster (legacy alias) must also get an OP_MSG hello reply (#646)."""
+        from manyfaced.handlers.mongodb_handler import OP_MSG
+
+        raw = self._build_op_msg_request({'isMaster': 1})
+        response = generate_mongodb_response(raw, '10.0.0.6')
+        (opcode,) = struct.unpack_from('<I', response, 12)
+        self.assertEqual(opcode, OP_MSG)
+        doc = self._decode_op_msg_reply(response)
+        self.assertEqual(doc.get('ok'), 1.0)
+        self.assertTrue(doc.get('ismaster'))
+        # isMaster-style responders must still report the replica set name.
+        self.assertEqual(doc.get('setName'), 'honeypot-rs')
+
+    def test_mongodb_op_msg_reply_roundtrips_bson(self):
+        """generate_op_msg_reply produces BSON a real driver-style parse can read."""
+        from manyfaced.handlers.mongodb_handler import generate_op_msg_reply
+
+        raw = self._build_op_msg_request({'hello': 1})
+        reply = generate_op_msg_reply(raw, '10.0.0.7')
+        doc = self._decode_op_msg_reply(reply)
+        self.assertIn('authMechanisms', doc)
+        self.assertIsInstance(doc['authMechanisms'], list)
+        self.assertIn('SCRAM-SHA-256', doc['authMechanisms'])
+
 
 class TestTelnetHandler(unittest.TestCase):
     """Test Telnet protocol handler."""
