@@ -198,9 +198,14 @@ def generate_telnet_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byte
             bot_ip,
             creds[0],
         )
-        # Full username+password observed in one frame -> believable auth
-        # failure, then re-prompt a fresh login so the bot keeps trying.
-        response += generate_auth_failure() + _generate_login_prompt()
+        # A full username+password exchange has been observed in this frame
+        # (or across the accumulated session the CORE hands us). Reply with a
+        # believable auth-success frame (a shell prompt) so the dialogue looks
+        # complete and extract_telnet_credentials has the whole login: /
+        # Password: exchange to parse. This is the fix for #626 — previously
+        # the handler only ever failed auth and re-prompted, so a captured
+        # login never surfaced as a complete, parseable exchange.
+        response += generate_auth_success()
         return response
 
     if creds and creds[0]:
