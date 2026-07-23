@@ -14,7 +14,77 @@ import re
 import struct
 from typing import Tuple
 
+from manyfaced.common.status import EMPTY_CONNECTION
+
 logger = logging.getLogger(__name__)
+
+# X.224 TPDU codes (high nibble; low nibble carries CDT/credit for CR/CC).
+_X224_CR = 0xE0  # Connection-Request
+_X224_CC = 0xD0  # Connection-Confirm
+
+# RDP negotiation structure types (MS-RDPBCGR 2.2.1.1.1 / 2.2.1.2.1).
+_RDP_NEG_REQ = 0x01
+_RDP_NEG_RSP = 0x02
+
+# requestedProtocols flags (MS-RDPBCGR 2.2.1.1.1).
+PROTOCOL_RDP = 0x00000000
+PROTOCOL_SSL = 0x00000001
+PROTOCOL_HYBRID = 0x00000002
+PROTOCOL_HYBRID_EX = 0x00000008
+
+
+def rdp_probe_signal(raw_data: bytes) -> int | None:
+    """Classify an RDP probe's raw payload for the capture pipeline (issue #630).
+
+    69% of production RDP sessions carried an empty ``request_raw`` but were
+    recorded under the normal RDP sentinel, hiding the fact that no client
+    frame ever arrived. When the raw payload is empty or whitespace-only, the
+    session must be stamped with the ``EMPTY_CONNECTION`` marker that the
+    caller / classification pipeline already understands (see
+    ``manyfaced.common.status`` and ``manyfaced/db/storage.py``).
+
+    Args:
+        raw_data: Raw bytes received from the bot connection.
+
+    Returns:
+        ``EMPTY_CONNECTION`` if the payload is empty/whitespace-only, else
+        ``None`` (no reclassification needed).
+    """
+    if not raw_data or not raw_data.strip():
+        return EMPTY_CONNECTION
+    return None
+
+
+def _parse_x224_connection_request(raw_data: bytes) -> int | None:
+    """Parse a TPKT-framed X.224 Connection-Request; return requestedProtocols.
+
+    Returns:
+        The requestedProtocols flags from a trailing RDP_NEG_REQ (0 when the
+        CR carries no negotiation request), or ``None`` if the frame is not a
+        valid X.224 Connection-Request.
+    """
+    # TPKT header: version 3, reserved 0, 2-byte length; then X.224 TPDU.
+    if len(raw_data) < 7 or raw_data[0] != 0x03:
+        return None
+    x224 = raw_data[4:]
+    if len(x224) < 2:
+        return None
+    li, code = x224[0], x224[1]
+    if code & 0xF0 != _X224_CR:
+        return None
+    # LI counts the octets following it; a bare CR header has LI >= 6.
+    if li < 6 or len(x224) < 1 + li:
+        return None
+    # Variable part / user data after the fixed 7-octet CR header may contain
+    # an RDP Negotiation Request: type(1) flags(1) length(2, LE, =8) protos(4, LE).
+    user_data = x224[7 : 1 + li]
+    idx = user_data.find(bytes([_RDP_NEG_REQ]))
+    while idx != -1:
+        chunk = user_data[idx : idx + 8]
+        if len(chunk) == 8 and struct.unpack('<H', chunk[2:4])[0] == 8:
+            return struct.unpack('<I', chunk[4:8])[0]
+        idx = user_data.find(bytes([_RDP_NEG_REQ]), idx + 1)
+    return 0
 
 
 def extract_rdp_credentials(raw_data: bytes) -> Tuple[str, str] | None:
@@ -82,9 +152,14 @@ def generate_rdp_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> bytes:
     if len(raw_data) > 100 and (b'nla' in text_lower or b'tsrequest' in text_lower):
         return _generate_nla_challenge()
 
-    # Detect RDP client hello (Client Core Request)
-    if len(raw_data) > 20 and raw_data[4:5] == b'\x0e':
-        return _generate_connection_confirm()
+    # Detect a real X.224 Connection-Request (TPKT + CR TPDU, code 0xE0).
+    # The previous check (`raw_data[4:5] == b'\x0e'`) matched the LI octet of
+    # one specific client and missed every other CR layout, so most real
+    # clients got only the bare CC without an RDP Negotiation Response and
+    # reset the connection (issue #630).
+    requested = _parse_x224_connection_request(raw_data)
+    if requested is not None:
+        return _generate_connection_confirm(requested)
 
     # Default: send TPKT/X.224 connection confirm
     return _generate_initial_response()
@@ -126,52 +201,45 @@ def _generate_initial_response() -> bytes:
     return tpkt + payload
 
 
-def _generate_connection_confirm() -> bytes:
-    """Generate RDP Connection-Confirm with MCS parameters.
+def _generate_connection_confirm(requested_protocols: int = 0) -> bytes:
+    """Generate an X.224 Connection-Confirm carrying an RDP Negotiation Response.
+
+    Per MS-RDPBCGR 2.2.1.2, the server answers the client's X.224
+    Connection-Request with a Connection-Confirm whose user-data is an
+    RDP Negotiation Response (RDP_NEG_RSP, type 0x02). The previous code
+    appended a bogus "MCS Connect-Initial" blob after the CC in the same
+    TPKT — not a valid CC payload — so real clients (mstsc/FreeRDP) reset
+    instead of proceeding (issue #630).
+
+    Args:
+        requested_protocols: requestedProtocols flags from the client's
+            RDP_NEG_REQ (0 when the CR carried no negotiation request).
 
     Returns:
-        Full connection confirm sequence as bytes.
+        TPKT + X.224 CC + RDP_NEG_RSP as bytes.
     """
-    # X.224 Connection-Confirm (CC_TPDU). Same 7-octet layout as
-    # _generate_initial_response; this variant simply uses a non-zero source
-    # reference (0x0001). The previous code inverted the header (LI slot held
-    # 0xE0 and 0xD0 sat in the source-reference slot) — see issue #594.
+    # RDP Negotiation Response (8 octets, little-endian fields):
+    #   type(1)=0x02  flags(1)=0x00  length(2)=8  selectedProtocol(4)
+    # We speak classic RDP security only (no TLS termination in the honeypot),
+    # so select PROTOCOL_RDP — always a legal choice because standard RDP
+    # security is implicitly supported by every client, regardless of the
+    # requestedProtocols flags the client advertised.
+    logger.debug('RDP CR requestedProtocols=%#010x → selecting RDP', requested_protocols)
+    neg_rsp = struct.pack('<BBHI', _RDP_NEG_RSP, 0x00, 8, PROTOCOL_RDP)
+
+    # X.224 Connection-Confirm (CC_TPDU). LI counts every octet after itself,
+    # including the negotiation-response user data: 6 header octets + 8.
     x224 = (
-        b'\x06'  # LI = 6 trailing octets
-        b'\xd0'  # CC_TPDU code (0xD0)
-        b'\x00\x00'  # Destination reference
-        b'\x00\x01'  # Source reference (this end)
-        b'\x00'  # class options
+        bytes([6 + len(neg_rsp)])  # LI = header (6) + user data (8) = 14
+        + b'\xd0'  # CC_TPDU code (0xD0)
+        + b'\x00\x00'  # Destination reference
+        + b'\x00\x01'  # Source reference (this end)
+        + b'\x00'  # class options
+        + neg_rsp  # RDP Negotiation Response (MS-RDPBCGR 2.2.1.2.1)
     )
 
-    # MCS Connect-Initial (simplified)
-    mcs = bytes(
-        [
-            0x7F,
-            0xE6,
-            0x80,
-            0xA4,
-            0x04,
-            0x01,
-            0x01,
-            0xFF,
-            0x02,
-            0x00,
-            0x01,
-            0x01,
-            0xFF,
-            0x02,
-            0x01,
-            0x03,
-            0x30,
-            0x00,
-        ]
-    )
-
-    # TPKT length must equal len(tpkt + x224 + mcs) of the on-the-wire bytes
-    # (the TPKT length field itself excludes the 4-byte TPKT header, so it is
-    # the length of x224 + mcs).
-    payload = x224 + mcs
+    # TPKT length excludes the 4-byte TPKT header → len(x224).
+    payload = x224
     tpkt = b'\x03\x00' + struct.pack('!H', len(payload))
 
     return tpkt + payload
