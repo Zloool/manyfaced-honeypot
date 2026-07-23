@@ -234,8 +234,6 @@ def generate_op_msg_reply(raw_data: bytes, bot_ip: str = '127.0.0.1') -> bytes:
     Returns:
         A complete OP_MSG wire protocol reply.
     """
-    if isinstance(raw_data, str):
-        raw_data = raw_data.encode('latin-1')
     try:
         (message_length,) = struct.unpack_from('<I', raw_data, 0)
         response_to = struct.unpack_from('<I', raw_data, 4)[0]
@@ -325,8 +323,6 @@ def generate_mongodb_response(raw_data: bytes, bot_ip: str = '127.0.0.1') -> byt
     Returns:
         Protocol-compliant MongoDB wire protocol message as bytes.
     """
-    if isinstance(raw_data, str):
-        raw_data = raw_data.encode('latin-1')
     # Dispatch on the wire opcode first. Modern drivers (4.2+) open the
     # handshake with an OP_MSG `hello`/`isMaster`; replying to that with a
     # legacy OP_REPLY makes them bail immediately. Keep OP_REPLY for old
