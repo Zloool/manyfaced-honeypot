@@ -7,6 +7,7 @@ to protocol_responses module; report queue management to report_queue module.
 
 from __future__ import annotations
 
+import re
 import threading
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -55,6 +56,57 @@ from manyfaced.handlers.report_queue import _get_report_queue
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Overlong / invalid percent-encoding normalization (issue #634)
+# ---------------------------------------------------------------------------
+# Classic traversal probes use overlong UTF-8 percent-encodings that
+# urllib.parse.unquote turns into U+FFFD (or leaves as raw invalid bytes),
+# which used to crash the response builder downstream and silently drop the
+# connection (detected_id=1). Collapse the well-known overlong sequences to
+# their canonical characters BEFORE dispatch so the probe routes to the same
+# 403 traversal page as its plain '..'/'%2e' siblings.
+_OVERLONG_SEQUENCES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r'%c0%af', re.IGNORECASE), '/'),  # overlong '/'
+    (re.compile(r'%c0%ae', re.IGNORECASE), '.'),  # overlong '.'
+    (re.compile(r'%c1%9c', re.IGNORECASE), '\\\\'),  # overlong backslash
+    (re.compile(r'%e0%80%af', re.IGNORECASE), '/'),  # 3-byte overlong '/'
+    (re.compile(r'%e0%80%ae', re.IGNORECASE), '.'),  # 3-byte overlong '.'
+]
+# Any leftover invalid lead-byte escapes (%c0..%c1, %f5..%ff) that unquote
+# would mangle into U+FFFD — strip them so the path stays encodable.
+_INVALID_PCT_RE = re.compile(r'%(?:c0|c1|f[5-9a-f])', re.IGNORECASE)
+
+
+def normalize_overlong_path(path: str) -> str:
+    """Collapse overlong UTF-8 percent-encodings to canonical chars (#634)."""
+    for pattern, replacement in _OVERLONG_SEQUENCES:
+        path = pattern.sub(replacement, path)
+    path = _INVALID_PCT_RE.sub('', path)
+    # Drop any replacement chars that already leaked in from lossy decoding
+    return path.replace('\ufffd', '')
+
+
+# ---------------------------------------------------------------------------
+# Plaintext non-HTTP probe markers not covered by detect_protocol (issue #636)
+# ---------------------------------------------------------------------------
+# JDWP handshakes and MGLNDD_<ip>_<port> masscan-style banner grabs arrive on
+# the HTTP ports; detect_protocol() has no signature for them, so they used to
+# fall through to the HTTP monster page — a protocol-violating reply that makes
+# the honeypot look broken. Detect them here and answer protocol-shaped.
+_EXTRA_PLAINTEXT_MARKERS: list[tuple[str, bytes]] = [
+    ('jdwp', b'JDWP-Handshake'),
+    ('mglndd', b'MGLNDD_'),
+]
+
+
+def detect_plaintext_probe(raw_bytes: bytes) -> str | None:
+    """Detect plaintext non-HTTP probes missed by detect_protocol (#636)."""
+    for name, marker in _EXTRA_PLAINTEXT_MARKERS:
+        if raw_bytes.startswith(marker):
+            return name
+    return None
+
+
 # Singleton router – initialized on first use. Double-checked locking mirrors
 # _get_report_queue() so concurrent first requests on different multiport
 # accept-loop threads can't each build a separate Router instance.
@@ -100,12 +152,25 @@ class HTTPHandler:
             For SSH/non-HTTP paths: (response_bytes, BearStorage) so caller can update credentials
             For HTTP paths: response bytes only
         """
-        raw_bytes = message.encode('utf-8') if isinstance(message, str) else message
+        # Encode losslessly: the socket layer decodes with errors='replace',
+        # so any U+FFFD must survive the round-trip without raising (#637).
+        raw_bytes = (
+            message.encode('utf-8', errors='replace') if isinstance(message, str) else message
+        )
         if not raw_bytes:
             return self._handle_empty_connection(bot_ip)
 
         protocol = detect_protocol(raw_bytes)
         protocol_info = get_protocol_info(raw_bytes) if protocol else {}
+
+        # Issue #636: plaintext non-HTTP probes (JDWP handshake, MGLNDD banner
+        # grabs) have no detect_protocol signature and used to fall through to
+        # the HTTP monster page. Catch them before HTTP parsing.
+        if protocol is None:
+            plaintext = detect_plaintext_probe(raw_bytes)
+            if plaintext is not None:
+                logger.info('Plaintext non-HTTP probe detected from %s: %s', bot_ip, plaintext)
+                return self._handle_non_http_probe(bot_ip, plaintext, {'raw': raw_bytes})
 
         if protocol == 'ssh':
             logger.info(
@@ -213,11 +278,12 @@ class HTTPHandler:
             response = generate_rdp_response(raw_data, bot_ip)
         elif protocol == 'vnc':
             response = generate_vnc_response(raw_data, bot_ip)
-        elif protocol in ('ftp', 'pop3', 'imap'):
+        elif protocol in ('ftp', 'pop3', 'imap', 'jdwp', 'mglndd', 'ldap', 'rtsp'):
             # These protocol probes must get a protocol-shaped greeting, NOT the
             # generic Apache HTTP banner. A real FTP/POP3/IMAP client receiving
             # ``HTTP/1.1 200 OK`` immediately errors/hangs — poor fidelity and a
-            # lost credential-capture opportunity (issue #491).
+            # lost credential-capture opportunity (issue #491). JDWP/MGLNDD/
+            # LDAP/RTSP probes on the HTTP ports get the same treatment (#636).
             response = self._non_http_greeting(protocol)
         else:
             # Fallback to legacy handler for other protocols
@@ -252,10 +318,33 @@ class HTTPHandler:
         generic Apache HTTP response — otherwise they error/hang and the
         connection (and any credential-capture opportunity) is lost.
         """
+        crlf = bytes([13, 10])
         greetings = {
-            'ftp': '220 (vsFTPd 3.0.3)'.encode() + bytes([13, 10]),
-            'pop3': '+OK POP3 server ready'.encode() + bytes([13, 10]),
-            'imap': '* OK IMAP4rev1 server ready'.encode() + bytes([13, 10]),
+            'ftp': '220 (vsFTPd 3.0.3)'.encode() + crlf,
+            'pop3': '+OK POP3 server ready'.encode() + crlf,
+            'imap': '* OK IMAP4rev1 server ready'.encode() + crlf,
+            # JDWP: a real JVM debug port echoes the 14-byte handshake back
+            # verbatim (#636) — anything else and the probe drops immediately.
+            'jdwp': b'JDWP-Handshake',
+            # MGLNDD_<ip>_<port> masscan-style banner grab: real servers close
+            # or emit their banner; answer with a plausible service banner so
+            # the scanner records an open, live port (#636).
+            'mglndd': '220 service ready'.encode() + crlf,
+            # LDAP: minimal bindResponse (messageID=1, resultCode=success) so
+            # an ASN.1 bind probe sees a live directory server (#636).
+            'ldap': bytes(
+                [0x30, 0x0C, 0x02, 0x01, 0x01, 0x61, 0x07, 0x0A, 0x01, 0x00, 0x04, 0x00, 0x04, 0x00]
+            ),
+            # RTSP: protocol-correct 200 OK to an OPTIONS/DESCRIBE probe (#636).
+            'rtsp': (
+                'RTSP/1.0 200 OK'.encode()
+                + crlf
+                + 'CSeq: 1'.encode()
+                + crlf
+                + 'Public: OPTIONS, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE'.encode()
+                + crlf
+                + crlf
+            ),
         }
         return greetings.get(protocol, b'')
 
@@ -282,6 +371,11 @@ class HTTPHandler:
 
         router = _get_router()
         path = getattr(parsed, 'path', '/')
+        # Normalize overlong/invalid percent-encodings (%c0%af etc.) so the
+        # probe routes like its canonical '..'/'%2e' siblings and the response
+        # builder never sees un-encodable bytes (issue #634).
+        if isinstance(path, str) and path:
+            path = normalize_overlong_path(path)
         # The Router percent-decodes the path once during dispatch (issue #443)
         # so encoded path-escape probes (/ .env%2e -> /.env, /.htaccess,
         # /%2eenv) match the exploit/config-disclosure routes instead of

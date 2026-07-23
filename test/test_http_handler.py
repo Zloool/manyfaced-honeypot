@@ -890,3 +890,131 @@ class TestGetRouterSingleton:
         a = hh._get_router()
         b = hh._get_router()
         assert a is b
+
+
+# ---------------------------------------------------------------------------
+# Issues #634 #635 #636 #637 — HTTP coverage + data-quality gaps
+# ---------------------------------------------------------------------------
+
+
+class TestHTTPCoverageGaps:
+    """Regression tests for prod-recon issues #634/#635/#636/#637."""
+
+    @pytest.fixture
+    def handler(self):
+        args = MagicMock()
+        args.verbose = False
+        args.server = None
+        return HTTPHandler(args, MagicMock())
+
+    # -- #634: overlong UTF-8 traversal must get a response, never silence --
+
+    def test_overlong_c0af_traversal_returns_response(self, handler):
+        output = handler.handle_request(
+            'GET /..%c0%afetc/passwd?_=123 HTTP/1.1' + _CRLF + 'Host: x' + _CRLF + _CRLF,
+            bot_ip='1.2.3.4',
+        )
+        assert isinstance(output, bytes)
+        assert len(output) > 0
+        assert output.startswith(b'HTTP/1.1')
+        # Should be the traversal 403, not the detected_id=1 fallback silence
+        assert b'403' in output.split(bytes([13, 10]))[0] or b'Forbidden' in output
+
+    def test_overlong_c0ae_traversal_returns_response(self, handler):
+        output = handler.handle_request(
+            'GET /theme/META-INF/%c0%ae%c0%ae/web.xml HTTP/1.1' + _CRLF + _CRLF,
+            bot_ip='1.2.3.4',
+        )
+        assert isinstance(output, bytes)
+        assert output.startswith(b'HTTP/1.1')
+
+    def test_normalize_overlong_path(self):
+        from manyfaced.handlers.http_handler import normalize_overlong_path
+
+        assert normalize_overlong_path('/..%c0%afetc/passwd') == '/../etc/passwd'
+        assert normalize_overlong_path('/%C0%AE%C0%AE/') == '/../'
+        # invalid lead bytes stripped, replacement chars removed
+        assert chr(0xFFFD) not in normalize_overlong_path('/a' + chr(0xFFFD) + 'b')
+
+    # -- #635: common attack paths get protocol-appropriate fake responses --
+
+    def test_env_probe_gets_fake_404(self, handler):
+        output = handler.handle_request(
+            'GET /.env HTTP/1.1' + _CRLF + 'Host: x' + _CRLF + _CRLF,
+            bot_ip='1.2.3.4',
+        )
+        assert isinstance(output, bytes)
+        assert output.startswith(b'HTTP/1.1')
+        assert b'Server Administration Panel' not in output
+
+    def test_cve_endpoint_gets_terse_404(self):
+        from manyfaced.handlers.generic_handler import GenericHandler
+
+        gh = GenericHandler()
+        raw = 'GET /goform/set_LimitClient_cfg HTTP/1.1' + _CRLF + _CRLF
+        response, detected = gh.generate_response('/goform/set_LimitClient_cfg', raw, '1.2.3.4', {})
+        assert response.startswith(b'HTTP/1.1 404')
+        assert b'Server Administration Panel' not in response
+        assert detected == GenericHandler.DETECTED_ID
+
+    def test_xmlrpc_post_gets_fault_response(self):
+        from manyfaced.handlers.generic_handler import GenericHandler
+
+        gh = GenericHandler()
+        raw = 'POST /xmlrpc.php HTTP/1.1' + _CRLF + _CRLF
+        response, _ = gh.generate_response('/xmlrpc.php', raw, '1.2.3.4', {})
+        assert b'methodResponse' in response
+
+    def test_wp_login_get_gets_login_form(self):
+        from manyfaced.handlers.generic_handler import GenericHandler
+
+        gh = GenericHandler()
+        raw = 'GET /wp-login.php HTTP/1.1' + _CRLF + _CRLF
+        response, _ = gh.generate_response('/wp-login.php', raw, '1.2.3.4', {})
+        assert b'loginform' in response
+        assert b'Server Administration Panel' not in response
+
+    # -- #636: plaintext non-HTTP probes get protocol-shaped responses --
+
+    def test_jdwp_handshake_gets_echo(self, handler):
+        result = handler.handle_request('JDWP-Handshake', bot_ip='1.2.3.4')
+        assert isinstance(result, tuple)
+        response, bs = result
+        assert response == b'JDWP-Handshake'
+        assert bs.isDetected is not None
+
+    def test_mglndd_probe_gets_banner(self, handler):
+        result = handler.handle_request('MGLNDD_68.183.114.1_8080', bot_ip='1.2.3.4')
+        assert isinstance(result, tuple)
+        response, _ = result
+        assert response.startswith(b'220')
+        assert b'<html' not in response.lower()
+
+    def test_ldap_bind_gets_bind_response(self, handler):
+        # ASN.1 bind: 0x30 len 0x02 0x01 msgid 0x60 ...
+        raw = bytes([0x30, 0x14, 0x02, 0x01, 0x01, 0x60, 0x0F, 0x02, 0x01, 0x03])
+        result = handler.handle_request(raw, bot_ip='1.2.3.4')
+        assert isinstance(result, tuple)
+        response, _ = result
+        # bindResponse application tag 0x61 present, no HTML
+        assert bytes([0x61]) in response
+        assert b'<html' not in response.lower()
+
+    # -- #637: blank raw handled as EMPTY_CONNECTION without crashing --
+
+    def test_blank_raw_returns_empty_connection(self, handler):
+        result = handler.handle_request('', bot_ip='1.2.3.4')
+        assert isinstance(result, tuple)
+        response, bs = result
+        assert isinstance(response, bytes)
+        from manyfaced.common.status import EMPTY_CONNECTION
+
+        assert bs.isDetected == EMPTY_CONNECTION
+
+    def test_replacement_char_message_does_not_crash(self, handler):
+        # Socket layer decodes invalid bytes with errors='replace' (#637);
+        # the resulting U+FFFD must survive encode without raising.
+        msg = 'GET /..' + chr(0xFFFD) + 'etc/passwd HTTP/1.1' + _CRLF + _CRLF
+        output = handler.handle_request(msg, bot_ip='1.2.3.4')
+        assert isinstance(output, bytes)
+        assert len(output) > 0
