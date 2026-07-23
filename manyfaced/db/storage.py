@@ -220,6 +220,13 @@ _DETECTED_ID_NAMES: dict[int, str] = {
     _status.MCP_HTTP: 'mcp',
     _status.MCP_SSE_HTTP: 'mcp_sse',
     _status.DOCKER_HTTP: 'docker',
+    _status.BEANSTALKD: 'beanstalkd',
+    _status.UNKNOWN_MYSQL: 'mysql',
+    _status.UNKNOWN_MSSQL: 'mssql',
+    _status.UNKNOWN_MEMCACHED: 'memcached',
+    _status.UNKNOWN_ZOOKEEPER: 'zookeeper',
+    _status.UNKNOWN_EPMD: 'epmd',
+    _status.UNKNOWN_AMQP: 'amqp',
 }
 # Service IDs (matched handlers) are "detected"; the sentinel range is not.
 _DETECTED_SERVICE_MAX = _status.CONFIG_DISCLOSURE_HTTP
