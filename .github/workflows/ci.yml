@@ -22,10 +22,14 @@ on:
         required: true
         default: 'master'
 
-# Cancel superseded PR runs so a force-push doesn't waste minutes on a stale ref.
+# Keep the concurrency group so simultaneous pushes to the same ref don't
+# spawn duplicate runners, but DO NOT cancel in-progress runs: cancelling a
+# run mid-flight leaves its check-runs stuck in `in_progress`/`queued` with
+# run_id: null, which blocks branch-protected merges even when a later run
+# is fully green (orphaned-check merge blocker, 2026-07-23).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
