@@ -122,6 +122,15 @@ class ElasticHandler(HTTPHandlerBase):
             return self._sql_response(raw_request), json_ct
         if path_lower == '/_bulk' or path_lower.startswith('/_bulk'):
             return self._bulk_response(), json_ct
+        # ES management/recon endpoints (issue #644).
+        if path_lower == '/_aliases' or path_lower.startswith('/_aliases'):
+            return self._aliases_response(), json_ct
+        if path_lower in ('/_stats', '/_status') or path_lower.startswith(
+            ('/_stats/', '/_status/')
+        ):
+            return self._stats_response(), json_ct
+        if path_lower == '/_mapping' or '/_mapping' in path_lower or path_lower.startswith('/_all'):
+            return self._mapping_response(), json_ct
         if path_lower == '/_plugin/head' or path_lower.startswith('/_plugin/head'):
             return self._head_plugin_response(), 'text/html; charset=UTF-8'
         if path_lower.startswith('/elasticsearch/') and path_lower.endswith('.env'):
@@ -321,6 +330,72 @@ class ElasticHandler(HTTPHandlerBase):
                         }
                     }
                 ],
+            },
+            separators=(',', ':'),
+        )
+
+    def _aliases_response(self) -> str:
+        return json.dumps(
+            {
+                'logs-2024.02.01': {'aliases': {'logs': {}}},
+                'metrics-2024.02.01': {'aliases': {'metrics': {}}},
+                '.kibana_8.13.0_001': {'aliases': {'.kibana': {}, '.kibana_8.13.0': {}}},
+            },
+            separators=(',', ':'),
+        )
+
+    def _stats_response(self) -> str:
+        return json.dumps(
+            {
+                '_shards': {'total': 12, 'successful': 12, 'failed': 0},
+                '_all': {
+                    'primaries': {
+                        'docs': {'count': 1111543, 'deleted': 231},
+                        'store': {'size_in_bytes': 734003200},
+                    },
+                    'total': {
+                        'docs': {'count': 1111543, 'deleted': 231},
+                        'store': {'size_in_bytes': 734003200},
+                    },
+                },
+                'indices': {
+                    'logs-2024.02.01': {
+                        'uuid': 'q9XhP2sRTqWc1kd8ZoAbCw',
+                        'primaries': {'docs': {'count': 982145, 'deleted': 120}},
+                        'total': {'docs': {'count': 982145, 'deleted': 120}},
+                    },
+                    'metrics-2024.02.01': {
+                        'uuid': 'Lm3nO5pQRsTuVwXyZaBcDe',
+                        'primaries': {'docs': {'count': 128374, 'deleted': 111}},
+                        'total': {'docs': {'count': 128374, 'deleted': 111}},
+                    },
+                },
+            },
+            separators=(',', ':'),
+        )
+
+    def _mapping_response(self) -> str:
+        return json.dumps(
+            {
+                'logs-2024.02.01': {
+                    'mappings': {
+                        'properties': {
+                            '@timestamp': {'type': 'date'},
+                            'message': {'type': 'text'},
+                            'host': {'properties': {'name': {'type': 'keyword'}}},
+                            'level': {'type': 'keyword'},
+                        }
+                    }
+                },
+                'metrics-2024.02.01': {
+                    'mappings': {
+                        'properties': {
+                            '@timestamp': {'type': 'date'},
+                            'cpu': {'type': 'float'},
+                            'memory': {'type': 'long'},
+                        }
+                    }
+                },
             },
             separators=(',', ':'),
         )
