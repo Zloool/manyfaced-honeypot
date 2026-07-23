@@ -101,6 +101,22 @@ class RabbitMQHandler(HTTPHandlerBase):
                 self.DETECTED_ID,
             )
 
+        # --- Elasticsearch-style probe paths (JSON) ----------------------
+        # Naive scanners fire ES REST probes at 15672 (issue #643). Answer
+        # with plausible RabbitMQ management JSON so they are captured as
+        # RabbitMQ rather than falling through to the Elastic face.
+        if decoded_lower in (
+            '/_cluster',
+            '/_nodes',
+            '/_search',
+            '/_cat',
+        ) or decoded_lower.startswith(('/_cluster/', '/_nodes/', '/_search/', '/_cat/')):
+            body = self._api_overview()
+            return (
+                self._build_http_response(body, 200, 'OK', 'application/json'),
+                self.DETECTED_ID,
+            )
+
         # --- .env disclosure probe (text) --------------------------------
         if decoded_lower.startswith('/rabbitmq/') and decoded_lower.endswith('.env'):
             body = self._env_disclosure()
