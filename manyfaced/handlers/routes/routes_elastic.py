@@ -49,6 +49,12 @@ ROUTES: list[Route] = [
     Route(PathExact('/_plugin/head'), _elastic(), ELASTIC_HTTP, 'elastic_plugin_head'),
     Route(PathExact('/_sql'), _elastic(), ELASTIC_HTTP, 'elastic_sql'),
     Route(PathExact('/_bulk'), _elastic(), ELASTIC_HTTP, 'elastic_bulk'),
+    # Issue #644: these bare ES REST endpoints previously fell through to the
+    # catch-all (UNKNOWN_HTTP) so attack traffic was not attributed to Elastic.
+    Route(PathExact('/_aliases'), _elastic(), ELASTIC_HTTP, 'elastic_aliases'),
+    Route(PathExact('/_stats'), _elastic(), ELASTIC_HTTP, 'elastic_stats'),
+    Route(PathExact('/_status'), _elastic(), ELASTIC_HTTP, 'elastic_status'),
+    Route(PathExact('/_all/_mapping'), _elastic(), ELASTIC_HTTP, 'elastic_all_mapping'),
     Route(PathExact('/elasticsearch/.env'), _elastic(), ELASTIC_HTTP, 'elastic_es_env'),
     Route(PathExact('/elastic/.env'), _elastic(), ELASTIC_HTTP, 'elastic_elastic_env'),
     # NOTE: the previous broad `PathPrefix('/_')` shadowed `/_next` (Next.js)

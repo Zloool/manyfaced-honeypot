@@ -5,6 +5,7 @@ that dispatch is visible in one ordered route table, and that concatenation
 behavior is structurally impossible to reintroduce.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -389,6 +390,75 @@ class TestMCPFaceClassifiability(unittest.TestCase):
         self.assertTrue(is_http_port(8000))
         # Sanity: a non-HTTP face port is still NOT an HTTP port.
         self.assertFalse(is_http_port(3389))
+
+
+class TestElasticIssue644Routing(unittest.TestCase):
+    """Issue #644: bare ES REST endpoints must route to ELASTIC_HTTP + ES JSON.
+
+    These paths previously fell through to the catch-all Any() monster page
+    (detected_id UNKNOWN_HTTP=4294967294), so attack traffic on these
+    high-volume probe paths was not attributed to Elastic. They must now be
+    classified ELASTIC_HTTP (1013) and return a valid ES-shaped JSON body.
+    """
+
+    def setUp(self):
+        from manyfaced.common.status import ELASTIC_HTTP, UNKNOWN_HTTP
+
+        self.elastic = ELASTIC_HTTP
+        self.unknown = UNKNOWN_HTTP
+
+    def _dispatch(self, path):
+        from manyfaced.handlers.routes import router
+
+        crlf = chr(13) + chr(10)
+        raw_request = 'GET ' + path + ' HTTP/1.1' + crlf + 'Host: x' + crlf + crlf
+        return router.dispatch(path, raw_request, '1.2.3.4', {})
+
+    def test_listed_paths_are_elastic_http(self):
+        from manyfaced.common.status import ELASTIC_HTTP
+
+        paths = [
+            '/_all/_mapping',
+            '/_aliases',
+            '/_stats',
+            '/_status',
+            '/_cluster/state',
+            '/_nodes/stats',
+            '/_bulk',
+            '/_search',
+            '/_cat/indices',
+            '/_cat/health',
+        ]
+        for path in paths:
+            result = self._dispatch(path)
+            self.assertIsNotNone(result, f'{path} returned no route')
+            body, detected = result
+            self.assertEqual(
+                detected,
+                ELASTIC_HTTP,
+                f'{path} should be ELASTIC_HTTP, got {detected}',
+            )
+            self.assertNotEqual(detected, self.unknown)
+
+    def test_listed_paths_return_es_json(self):
+        paths = [
+            '/_all/_mapping',
+            '/_aliases',
+            '/_stats',
+            '/_status',
+        ]
+        sep = chr(13) + chr(10) + chr(13) + chr(10)
+        for path in paths:
+            result = self._dispatch(path)
+            self.assertIsNotNone(result, f'{path} returned no route')
+            body, _ = result
+            raw_body = body.split(sep.encode('latin-1'), 1)[1]
+            self.assertTrue(
+                raw_body.strip().startswith(b'{') or raw_body.strip().startswith(b'['),
+                f'{path} body is not JSON: {raw_body[:120]!r}',
+            )
+            parsed = json.loads(raw_body.decode('iso-8859-1'))
+            self.assertIsInstance(parsed, (dict, list))
 
 
 if __name__ == '__main__':

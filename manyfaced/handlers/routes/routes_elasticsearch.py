@@ -32,6 +32,12 @@ ROUTES: list[Route] = [
     Route(PathExact('/_cluster'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_2'),
     Route(PathExact('/_nodes'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_3'),
     Route(PathExact('/query'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_4'),
+    # Issue #644: these bare ES REST endpoints previously fell through to the
+    # catch-all (UNKNOWN_HTTP) so attack traffic was not attributed to Elastic.
+    Route(PathExact('/_aliases'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_aliases'),
+    Route(PathExact('/_stats'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_stats'),
+    Route(PathExact('/_status'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_status'),
+    Route(PathExact('/_all/_mapping'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_all_mapping'),
     Route(PathPrefix('/_cat/'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_cat_prefix'),
     Route(PathPrefix('/_cluster/'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_cluster_prefix'),
     Route(PathPrefix('/_nodes/'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_nodes_prefix'),

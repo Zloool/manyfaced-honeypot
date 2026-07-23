@@ -129,6 +129,25 @@ class ElasticHandler(HTTPHandlerBase):
         if path_lower.startswith('/elastic/') and path_lower.endswith('.env'):
             return self._env_response(), json_ct
 
+        # Additional bare ES REST API endpoints (issue #644). These were
+        # previously unmatched and fell through to the catch-all monster page
+        # (UNKNOWN_HTTP=4294967294), so attack traffic on these high-volume
+        # probe paths was not attributed to Elastic. They must return a valid
+        # ES-shaped JSON body AND be classified as ELASTIC_HTTP.
+        if path_lower == '/_aliases' or path_lower.startswith('/_aliases'):
+            return self._aliases_response(), json_ct
+        if path_lower == '/_stats' or path_lower.startswith('/_stats'):
+            return self._stats_response(), json_ct
+        if path_lower == '/_status' or path_lower.startswith('/_status'):
+            return self._status_response(), json_ct
+        if (
+            path_lower == '/_all/_mapping'
+            or path_lower.startswith('/_all/_mapping')
+            or path_lower == '/_mapping'
+            or path_lower.startswith('/_mapping')
+        ):
+            return self._mapping_response(), json_ct
+
         # Kibana frontend.
         if 'kibana' in path_lower:
             return self._kibana_response(clean_path), 'text/html; charset=UTF-8'
@@ -142,6 +161,49 @@ class ElasticHandler(HTTPHandlerBase):
 
     def _root_response(self) -> str:
         return json.dumps(self._cluster_info_payload(), separators=(',', ':'))
+
+    def _aliases_response(self) -> str:
+        return json.dumps({}, separators=(',', ':'))
+
+    def _stats_response(self) -> str:
+        return json.dumps(
+            {
+                'indices': {
+                    'count': 3,
+                    'docs': {'count': 1110543, 'deleted': 0},
+                    'store': {'size_in_bytes': 182536960},
+                },
+                'total': {
+                    'docs': {'count': 1110543, 'deleted': 0},
+                    'store': {'size_in_bytes': 182536960},
+                },
+            },
+            separators=(',', ':'),
+        )
+
+    def _status_response(self) -> str:
+        return json.dumps(
+            {
+                'cluster_name': 'elasticsearch',
+                'cluster_uuid': 'a1b2c3d4e5f6a7b8c9d0e1f2',
+                'status': 'green',
+                'timed_out': False,
+                'number_of_nodes': 1,
+                'number_of_data_nodes': 1,
+                'active_primary_shards': 12,
+                'active_shards': 12,
+                'relocating_shards': 0,
+                'initializing_shards': 0,
+                'unassigned_shards': 0,
+            },
+            separators=(',', ':'),
+        )
+
+    def _mapping_response(self) -> str:
+        return json.dumps(
+            {'_all': {'mappings': {}}},
+            separators=(',', ':'),
+        )
 
     def _cluster_info_payload(self) -> dict:
         return {
