@@ -88,6 +88,45 @@ class TestFortinetHandler(unittest.TestCase):
         self.assertEqual(flag, DETECTED_ID)
         self.assertIn(b'application/json', resp)
 
+    def test_fake_svpn_cookie_format_and_determinism(self) -> None:
+        """The fake SSL-VPN cookie must be a 48-hex-char, deterministic value.
+
+        Regression test for issue #658: the cookie must remain the same length
+        and format from the client's perspective (48 hex chars) and be stable
+        across calls so a session's cookie is consistent. It must NOT be a raw
+        sha256 of a secret (the old weak-hash construction).
+        """
+        c1 = self.handler._fake_svpn_cookie('admin')
+        c2 = self.handler._fake_svpn_cookie('admin')
+        c_other = self.handler._fake_svpn_cookie('root')
+
+        # Deterministic: same username -> same cookie.
+        self.assertEqual(c1, c2)
+        # Different usernames produce different cookies.
+        self.assertNotEqual(c1, c_other)
+        # Same length/format as the original fake cookie (48 hex chars).
+        self.assertEqual(len(c1), 48)
+        self.assertRegex(c1, r'^[0-9a-f]{48}$')
+
+    def test_fake_svpn_cookie_is_keyed_hmac_not_plain_sha256(self) -> None:
+        """Cookie must be HMAC-SHA256 keyed with the decoy secret, not sha256(raw).
+
+        Guards against a regression to the weak ``hashlib.sha256(raw)``
+        construction that triggered the py/weak-sensitive-data-hashing alert.
+        """
+        import hashlib
+        import hmac
+
+        username = 'operator'
+        cookie = self.handler._fake_svpn_cookie(username)
+        raw = f'{username}:{self.handler.SERIAL}:{self.handler.VERSION}'.encode('utf-8')
+
+        # Direct sha256 of the raw input must NOT be the cookie (weak form).
+        self.assertNotEqual(hashlib.sha256(raw).hexdigest()[:48], cookie)
+        # The cookie must equal the keyed HMAC-SHA256 over raw (strong form).
+        expected = hmac.new(self.handler._FAKE_SVPN_COOKIE_SECRET, raw, 'sha256').hexdigest()[:48]
+        self.assertEqual(cookie, expected)
+
     def test_routes_registered(self) -> None:
         self.assertGreaterEqual(len(routes_fortinet.ROUTES), 1)
         names = {r.name for r in routes_fortinet.ROUTES}

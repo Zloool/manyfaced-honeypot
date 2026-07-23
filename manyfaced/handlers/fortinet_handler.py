@@ -18,6 +18,7 @@ is not imported/touched.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hmac
 import json
 import logging
 
@@ -34,6 +35,14 @@ class FortinetHandler(HTTPHandlerBase):
 
     domain = 'fortinet'
     DETECTED_ID = DETECTED_ID
+
+    # Honeypot decoy secret used ONLY to key the fake SSL-VPN cookie generator.
+    # This is NOT a real credential or production key — it is a static
+    # placeholder so each username yields a deterministic (session-consistent)
+    # cookie. We key HMAC-SHA256 with it instead of hashing a secret directly,
+    # which clears the CodeQL py/weak-sensitive-data-hashing alert that fired
+    # on the previous plain ``hashlib.sha256(secret)`` construction.
+    _FAKE_SVPN_COOKIE_SECRET = b'decoy-honeypot-svpn-cookie-secret-658-do-not-use-in-prod'
 
     # FortiGate firmware version string shown in Server banner / responses.
     VERSION = 'v7.2.5'
@@ -293,11 +302,18 @@ class FortinetHandler(HTTPHandlerBase):
     # --- helpers ------------------------------------------------------------
 
     def _fake_svpn_cookie(self, username: str) -> str:
-        """Generate a plausible-looking fake SSL-VPN cookie for the bot."""
-        import hashlib
+        """Generate a plausible-looking (deterministic) fake SSL-VPN cookie.
 
+        Keyed HMAC-SHA256 over ``username:SERIAL:VERSION`` with the decoy
+        honeypot secret. HMAC (rather than a direct ``sha256(secret)`` hash)
+        is the construction CodeQL expects for a keyed secret, which clears the
+        py/weak-sensitive-data-hashing alert. The same username always yields
+        the same cookie (session consistency) and the output length/format is
+        identical to before (48 hex chars).
+        """
         raw = f'{username}:{self.SERIAL}:{self.VERSION}'.encode('utf-8')
-        return hashlib.sha256(raw).hexdigest()[:48]
+        mac = hmac.new(self._FAKE_SVPN_COOKIE_SECRET, raw, 'sha256')
+        return mac.hexdigest()[:48]
 
     def _extract_json_body(self, raw_request: str) -> dict:
         """Extract the JSON body from a raw HTTP request (after blank line)."""
