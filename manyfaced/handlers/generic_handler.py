@@ -257,6 +257,89 @@ Git Repo: /var/www/html/.git/
 _MONSTER_PAGE = _build_monster_page(_collect_handler_keywords())
 
 
+# ---------------------------------------------------------------------------
+# Well-known attack-family fake responses (issue #635)
+# ---------------------------------------------------------------------------
+# High-volume attack traffic (WordPress login/xmlrpc, .env grabs, router/IoT
+# CVE endpoints, masscan signatures) used to fall through to the generic
+# monster page. Serve a protocol-appropriate fake response instead so scanners
+# see a plausible live service and stay engaged.
+
+_WP_LOGIN_PAGE = """\
+<!DOCTYPE html>
+<html lang="en-US">
+<head><meta charset="UTF-8"><title>Log In &lsaquo; Site &#8212; WordPress</title></head>
+<body class="login login-action-login wp-core-ui">
+<div id="login">
+<h1><a href="https://wordpress.org/">Powered by WordPress</a></h1>
+<form name="loginform" id="loginform" action="/wp-login.php" method="post">
+<p><label for="user_login">Username or Email Address</label>
+<input type="text" name="log" id="user_login" class="input" size="20"></p>
+<p><label for="user_pass">Password</label>
+<input type="password" name="pwd" id="user_pass" class="input" size="20"></p>
+<p class="submit"><input type="submit" name="wp-submit" id="wp-submit" value="Log In"></p>
+</form>
+</div>
+</body>
+</html>
+"""
+
+_XMLRPC_GET_BODY = 'XML-RPC server accepts POST requests only.'
+
+_XMLRPC_POST_BODY = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<methodResponse>
+  <fault>
+    <value>
+      <struct>
+        <member><name>faultCode</name><value><int>405</int></value></member>
+        <member><name>faultString</name>
+          <value><string>XML-RPC services are disabled on this site.</string></value>
+        </member>
+      </struct>
+    </value>
+  </fault>
+</methodResponse>
+"""
+
+_ENV_404_BODY = """\
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head><title>404 Not Found</title></head>
+<body><h1>Not Found</h1>
+<p>The requested URL was not found on this server.</p>
+<hr><address>Apache/2.4.57 (Ubuntu) Server Port 80</address>
+</body></html>
+"""
+
+# Router/IoT/CVE endpoints answered with a terse 404 (real firmware replies
+# tersely; the monster HTML is a fingerprintable anomaly here).
+_CVE_ENDPOINT_PREFIXES = (
+    '/goform/',
+    '/jnap/',
+    '/gponform/',
+    '/apply_sec.cgi',
+    '/apply.cgi',
+    '/wls-wsat/',
+    '/getcfg.php',
+    '/tmui/',
+    '/cobbler_api',
+    '/sdk/weblanguage',
+    '/hnap1',
+)
+
+# Config/CMS probe paths answered with an Apache-style 404 (a real hardened
+# server never serves these).
+_CONFIG_PROBE_PATHS = (
+    '/.env',
+    '/.git',
+    '/.aws',
+    '/config.json',
+    '/wp-config.php',
+)
+
+_ROBOTS_TXT = 'User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n'
+
+
 # Error page for file traversal / inclusion attempts
 _TRAVERSAL_ERROR = """\
 <!DOCTYPE html>
@@ -320,8 +403,18 @@ class GenericHandler(HTTPHandlerBase):
         method = self._extract_method(raw_request)
         path_lower = path.lower()
 
+        # Well-known attack families get a protocol-appropriate fake response
+        # instead of the monster page (issue #635).
+        attack_response = self._attack_family_response(method, path, path_lower)
+        if attack_response is not None:
+            profile._response_count = (
+                profile._response_count + 1 if hasattr(profile, '_response_count') else 1
+            )
+            self._response_count += 1
+            return attack_response, self.DETECTED_ID
+
         # Check for exploit patterns in the path
-        if '..' in path or '/etc/' in path or 'php://' in path_lower:
+        if '..' in path or '/etc/' in path or 'php://' in path_lower or '\ufffd' in path:
             # Path traversal / inclusion attempt
             body = _TRAVERSAL_ERROR.format(path=path)
             response = self._build_http_response(body, path, '403 Forbidden')
@@ -357,6 +450,33 @@ class GenericHandler(HTTPHandlerBase):
             return parts[0].upper()
         return 'GET'
 
+    def _attack_family_response(self, method: str, path: str, path_lower: str) -> bytes | None:
+        """Return a protocol-appropriate fake response for well-known attack
+        families, or None when the path isn't a recognized family (#635).
+        """
+        # WordPress login — serve a plausible wp-login form (GETs; POSTs with
+        # creds are still handled by the login-POST branch upstream).
+        if 'wp-login.php' in path_lower and method != 'POST':
+            return self._build_http_response(_WP_LOGIN_PAGE, path)
+        # WordPress XML-RPC
+        if 'xmlrpc.php' in path_lower:
+            if method == 'POST':
+                return self._build_http_response(_XMLRPC_POST_BODY, path)
+            return self._build_http_response(_XMLRPC_GET_BODY, path, '405 Method Not Allowed')
+        # robots.txt — plausible CMS-flavored robots
+        if path_lower.rstrip('/') == '/robots.txt' or path_lower == '/robots.txt':
+            return self._build_http_response(_ROBOTS_TXT, path)
+        # Config/secret disclosure probes — hardened-server 404
+        if any(path_lower.startswith(p) or f'{p}' in path_lower for p in _CONFIG_PROBE_PATHS):
+            return self._build_http_response(_ENV_404_BODY, path, '404 Not Found')
+        # Router/IoT/CVE exploit endpoints — terse firmware-style 404
+        if any(path_lower.startswith(p) for p in _CVE_ENDPOINT_PREFIXES):
+            return self._build_http_response(_ENV_404_BODY, path, '404 Not Found')
+        # masscan signature (nice ports, Trinity.txt.bak)
+        if 'trinity.txt.bak' in path_lower or 'nice ports' in path_lower:
+            return self._build_http_response(_ENV_404_BODY, path, '404 Not Found')
+        return None
+
     def _build_http_response(
         self,
         body: str,
@@ -388,7 +508,10 @@ class GenericHandler(HTTPHandlerBase):
         response += '\r\n'
         response += body
 
-        return response.encode('iso-8859-1')
+        # errors='replace' so a path containing U+FFFD / invalid bytes can
+        # never crash the response builder into a silent drop (issues #634,
+        # #637): a degraded-but-delivered page always beats no response.
+        return response.encode('iso-8859-1', errors='replace')
 
     def __repr__(self) -> str:
         return f'GenericHandler(domain={self.domain!r})'
