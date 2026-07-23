@@ -39,18 +39,19 @@ class TestRabbitMQHandler(unittest.TestCase):
         )
         self.assertIn(b'Error', response)
 
-    def test_es_style_probe_paths_return_rabbitmq(self):
-        """ES-style probe paths (#643) return RabbitMQ JSON with detected_id 1015."""
-        profile = MagicMock()
-        self.handler.bot_profiles = {'1.2.3.4': profile}
-        for path in ('/_cluster', '/_cluster/stats', '/_nodes', '/_search', '/_cat/indices'):
-            response, detected = self.handler.generate_response(
-                path,
-                f'GET {path} HTTP/1.1\r\nHost: x\r\n\r\n',
-                '1.2.3.4',
+    def test_rabbitmq_owns_root_and_cli(self):
+        """RabbitMQ's own management surface (/, /cli) is classified RABBITMQ_HTTP."""
+        from manyfaced.handlers.router import Router
+        from manyfaced.handlers.routes import ROUTES
+
+        router = Router(ROUTES)
+        for path in ('/', '/cli', '/rabbitmq/.env'):
+            result = router.dispatch(
+                path, 'GET ' + path + ' HTTP/1.1\r\nHost: x\r\n\r\n', '1.2.3.4'
             )
-            self.assertEqual(detected, RABBITMQ_HTTP, path)
-            self.assertIn(b'RabbitMQ', response, path)
+            assert result is not None, path
+            _body, detected = result
+            self.assertEqual(detected, RABBITMQ_HTTP, f'{path} -> {detected}')
 
 
 class TestRabbitMQRouting(unittest.TestCase):
@@ -58,29 +59,37 @@ class TestRabbitMQRouting(unittest.TestCase):
 
     @staticmethod
     def _make_request(path: str) -> str:
-        return f'GET {path} HTTP/1.1\r\nHost: x\r\n\r\n'
+        return 'GET ' + path + ' HTTP/1.1\r\nHost: x\r\n\r\n'
 
     def test_management_paths_classify_as_rabbitmq(self):
         from manyfaced.handlers.router import Router
         from manyfaced.handlers.routes import ROUTES
 
         router = Router(ROUTES)
+        # RabbitMQ owns its own management surface; ES-style probe paths and
+        # /api/* belong to Elastic (issue #644 / PR #670) and are not claimed here.
         paths = [
             '/',
             '/cli',
             '/rabbitmq/.env',
-            '/_cluster',
-            '/_cluster/stats',
-            '/_nodes',
-            '/_search',
-            '/_cat',
-            '/_cat/indices',
         ]
         for path in paths:
             result = router.dispatch(path, self._make_request(path), '1.2.3.4')
             assert result is not None, path
             _body, detected = result
             self.assertEqual(detected, RABBITMQ_HTTP, f'{path} -> {detected}')
+
+    def test_es_probe_paths_classify_as_elastic(self):
+        from manyfaced.common.status import ELASTIC_HTTP
+        from manyfaced.handlers.router import Router
+        from manyfaced.handlers.routes import ROUTES
+
+        router = Router(ROUTES)
+        for path in ('/_cluster/state', '/_nodes/stats', '/_search', '/_cat/indices'):
+            result = router.dispatch(path, self._make_request(path), '1.2.3.4')
+            assert result is not None, path
+            _body, detected = result
+            self.assertEqual(detected, ELASTIC_HTTP, f'{path} -> {detected}')
 
 
 if __name__ == '__main__':

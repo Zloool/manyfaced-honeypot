@@ -49,17 +49,12 @@ ROUTES: list[Route] = [
     # Elastic route table) so it is classified as RabbitMQ.
     Route(PathExact('/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_root'),
     Route(PathExact('/cli'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_cli_exact'),
-    # Elasticsearch-style probe paths scanners fire at 15672 (issue #643).
-    # Registered here (before the Elastic route table) so they are classified
-    # as RabbitMQ, not Elasticsearch.
-    Route(PathExact('/_cluster'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_cluster'),
-    Route(PathExact('/_nodes'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_nodes'),
-    Route(PathExact('/_search'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_search'),
-    Route(PathExact('/_cat'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_cat'),
-    Route(PathPrefix('/_cluster/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_cluster_prefix'),
-    Route(PathPrefix('/_nodes/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_nodes_prefix'),
-    Route(PathPrefix('/_search/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_search_prefix'),
-    Route(PathPrefix('/_cat/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_es_cat_prefix'),
+    # NOTE: Elasticsearch-style probe paths (/_cluster, /_nodes, /_search, /_cat)
+    # that scanners fire at 15672 are intentionally NOT claimed here — they
+    # belong to the Elastic face (Elasticsearch handler routes them to
+    # ELASTIC_HTTP, see issue #644 / PR #670). Claiming them as RabbitMQ would
+    # shadow Elastic's legitimate ownership (issue #643 is about RabbitMQ's own
+    # management paths being misclassified, not about ES probes).
     # Prefixes last.
     Route(PathPrefix('/api/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_api'),
     Route(PathPrefix('/cli/'), _rabbitmq(), RABBITMQ_HTTP, 'rabbitmq_cli'),
