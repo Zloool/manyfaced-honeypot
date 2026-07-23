@@ -132,6 +132,11 @@ ROUTES: list[Route] = (
     # dedicated kube-apiserver face is not reverse-shadowed (it used to sit
     # after Next.js at the bottom of the table).
     + list(_k8s_routes)
+    # RabbitMQ management UI/API (issue #643): must win over the generic
+    # Next.js /api/ prefix and the Solr/Grafana/Elastic tables for shared
+    # paths (/api/*, /cli, /login, bare root) so 15672 probes classify as
+    # RABBITMQ_HTTP instead of falling through to a sibling face.
+    + list(_rabbitmq_routes)
     + list(_nextjs_routes)
     # ---- Broad web-root framework / service faces ----
     + list(_wordpress_routes)
@@ -160,7 +165,6 @@ ROUTES: list[Route] = (
     + list(_solr_routes)
     + list(_plex_routes)
     + list(_jupyter_routes)
-    + list(_rabbitmq_routes)
     + list(_gitlab_routes)
     + list(_elasticsearch_routes)
     + list(_zabbix_routes)
