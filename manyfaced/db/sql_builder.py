@@ -115,6 +115,17 @@ ON CONFLICT(bot_ip, timestamp) DO NOTHING
 """
 
 
+_NUL = chr(0)
+_ESCAPED_NUL = ''.join((chr(92), 'x00'))
+
+
+def _escape_nul_text(value: object) -> object:
+    """Make string values safe for PostgreSQL TEXT without hiding wire bytes."""
+    if isinstance(value, str):
+        return value.replace(_NUL, _ESCAPED_NUL)
+    return value
+
+
 def extract_record_fields(record: dict) -> tuple:
     """Extract and normalize fields from a bear record dict.
 
@@ -189,7 +200,7 @@ def extract_record_fields(record: dict) -> tuple:
         timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')
     timestamp = str(timestamp)
 
-    return (
+    fields = (
         bot_ip,
         hostname,
         timestamp,
@@ -212,3 +223,4 @@ def extract_record_fields(record: dict) -> tuple:
         classification,
         benign_source,
     )
+    return tuple(_escape_nul_text(value) for value in fields)
