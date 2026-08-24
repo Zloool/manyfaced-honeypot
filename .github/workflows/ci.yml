@@ -155,9 +155,16 @@ jobs:
       - name: Install scan tooling
         run: python -m pip install --upgrade pip pip-audit bandit
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+
       - name: Dependency vulnerability scan (pip-audit)
-        # Fails if any installed/lockfile dependency has a known CVE.
-        run: pip-audit --desc on
+        # Audits the project's LOCKED dependency graph, not the scanner env.
+        # The old `pip-audit --desc on` only inspected the env containing
+        # pip/ pip-audit/ bandit, so project CVEs passed CI silently (#697).
+        # scripts/audit_deps.sh exports the lockfile and runs pip-audit -r on
+        # it, keeping scanner tooling out of the audited set.
+        run: bash scripts/audit_deps.sh
 
       - name: Static security scan (bandit) on input-parsing modules
         # Focus on the attacker-input parsing surface; high-severity findings fail CI.
