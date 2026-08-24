@@ -15,7 +15,7 @@ authors = [
 urls = {Homepage = "https://github.com/Zloool/manyfaced-honeypot"}
 requires-python = ">=3.12"
 dependencies = [
-    "cryptography>=41.0",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]
