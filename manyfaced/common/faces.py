@@ -121,7 +121,7 @@ class FaceSpec:
     # Optional credential extractor called on each client frame during the
     # client-first exchange loop so creds offered across multiple commands
     # (e.g. Redis AUTH after HELLO) are captured. ``None`` = no extraction.
-    extract_creds: Callable[[bytes], object] | None = None
+    extract_creds: Callable[[bytes], str | None] | None = None
 
 
 # ---------------------------------------------------------------------------
