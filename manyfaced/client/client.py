@@ -43,6 +43,7 @@ _INTERNAL_IPS = frozenset(
 
 if TYPE_CHECKING:
     from socket import socket as SocketType
+    from manyfaced.common.faces import FaceSpec
 
 logger = get_logger(__name__)
 
@@ -73,21 +74,48 @@ def _is_interactive_protocol(response_bytes: bytes) -> bool:
     return False
 
 
-def _capture_credentials(connection_socket, bot_ip: str, response_bytes: bytes) -> str | None:
+def _capture_credentials(
+    connection_socket,
+    bot_ip: str,
+    response_bytes: bytes,
+    spec: 'FaceSpec | None' = None,
+) -> str | None:
     """Capture credentials from interactive protocol connections.
 
     For SSH, uses binary protocol parsing. For other protocols (TELNET, FTP, etc.),
     tries to extract plaintext username/password patterns.
 
+    When ``spec`` carries a dedicated ``extract_creds`` extractor (FTP, POP3, IMAP,
+    MySQL, MSSQL), the client's auth frame is read and handed to that extractor
+    instead of the generic plaintext parser. This is required because the
+    server-first interactive path never invoked ``spec.extract_creds`` before, so
+    those faces captured zero credentials despite ``capture_creds=True`` (issue #627).
+
     Args:
         connection_socket: The open socket connection to the bot.
         bot_ip: IP address of the bot.
         response_bytes: The honeypot response sent (used to determine protocol type).
+        spec: The matching ``FaceSpec`` (if known), used to dispatch to its
+            dedicated credential extractor.
 
     Returns:
         String with captured credentials, or None if no credentials captured.
     """
     from manyfaced.client.ssh_creds import _capture_ssh_credentials  # noqa: PLC0415
+
+    # Faces with a dedicated extractor get the real wire frame parsed by it.
+    # SSH keeps its bespoke socket-driven parser (extract_creds is None there).
+    if spec is not None and spec.extract_creds is not None:
+        try:
+            connection_socket.settimeout(BOT_TIMEOUT)
+            frame = receive_first_frame(connection_socket, BOT_TIMEOUT)
+        except (socket.timeout, socket.error, OSError):
+            frame = b''
+        if frame:
+            try:
+                return spec.extract_creds(frame)
+            except Exception as e:  # noqa: BLE001 - extractor must never kill capture
+                logger.debug('extract_creds failed for %s: %s', spec.name, e)
 
     # SSH gets special binary protocol parsing
     if response_bytes.startswith(b'SSH-'):
@@ -442,7 +470,7 @@ def _handle_non_http_connection(
         if http_on_nonhttp:
             detected_id = HTTP_ON_NONHTTP_PORT
             logger.info('HTTP-on-SSH-port mismatch from %s (flagged, not mislabeled)', bot_ip)
-        creds = _capture_credentials(connection_socket, bot_ip, spec.greeting)
+        creds = _capture_credentials(connection_socket, bot_ip, spec.greeting, spec)
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
         bs.isDetected = detected_id
         if creds:
