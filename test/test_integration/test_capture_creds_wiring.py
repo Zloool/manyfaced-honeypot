@@ -59,6 +59,66 @@ def _make_socket(first_recv: bytes) -> MagicMock:
     return sock
 
 
+def _build_ssh_userauth_request(username: bytes, password: bytes) -> bytes:
+    """Construct a minimal, SSH-spec-compliant USERAUTH_REQUEST binary packet.
+
+    SSH framing is ``[uint32 packet_length][byte padding_length][payload]`` where
+    ``packet_length`` counts everything *after* the 4-byte length field (i.e. it
+    includes the 1-byte padding_length). The honeypot parser
+    (``_parse_ssh_binary_protocol``) walks exactly this layout, so the probe must
+    honour it or the last field gets truncated (issue #628 regression guard).
+    """
+
+    def _ssh_str(b: bytes) -> bytes:
+        return len(b).to_bytes(4, 'big') + b
+
+    message = (
+        b'\x32'  # message code USERAUTH_REQUEST
+        + _ssh_str(username)
+        + _ssh_str(b'ssh-connection')
+        + _ssh_str(b'password')
+        + b'\x01'  # FALSE (no password change requested)
+        + _ssh_str(password)
+    )
+    pkt_len = 1 + len(message)  # padding_length byte + payload
+    return pkt_len.to_bytes(4, 'big') + b'\x00' + message
+
+
+class TestSshCredentialCapture(unittest.TestCase):
+    """Regression guard for issue #628: SSH credential capture.
+
+    SSH uses a bespoke binary protocol parser
+    (``manyfaced.client.ssh_creds._capture_ssh_credentials`` /
+    ``_parse_ssh_binary_protocol``) reached from ``_capture_credentials`` when
+    the greeting starts with ``SSH-``. The brittle ``find(b'\\x32')`` approach was
+    replaced by length-prefixed frame walking; these tests prove a real
+    USERAUTH_REQUEST yields the captured username/password so the fix cannot
+    silently regress.
+    """
+
+    def test_parse_userauth_request_yields_user_and_password(self):
+        from manyfaced.client.ssh_creds import _parse_ssh_binary_protocol
+
+        frame = _build_ssh_userauth_request(b'root', b'vizxv')
+        creds = _parse_ssh_binary_protocol(frame)
+        self.assertEqual(creds, 'user=root, pass=vizxv')
+
+    def test_ssh_capture_wired_through_capture_credentials(self):
+        frame = _build_ssh_userauth_request(b'admin', b's3cret')
+        sock = _make_socket(frame)
+        spec = FaceSpec(
+            name='ssh',
+            detected_id=4294967284,
+            direction='server-first',
+            greeting=b'SSH-2.0-manyfaced\r\n',
+            respond=None,
+            capture_creds=True,
+            extract_creds=None,
+        )
+        creds = _capture_credentials(sock, '1.2.3.4', spec.greeting, spec)
+        self.assertEqual(creds, 'user=admin, pass=s3cret')
+
+
 class TestCaptureCredsWiring(unittest.TestCase):
     def test_ftp_extractor_is_invoked_on_auth_frame(self):
         # A real FTP client sends USER then PASS on the wire.
