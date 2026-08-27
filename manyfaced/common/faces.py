@@ -340,12 +340,107 @@ def _vnc_respond(raw: bytes, bot_ip: str) -> bytes:
 # Memcached / Zookeeper / Postgres / Elasticsearch / Oracle / NFS / EPMD respond
 # functions are synthesized inline so the face at least answers. (See issue #377
 # sub-tasks for fuller emulation.)
+
+
+# Memcached text-protocol STAT block returned for `stats` (issue #648). The
+# honeypot is stateless, so sizes/counters are nominal constants.
+_MEMCACHED_STATS: tuple[tuple[str, str], ...] = (
+    ('pid', '1'),
+    ('uptime', '1'),
+    ('time', '1'),
+    ('version', '1.6.21'),
+    ('libevent', '2.1.12-stable'),
+    ('pointer_size', '64'),
+    ('curr_items', '0'),
+    ('total_items', '0'),
+    ('bytes', '0'),
+    ('cmd_get', '0'),
+    ('cmd_set', '0'),
+    ('get_hits', '0'),
+    ('get_misses', '0'),
+    ('evictions', '0'),
+    ('limit_maxbytes', '67108864'),
+    ('accepting_conns', '1'),
+    ('listen_disabled_num', '0'),
+    ('threads', '4'),
+    ('conn_yields', '0'),
+    ('bytes_read', '0'),
+    ('bytes_written', '0'),
+    ('rusage_user', '0.000000'),
+    ('rusage_system', '0.000000'),
+    ('curr_connections', '1'),
+    ('total_connections', '1'),
+    ('connection_structures', '1'),
+    ('reclaimed', '0'),
+)
+
+
+_CRLF = bytes((13, 10))
+
+
+def _memcached_binary_reply(raw: bytes) -> bytes:
+    # Minimal valid binary-protocol response for a client-first frame whose
+    # request magic is 0x80 (issue #648). Echoes opcode + opaque with an empty
+    # body and success status so a binary client does not desync. The version
+    # opcode (0x0b) carries the emulated server name as its body.
+    if len(raw) < 24:
+        return b''
+    opcode = raw[1]
+    opaque = raw[12:16]
+    body = b'manyfaced' if opcode == 0x0B else b''
+    return b''.join(
+        [
+            bytes([0x81, opcode, 0, 0, 0, 0]),
+            bytes([0, 0]),  # status: success
+            len(body).to_bytes(4, 'big'),
+            opaque,
+            bytes([0]) * 8,  # CAS
+            body,
+        ]
+    )
+
+
 def _memcached_respond(raw: bytes, bot_ip: str) -> bytes:
-    # Reply to a `version` command with a VERSION line; otherwise stat/empty.
+    # Client-first responder for the Memcached text + binary protocols.
+    # Previously only `version` returned a real line and everything else got a
+    # bare `END`, so `stats`/scanners saw an empty server (issue #648).
+    # Binary-protocol requests (magic 0x80) get a valid binary reply.
+    if raw[:1] == bytes([0x80]):
+        return _memcached_binary_reply(raw)
     text = raw.decode('latin-1', errors='replace')
-    if 'version' in text.lower():
-        return b'VERSION 1.6.21 (manyfaced)\r\n'
-    return b'END\r\n'
+    out: list[bytes] = []
+    for line in text.splitlines():
+        cmd = line.strip().lower()
+        if not cmd:
+            continue
+        verb = cmd.split()[0]
+        if verb == 'version':
+            out.append(b'VERSION 1.6.21 (manyfaced)')
+        elif verb == 'stats':
+            for key, val in _MEMCACHED_STATS:
+                out.append(f'STAT {key} {val}'.encode())
+            out.append(b'END')
+        elif verb in ('get', 'gets', 'gat', 'gats'):
+            out.append(b'END')  # stateless: no values stored
+        elif verb in ('set', 'add', 'replace', 'append', 'prepend', 'cas'):
+            out.append(b'STORED')
+        elif verb == 'delete':
+            out.append(b'DELETED')
+        elif verb in ('incr', 'decr'):
+            out.append(b'0')
+        elif verb == 'touch':
+            out.append(b'TOUCHED')
+        elif verb == 'flush_all':
+            out.append(b'OK')
+        elif verb == 'verbosity':
+            out.append(b'OK')
+        elif verb == 'quit':
+            return b''  # close: no reply
+        else:
+            out.append(b'END')
+    if not out:
+        return b'END' + _CRLF
+    return _CRLF.join(out) + _CRLF
 
 
 # ZooKeeper four-letter-word (4LW) admin commands are sent as a bare 4-byte
