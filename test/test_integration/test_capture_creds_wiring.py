@@ -8,6 +8,12 @@ parser, which never invoked the face-specific extractors, so faces with
 ``capture_creds=True`` captured **zero** credentials despite the extractor
 existing. This test proves the wiring now routes the client's auth frame to
 ``spec.extract_creds``.
+
+It also proves the residual gap closed by the seed-accumulation fix: real
+FTP/POP3/IMAP clients send USER then PASS as SEPARATE round-trips, and the USER
+frame is consumed by the server to pick its reply. The capture path must seed
+that first frame into the extractor so both halves are paired instead of the
+username being dropped (issue #627).
 """
 
 from __future__ import annotations
@@ -16,7 +22,11 @@ import unittest
 from unittest.mock import MagicMock
 
 from manyfaced.client.client import _capture_credentials
-from manyfaced.client.cred_extractors import extract_ftp_credentials, extract_pop3_credentials
+from manyfaced.client.cred_extractors import (
+    extract_ftp_credentials,
+    extract_imap_credentials,
+    extract_pop3_credentials,
+)
 from manyfaced.common.faces import FaceSpec
 
 
@@ -152,6 +162,38 @@ class TestCaptureCredsWiring(unittest.TestCase):
         )
         creds = _capture_credentials(sock, '1.2.3.4', spec.greeting, spec)
         self.assertIsNone(creds)
+
+    def test_ftp_user_pass_separate_frames_accumulated(self):
+        # Real FTP clients send USER then PASS as SEPARATE round-trips. The
+        # USER frame is consumed by the server to choose its 331 reply and must
+        # be seeded into capture; otherwise only the post-reply PASS frame is
+        # seen and the username is dropped (issue #627 residual gap).
+        sock = _make_socket(b'PASS hunter2\r\n')
+        spec = _ftp_spec()
+        creds = _capture_credentials(sock, '1.2.3.4', spec.greeting, spec, seed=b'USER scanner\r\n')
+        self.assertEqual(creds, 'scanner:hunter2')
+
+    def test_pop3_user_pass_separate_frames_accumulated(self):
+        sock = _make_socket(b'PASS s3cret\r\n')
+        spec = _pop3_spec()
+        creds = _capture_credentials(sock, '1.2.3.4', spec.greeting, spec, seed=b'USER bob\r\n')
+        self.assertEqual(creds, 'bob:s3cret')
+
+    def test_imap_user_pass_separate_frames_accumulated(self):
+        # IMAP extractor also handles the older USER/PASS style (not just
+        # ``a001 LOGIN user pass``), and those can arrive as separate frames.
+        sock = _make_socket(b'PASS s3cret\r\n')
+        spec = FaceSpec(
+            name='imap',
+            detected_id=4294967292,
+            direction='server-first',
+            greeting=b'* OK IMAP ready\r\n',
+            respond=None,
+            capture_creds=True,
+            extract_creds=extract_imap_credentials,
+        )
+        creds = _capture_credentials(sock, '1.2.3.4', spec.greeting, spec, seed=b'USER bob\r\n')
+        self.assertEqual(creds, 'bob:s3cret')
 
 
 if __name__ == '__main__':
