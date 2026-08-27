@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 # X.224 TPDU codes (high nibble; low nibble carries CDT/credit for CR/CC).
 _X224_CR = 0xE0  # Connection-Request
-_X224_CC = 0xD0  # Connection-Confirm
 
 # RDP negotiation structure types (MS-RDPBCGR 2.2.1.1.1 / 2.2.1.2.1).
 _RDP_NEG_REQ = 0x01
