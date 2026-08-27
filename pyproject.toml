@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9"]
-dev = ["pytest>=7.0", "pytest-timeout>=2.1", "ruff==0.15.22", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
+dev = ["pytest>=7.0", "pytest-timeout>=2.1", "ruff==0.16.4", "pytest-cov>=4.0", "basedpyright>=1.39", "pyyaml>=6.0"]
 
 [project.scripts]
 manyfaced = "manyfaced.mfh:run"
@@ -43,10 +43,24 @@ line-length = 100
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
+# ruff 0.16+ formats Markdown code fences by default and rewrites snippet
+# spacing (e.g. `list(_<svc>_routes)` -> `list(_ < svc > _routes)`), which
+# degrades docs. Keep Markdown out of `ruff format`.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 ignore = [
     "E402",  # Module level import not at top of file (common in tests with sys.modules mocking)
+    # The following rules were newly promoted to ruff's DEFAULT set in 0.16.x.
+    # Deferred so this tool-version bump stays behavior-preserving; enable
+    # progressively in dedicated follow-up PRs rather than all at once.
+    "B017", "BLE001", "C401", "C408", "DTZ001", "DTZ005", "DTZ006", "DTZ007",
+    "FURB167", "FURB188", "G201", "I001", "PERF102", "PIE790", "PIE810",
+    "PLC0208", "PLR0402", "PLR1711", "PLW0602", "PLW1510", "PYI034", "PYI036",
+    "RET501", "RUF012", "RUF015", "RUF022", "RUF023", "RUF059", "RUF100",
+    "S110", "SIM102", "SIM103", "SIM114", "SIM115", "SIM117", "TRY203",
+    "TRY401", "UP004", "UP006", "UP012", "UP017", "UP024", "UP031", "UP032",
+    "UP035", "UP037", "UP041",
 ]
 
 [tool.ruff.lint.per-file-ignores]
