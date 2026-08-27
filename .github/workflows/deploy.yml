@@ -257,7 +257,10 @@ jobs:
           # Health check: verify every port in HONEY_TOP_PORTS is in LISTEN state.
           # Uses per-port ss filter syntax (sport = :PORT) — no regex over ss output.
           # Expands ranges (e.g. 11300-11311 → individual ports). Retries up to
-          # 10 times with 3s sleep for a total 30-second budget on startup.
+          # 30 times with 3s sleep for a total 90-second budget on startup
+          # (issue #422: the dashboard cold-start now exceeds the old 30s budget
+          # once the capture table grew past ~1.38M rows, so the 18889 bind
+          # lands at ~34s+ and the gate failed 3/3 on 2026-08-27).
           #
           # WHY the dashboard port (18889) is checked too (issue #348): the
           # dashboard listens on 127.0.0.1:18889 and is exposed publicly via nginx
@@ -305,8 +308,8 @@ jobs:
 
             echo "Checking $TOTAL ports from HONEY_TOP_PORTS + dashboard port $DASHBOARD_PORT ..."
 
-            # Retry loop: up to 10 iterations × 3 s = 30 s budget
-            MAX_RETRIES=10
+            # Retry loop: up to 30 iterations × 3 s = 90 s budget (issue #422)
+            MAX_RETRIES=30
             for (( i=1; i<=MAX_RETRIES; i++ )); do
               MISSING=""
               while read -r p; do
