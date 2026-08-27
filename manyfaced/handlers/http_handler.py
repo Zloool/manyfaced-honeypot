@@ -534,7 +534,7 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int, r
         if token and token.isalpha():
             wire_command = token
     except Exception:
-        pass
+        logger.debug('swallowed exception', exc_info=True)
 
     class _ParsedNonHTTP:
         command = wire_command

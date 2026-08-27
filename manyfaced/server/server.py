@@ -213,14 +213,14 @@ def _handle_client(connection_socket, addr, args, update_event):
             connection_socket.send(b'CODE 300 ERROR')
         except socket_error:
             # Client already gone (or socket torn down) — nothing more to send.
-            pass
+            logger.debug('swallowed exception', exc_info=True)
     except Exception as e:  # noqa: BLE001 - last-resort containment
         logger.exception('Unhandled error handling request from %s: %s', addr, e)
         try:
             connection_socket.send(b'CODE 300 ERROR')
         except socket_error:
             # Client already gone (or socket torn down) — nothing more to send.
-            pass
+            logger.debug('swallowed exception', exc_info=True)
     finally:
         connection_socket.close()
 

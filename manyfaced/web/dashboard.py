@@ -1156,6 +1156,6 @@ def run_dashboard(args: Any, update_event: Any) -> None:
             httpd.server_close()
         except Exception:  # noqa: BLE001
             # Best-effort shutdown; the refresher is being stopped regardless.
-            pass
+            logger.debug('swallowed exception', exc_info=True)
         _REFRESHER_STOP.set()
         t.join(timeout=2)

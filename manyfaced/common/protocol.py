@@ -203,7 +203,7 @@ def get_protocol_info(raw_data: bytes) -> dict:
         except Exception:
             # Payload decode/parse failed on non-ASCII bytes — fall through to
             # the next detection heuristic rather than aborting protocol sniff.
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
     # Telnet detection — starts with IAC (Interpret As Command) byte 0xFF
     if raw_data[:1] == b'\xff':

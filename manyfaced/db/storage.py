@@ -635,7 +635,7 @@ def _raw_db_path() -> str:
     except Exception:
         # DB_PATH resolution can fail (bad config, unreadable env); fall back to
         # the default relative path rather than crashing import-time.
-        pass
+        logger.debug('swallowed exception', exc_info=True)
 
     return 'bots/honeypot.sqlite'
 
@@ -705,7 +705,7 @@ def _resolve_backend() -> str:
     except Exception:
         # Config resolution can fail (bad config, unreadable env); fall back to
         # the default rather than crashing import-time.
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     return 'sqlite'
 
 
@@ -725,7 +725,7 @@ def _pg_toml(attr: str, default: str) -> str:
         if val is not None and val != '':
             return str(val)
     except Exception:
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     return default
 
 
@@ -756,7 +756,7 @@ def reset_storage_singleton() -> None:
         try:
             old.close()
         except Exception:  # noqa: BLE001 — best-effort cleanup
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1712,7 +1712,7 @@ class PostgreSQLStorage(StorageBackend):
                 try:
                     self._conn.close()
                 except Exception:  # noqa: BLE001 — best-effort
-                    pass
+                    logger.debug('swallowed exception', exc_info=True)
                 self._conn = None
         try:
             self._init_db()
@@ -1740,11 +1740,11 @@ class PostgreSQLStorage(StorageBackend):
         try:
             conn.rollback()
         except psycopg2.Error:  # noqa: BLE001 — best-effort
-            pass
+            logger.debug('swallowed exception', exc_info=True)
         try:
             conn.close()
         except psycopg2.Error:  # noqa: BLE001 — best-effort
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
     # -- read-path connection isolation (issue #416 follow-up) --------------
     # The dashboard builds several range payloads in parallel (a ThreadPool in
@@ -1783,7 +1783,7 @@ class PostgreSQLStorage(StorageBackend):
                 if conn is not None:
                     conn.close()
             except Exception:  # noqa: BLE001 — best-effort
-                pass
+                logger.debug('swallowed exception', exc_info=True)
             if local is not None:
                 local.conn = None
             conn = self._new_conn()

@@ -178,7 +178,7 @@ class ZabbixHandler(HTTPHandlerBase):
             method = (payload.get('method') or '').lower()
             req_id = payload.get('id', 1)
         except (json.JSONDecodeError, ValueError):
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
         if method == 'user.login':
             result = {

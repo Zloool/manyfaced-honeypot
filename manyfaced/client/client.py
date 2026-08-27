@@ -387,7 +387,7 @@ def _handle_bot_connection(
     except socket.error:
         # Client disconnected mid-response (or socket torn down) — nothing to
         # send back; the connection is already gone.
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     finally:
         # Clear router handler instances so BotProfile state doesn't leak across connections
         from manyfaced.handlers.http_handler import _get_router  # noqa: PLC0415
@@ -581,7 +581,7 @@ def _handle_non_http_connection(
         try:
             connection_socket.sendall(reply)
         except socket.error:
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
     # ── Interactive credential capture (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL/
     #    Redis/…) — runs AFTER the reply so the connection stays responsive.
@@ -885,7 +885,7 @@ def _handle_udp_datagram(
         try:
             server_socket.sendto(reply, bot_addr)
         except socket.error:
-            pass
+            logger.debug('swallowed exception', exc_info=True)
 
     # Record the capture (greeting-only / no-credential exchanges too).
     from manyfaced.handlers.http_handler import (  # noqa: PLC0415
