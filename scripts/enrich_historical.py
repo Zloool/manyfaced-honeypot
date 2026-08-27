@@ -74,8 +74,8 @@ def _prune_backups(db_path: str, keep: int) -> None:
                 sc = old + suffix
                 if os.path.exists(sc):
                     os.remove(sc)
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f'[enrich] WARNING: could not remove old backup {old}: {exc}', file=sys.stderr)
 
 
 def _backup(db_path: str, keep: int = 1) -> str | None:
@@ -97,8 +97,11 @@ def _backup(db_path: str, keep: int = 1) -> str | None:
         src = sqlite3.connect(db_path)
         src.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         src.close()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        print(
+            f'[enrich] WARNING: pre-backup checkpoint failed ({exc}); copying as-is.',
+            file=sys.stderr,
+        )
     try:
         shutil.copy2(db_path, backup_path)
         for sidecar in (f'{db_path}-wal', f'{db_path}-shm'):
@@ -109,8 +112,11 @@ def _backup(db_path: str, keep: int = 1) -> str | None:
         if os.path.exists(backup_path):
             try:
                 os.remove(backup_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                print(
+                    f'[enrich] WARNING: could not remove failed backup {backup_path}: {exc}',
+                    file=sys.stderr,
+                )
         raise
     return backup_path
 
