@@ -79,7 +79,7 @@ def _release_lockfile():
                 os.unlink(settings.LOCKFILE)
                 logger.info('Lockfile released')
             except (IOError, OSError):
-                pass
+                logger.debug('swallowed exception', exc_info=True)
         _lock_fd = None
 
 

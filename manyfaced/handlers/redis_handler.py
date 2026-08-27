@@ -210,7 +210,7 @@ def generate_redis_response(raw_data, bot_ip: str = '127.0.0.1') -> bytes:
                     if pw and not pw.startswith('$'):
                         logger.info('Redis AUTH password attempt from %s', bot_ip)
             except IndexError:
-                pass
+                logger.debug('swallowed exception', exc_info=True)
         return _hello_reply(use_proto)
 
     # AUTH: record the attempt, then complete the round-trip with a consistent

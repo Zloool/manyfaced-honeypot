@@ -55,6 +55,10 @@ TOML config file layout (the file is auto-generated if run with --generate-confi
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -492,7 +496,7 @@ class Config:
                 except ValueError:
                     # Malformed port list (non-integer entry) — fall back to defaults
                     # rather than crashing startup on a bad config value.
-                    pass
+                    logger.debug('swallowed exception', exc_info=True)
             return list(_DEFAULT_TOP_PORTS)
         elif mode == 'all':
             return list(range(1, 65536))

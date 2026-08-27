@@ -253,7 +253,7 @@ def stop_geo_worker() -> None:
             except (Full, OSError):
                 # Queue full or closed during shutdown — drop the signal rather
                 # than masking unrelated errors.
-                pass
+                logger.debug('swallowed exception', exc_info=True)
         _geo_queue = None
         _geo_worker_thread = None
 

@@ -31,7 +31,7 @@ def dump_file(data):
         os.makedirs(os.path.dirname(path), exist_ok=True)
     except OSError:
         # Directory already exists or parent is not creatable — best-effort.
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     with open(path, 'a') as f:
         f.write(json.dumps(data, default=str) + '\n')
 
@@ -70,7 +70,7 @@ def receive_first_frame(the_socket, timeout=EXCHANGE_TIMEOUT):
             # of the same frame; a longer idle means the frame is finished.
             the_socket.settimeout(RECVLINE_IDLE)
     except socket_error:
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     finally:
         the_socket.settimeout(None)  # reset to blocking for the reply
     return b''.join(chunks)
@@ -98,7 +98,7 @@ def receive_timeout(the_socket, timeout=CLIENT_TIMEOUT):
     except socket_error:
         # Receive was interrupted by a non-timeout socket error; return what we
         # have so far rather than raising into the caller.
-        pass
+        logger.debug('swallowed exception', exc_info=True)
     finally:
         the_socket.settimeout(None)  # Reset to blocking
 
