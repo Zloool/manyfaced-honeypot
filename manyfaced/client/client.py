@@ -79,6 +79,7 @@ def _capture_credentials(
     bot_ip: str,
     response_bytes: bytes,
     spec: 'FaceSpec | None' = None,
+    seed: bytes = b'',
 ) -> str | None:
     """Capture credentials from interactive protocol connections.
 
@@ -105,17 +106,41 @@ def _capture_credentials(
 
     # Faces with a dedicated extractor get the real wire frame parsed by it.
     # SSH keeps its bespoke socket-driven parser (extract_creds is None there).
+    # The client's first frame (``seed``) is the USER/LOGIN command the server
+    # already consumed to pick its reply, so it MUST be included: real FTP/POP3/
+    # IMAP clients send USER then PASS as SEPARATE round-trips (issue #627), and
+    # without the seed the extractor only ever sees the post-reply PASS frame,
+    # dropping the username. We accumulate frames until both halves are present
+    # or the client stops sending.
     if spec is not None and spec.extract_creds is not None:
         try:
             connection_socket.settimeout(BOT_TIMEOUT)
-            frame = receive_first_frame(connection_socket, BOT_TIMEOUT)
-        except (socket.timeout, socket.error, OSError):
-            frame = b''
-        if frame:
-            try:
-                return spec.extract_creds(frame)
-            except Exception as e:  # noqa: BLE001 - extractor must never kill capture
-                logger.debug('extract_creds failed for %s: %s', spec.name, e)
+            buf = bytearray(seed)
+            creds = spec.extract_creds(bytes(buf)) if buf else None
+
+            def _complete(c: str | None) -> bool:
+                if not c or ':' not in c:
+                    return False
+                user, pw = c.split(':', 1)
+                return bool(user) and bool(pw)
+
+            for _ in range(16):
+                if _complete(creds):
+                    break
+                try:
+                    chunk = receive_first_frame(connection_socket, BOT_TIMEOUT)
+                except (socket.timeout, socket.error, OSError):
+                    chunk = b''
+                if not chunk:
+                    break
+                buf += chunk
+                if len(buf) > 8192:  # sane cap for an auth exchange
+                    break
+                creds = spec.extract_creds(bytes(buf))
+            if creds:
+                return creds
+        except Exception as e:  # noqa: BLE001 - extractor must never kill capture
+            logger.debug('extract_creds failed for %s: %s', spec.name, e)
 
     # SSH gets special binary protocol parsing
     if response_bytes.startswith(b'SSH-'):
@@ -583,26 +608,16 @@ def _handle_non_http_connection(
         except socket.error:
             logger.debug('swallowed exception', exc_info=True)
 
-    # ── Interactive credential capture (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL/
-    #    Redis/…) — runs AFTER the reply so the connection stays responsive.
-    #    Reads the client's subsequent auth frame(s); a no-data timeout just
-    #    means no creds were offered. ───────────────────────────────────────
-    creds = None
-    if spec.capture_creds:
-        creds = _capture_credentials(connection_socket, bot_ip, reply)
-    if creds:
-        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
-        bs.login = creds
-        _enrich_and_send_bear(bs, bot_ip)
-        return
-
     # ── Issue #596: HTTP-on-non-HTTP re-sniff (server-first faces) ────────
     # MySQL/MSSQL/AMQP/Oracle/RDP/… are server-first, so the HTTP-on-port
     # mismatch can only be detected from the client's frame. If an HTTP request
     # arrived on one of these ports (e.g. GET / on 3306), reclassify it to
     # HTTP_ON_NONHTTP_PORT instead of the service's UNKNOWN_* sentinel — the
-    # same distinct flag the SSH branch uses. This is the missing re-sniff that
-    # previously let HTTP-on-3306 fall through to UNKNOWN_NON_HTTP.
+    # same distinct flag the SSH and client-first paths use. This MUST run
+    # BEFORE credential capture: a mislabeled HTTP frame (raw_bytes) would
+    # otherwise be fed to the face's extractor as a (fake) credential and
+    # short-circuit the record, hiding the real HTTP-on-port probe (issue #627
+    # seed-accumulation fallout).
     if http_on_nonhttp:
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
         bs.isDetected = HTTP_ON_NONHTTP_PORT
@@ -611,6 +626,23 @@ def _handle_non_http_connection(
             spec.name,
             bot_ip,
         )
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Interactive credential capture (TELNET/FTP/SMTP/POP3/IMAP/RDP/MSSQL/
+    #    Redis/…) — runs AFTER the reply AND after the HTTP-on-port re-sniff so
+    #    the connection stays responsive and HTTP probes are never mis-captured
+    #    as credentials. Reads the client's subsequent auth frame(s); a no-data
+    #    timeout just means no creds were offered. ─────────────────────────
+    creds = None
+    if spec.capture_creds:
+        # Seed with the client's first frame (USER/LOGIN) the server already
+        # consumed to choose its reply, so the extractor can pair it with the
+        # post-reply PASS frame instead of dropping the username (issue #627).
+        creds = _capture_credentials(connection_socket, bot_ip, reply, spec, seed=raw_bytes)
+    if creds:
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs.login = creds
         _enrich_and_send_bear(bs, bot_ip)
         return
 
