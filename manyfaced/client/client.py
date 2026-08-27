@@ -648,6 +648,19 @@ def _handle_non_http_connection(
 
     # ── Record the probe (greeting-only / no-credential exchanges too) ─────
     bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+    # Issue #653: a server-first connect that received our greeting but sent
+    # NO client frame (port scan / recon, by design) was previously recorded as
+    # a normal session with an empty request_raw — indistinguishable from a
+    # capture failure and hiding silent data loss. Mirror the client-first #601
+    # guard: stamp EMPTY_CONNECTION so the accept is accountable in analysis
+    # instead of being silently dropped.
+    if not raw_bytes:
+        bs.isDetected = EMPTY_CONNECTION
+        logger.info(
+            'Server-first %s connect from %s sent no frame — EMPTY_CONNECTION',
+            spec.name,
+            bot_ip,
+        )
     _enrich_and_send_bear(bs, bot_ip)
 
 
