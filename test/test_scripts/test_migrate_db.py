@@ -259,3 +259,49 @@ def test_migrate_aborts_when_backup_fails(tmp_path: Path):
     names = {r[1] for r in conn.execute('PRAGMA table_info(honeypot_bears)')}
     conn.close()
     assert 'bot_profile_data' not in names, 'schema was altered despite failed backup'
+
+
+def test_backup_aborts_when_insufficient_space(tmp_path: Path):
+    """_backup() fails fast (OSError) when the disk cannot hold a full clone.
+
+    Guards the ENOSPC fail-fast added for the 2026-07 disk-full deploy (issue
+    #335): a mid-copy ENOSPC leaves a half-written .bak and a confusing failure.
+    """
+    import types
+
+    db = tmp_path / 'h.db'
+    db.write_bytes(b'x' * 4096)
+    # Report effectively zero free space so the guard trips.
+    low = types.SimpleNamespace(total=0, used=0, free=0)
+
+    with mock.patch.object(shutil, 'disk_usage', lambda p: low):
+        with pytest.raises(OSError):
+            migrate_db._backup(str(db), keep=1)
+    # No .bak should have been written when the guard aborts.
+    assert not list(tmp_path.glob('*.bak'))
+
+
+def test_backup_proceeds_when_size_check_raises_file_not_found(tmp_path: Path, capsys):
+    """The FileNotFoundError branch (issue #661) falls through to the copy.
+
+    getsize() can fail on a WAL sidecar; the handler must NOT abort the backup
+    over it. After the fix it logs a WARNING instead of silently swallowing.
+    """
+    import os
+
+    db = tmp_path / 'h.db'
+    conn = sqlite3.connect(db)
+    _make_table(conn, ['timestamp', 'ip'])  # missing bot_profile_data
+    conn.close()
+
+    def _flaky(p):
+        if str(p) == str(db):
+            raise FileNotFoundError('simulated sidecar miss')
+        return os.path.getsize(p)
+
+    with mock.patch.object(os.path, 'getsize', _flaky):
+        bak = migrate_db._backup(str(db), keep=1)
+
+    assert bak is not None
+    assert Path(bak).exists()
+    assert 'WARNING' in capsys.readouterr().err
