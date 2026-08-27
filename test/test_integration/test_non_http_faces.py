@@ -947,16 +947,45 @@ def test_600_msrpc_reply_reaches_client():
 
 
 def test_600_imaps_greeting_reaches_client():
-    # IMAPS (993) server-first: a TLS ServerHello (record 0x16) must arrive.
+    # IMAPS (993) server-first: a plaintext IMAP banner must arrive (issue #625
+    # — it used to be a static TLS ServerHello that dropped every plaintext
+    # credential client, so no login dialogue was ever captured).
     got = _dispatch(lambda: get_face(10993), None, 10993)
     assert got, f'issue #600: IMAPS face sent nothing: {got!r}'
     assert not got.startswith(b'HTTP'), f'issue #600: IMAPS 993 served HTTP: {got!r}'
-    assert got[:1] == b'\x16', f'issue #600: IMAPS greeting not a TLS record: {got!r}'
+    assert got.startswith(b'* OK'), f'issue #625: IMAPS greeting not plaintext IMAP: {got!r}'
 
 
 def test_600_pop3s_greeting_reaches_client():
-    # POP3S (995) server-first: a TLS ServerHello must arrive.
+    # POP3S (995) server-first: a plaintext POP3 banner must arrive (issue #625).
     got = _dispatch(lambda: get_face(10995), None, 10995)
     assert got, f'issue #600: POP3S face sent nothing: {got!r}'
     assert not got.startswith(b'HTTP'), f'issue #600: POP3S 995 served HTTP: {got!r}'
-    assert got[:1] == b'\x16', f'issue #600: POP3S greeting not a TLS record: {got!r}'
+    assert got.startswith(b'+OK'), f'issue #625: POP3S greeting not plaintext POP3: {got!r}'
+
+
+def test_625_imaps_captures_plaintext_login():
+    # Issue #625: a plaintext IMAP LOGIN on 993 must be captured. The old TLS
+    # ServerHello greeting dropped these clients, so zero credentials were ever
+    # recorded. Drive the real dispatch and inspect the captured BearStorage.
+    bs = _capture_bear_non_http('imaps', b'a001 LOGIN alice secret', 10993)
+    assert bs is not None, 'no BearStorage was built for IMAPS login'
+    assert bs.login == 'ALICE:SECRET', f'IMAPS login not captured: {bs.login!r}'
+
+
+def test_625_pop3s_captures_plaintext_creds():
+    # Issue #625: a plaintext POP3 USER/PASS on 995 must be captured.
+    bs = _capture_bear_non_http('pop3s', b'USER alice\nPASS secret', 10995)
+    assert bs is not None, 'no BearStorage was built for POP3S creds'
+    assert bs.login == 'alice:secret', f'POP3S creds not captured: {bs.login!r}'
+
+
+def test_625_imaps_pop3s_tls_client_hello_gets_handshake_failure():
+    # A real IMAPS/POP3S client that opens directly with a TLS ClientHello
+    # (record 0x16, version 0x0301/0x0303) must still get a handshake-failure
+    # alert — we keep the "real SSL service" impression even though we no longer
+    # greet with TLS (issue #625).
+    alert = face_module._imaps_respond(b'\x16\x03\x01\x00\x10' + b'\x01' * 16, '127.0.0.1')
+    assert alert == b'\x15\x03\x03\x00\x02\x02\x28', f'IMAPS TLS path wrong: {alert!r}'
+    alert2 = face_module._pop3s_respond(b'\x16\x03\x03\x00\x10' + b'\x02' * 16, '127.0.0.1')
+    assert alert2 == b'\x15\x03\x03\x00\x02\x02\x28', f'POP3S TLS path wrong: {alert2!r}'
