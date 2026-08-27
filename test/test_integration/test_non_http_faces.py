@@ -813,6 +813,33 @@ def test_real_http_request_still_http_on_ssh():
     )
 
 
+def test_http_on_rdp_is_http_on_nonhttp_port():
+    # Regression for issue #632: an HTTP request on the RDP port (3389) must be
+    # uniformly reclassified to HTTP_ON_NONHTTP_PORT, exactly like MySQL/MSSQL/
+    # Redis/SSH. The server-first branch (client.py) applies the same re-sniff
+    # to every face, so a plain GET / on 3389 is a protocol mismatch, not a
+    # genuine RDP probe (never UNKNOWN_RDP).
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('rdp', b'GET / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 3389)
+    assert bs is not None, 'no BearStorage built for HTTP-on-3389'
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on 3389 (RDP) should be HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
+
+
+def test_http_on_vnc_is_http_on_nonhttp_port():
+    # Regression for issue #652: an HTTP probe on the VNC port (5900) must be
+    # reclassified to HTTP_ON_NONHTTP_PORT, not left as a VNC/RFB mislabel.
+    from manyfaced.common.status import HTTP_ON_NONHTTP_PORT
+
+    bs = _capture_bear_non_http('vnc', b'GET / HTTP/1.1' + CRLF + b'Host: x' + CRLF + CRLF, 5900)
+    assert bs is not None, 'no BearStorage built for HTTP-on-5900'
+    assert bs.isDetected == HTTP_ON_NONHTTP_PORT, (
+        f'HTTP on 5900 (VNC) should be HTTP_ON_NONHTTP_PORT, got {bs.isDetected}'
+    )
+
+
 # ---------------------------------------------------------------------------
 # Issue #600: privileged-port redirect targets (53/135/139/445/993/995) must
 # each resolve to a non-HTTP FaceSpec and be dispatched to the correct face
