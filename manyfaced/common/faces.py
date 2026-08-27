@@ -277,31 +277,23 @@ def _smb_greeting() -> bytes:
 
 
 def _imaps_greeting() -> bytes:
-    # IMAPS (993) = IMAP over TLS. Server-first: the server sends a TLS
-    # ServerHello. A TLS handshake is fragile to fake here; we send a static
-    # TLS 1.2 ServerHello (record 0x16, version 0x0303) so a scanner sees a
-    # "real" SSL service instead of an HTTP admin panel (issue #600).
-    return (
-        b'\x16\x03\x03\x00\x31'  # TLS record: handshake, TLS1.2, 0x31 bytes
-        b'\x02\x00\x00\x2d'  # ServerHello, length 0x2d
-        b'\x03\x03'  # TLS 1.2
-        + bytes(32)  # server random (zeroed)
-        + b'\x20'  # session id length 0x20
-        + bytes(32)  # session id
-        + b'\x00\x2f'  # cipher suite: TLS_RSA_WITH_AES_128_CBC_SHA
-        b'\x00'  # compression: none
-    )
+    # IMAPS (993): behave like a real IMAP server that offers STARTTLS instead
+    # of forcing TLS on connect. The old static TLS ServerHello (issue #600)
+    # dropped every plaintext client that opened with CAPA/USER before STARTTLS,
+    # so no login dialogue was ever captured (issue #625). We now greet in
+    # plaintext; `_imaps_respond` answers a TLS ClientHello with a
+    # handshake-failure alert, preserving the "real SSL service" impression for
+    # TLS-expecting scanners while capturing plaintext credential attempts.
+    crlf = bytes([13, 10])
+    return b'* OK IMAP4rev1 Server ready (STARTTLS LOGIN)' + crlf
 
 
 def _pop3s_greeting() -> bytes:
-    # POP3S (995) = POP3 over TLS. Same approach as IMAPS: a static TLS 1.2
-    # ServerHello greets the client (issue #600).
-    return (
-        b'\x16\x03\x03\x00\x31'
-        b'\x02\x00\x00\x2d'
-        b'\x03\x03' + bytes(32) + b'\x20' + bytes(32) + b'\x00\x2f'
-        b'\x00'
-    )
+    # POP3S (995): same rationale as IMAPS (issue #625) — greet in plaintext and
+    # let `_pop3s_respond` handle a TLS ClientHello, instead of forcing TLS and
+    # dropping plaintext USER/PASS clients.
+    crlf = bytes([13, 10])
+    return b'+OK POP3 server ready (STLS)' + crlf
 
 
 # ---------------------------------------------------------------------------
@@ -774,19 +766,29 @@ def _no_reply(raw: bytes, bot_ip: str) -> bytes:
     return b''
 
 
-# IMAPS (993) / POP3S (995): the greeting already sent a static TLS 1.2
-# ServerHello. After the client sends its TLS ClientHello / ClientKeyExchange,
-# reply with a TLS handshake-failure alert so the client closes cleanly and the
-# TLS attempt is recorded as a captured connection (capture_creds=False — issue
-# #625). Building the alert by hand (no CRLF in a TLS record) keeps the bytes
+# IMAPS (993) / POP3S (995): the greeting is now plaintext IMAP/POP3 (issue
+# #625). After the client sends its first frame, branch on what it actually
+# sent: a TLS ClientHello (a real IMAPS/POP3S client that skipped the
+# plaintext CAPA/STARTTLS dance) gets a TLS handshake-failure alert so it
+# closes cleanly and the attempt is recorded; anything else is treated as an
+# IMAP/POP3 command and handled by the same responders the plaintext IMAP(143)/
+# POP3(110) faces use, so USER/PASS (and thus credentials) are captured.
+# Building the alert by hand (no CRLF in a TLS record) keeps the bytes
 # binary-safe: a TLSv1.2 record, alert content-type (0x15), level 2 (fatal),
 # description 40 (handshake_failure), 2-byte length.
+_HANDSHAKE_FAILURE_ALERT = b'\x15\x03\x03\x00\x02\x02\x28'
+
+
 def _imaps_respond(raw: bytes, bot_ip: str) -> bytes:
-    return b'\x15\x03\x03\x00\x02\x02\x28'
+    if raw[:2] == b'\x16\x03':
+        return _HANDSHAKE_FAILURE_ALERT
+    return _imap_respond(raw, bot_ip)
 
 
 def _pop3s_respond(raw: bytes, bot_ip: str) -> bytes:
-    return b'\x15\x03\x03\x00\x02\x02\x28'
+    if raw[:2] == b'\x16\x03':
+        return _HANDSHAKE_FAILURE_ALERT
+    return _pop3_respond(raw, bot_ip)
 
 
 # ---------------------------------------------------------------------------
@@ -951,8 +953,25 @@ _FACE_DEFS: dict[int, tuple] = {
     135: (UNKNOWN_SMB, CLIENT_FIRST, _msrpc_greeting, _msrpc_respond, False, None),
     139: (UNKNOWN_SMB, CLIENT_FIRST, _netbios_greeting, _netbios_respond, False, None),
     445: (UNKNOWN_SMB, CLIENT_FIRST, _smb_greeting, _smb_respond, False, None),
-    993: (UNKNOWN_NON_HTTP, SERVER_FIRST, _imaps_greeting, _imaps_respond, False, None),
-    995: (UNKNOWN_NON_HTTP, SERVER_FIRST, _pop3s_greeting, _pop3s_respond, False, None),
+    # IMAPS / POP3S now speak plaintext IMAP/POP3 (issue #625): a client that
+    # opens with a TLS ClientHello still gets a handshake-failure alert, but a
+    # plaintext USER/PASS (the common bot behaviour) is handled and captured.
+    993: (
+        UNKNOWN_NON_HTTP,
+        SERVER_FIRST,
+        _imaps_greeting,
+        _imaps_respond,
+        True,
+        extract_imap_credentials,
+    ),
+    995: (
+        UNKNOWN_NON_HTTP,
+        SERVER_FIRST,
+        _pop3s_greeting,
+        _pop3s_respond,
+        True,
+        extract_pop3_credentials,
+    ),
     # Beanstalkd work-queue (issue #624): ports 11300-11311 are in
     # DEFAULT_TOP_PORTS and labeled Beanstalkd but had NO _FACE_DEFS entry, so
     # they fell through to the generic HTTP handler. Wire them to a real
