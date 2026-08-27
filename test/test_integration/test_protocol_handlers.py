@@ -34,7 +34,6 @@ from manyfaced.handlers.redis_handler import (
 from manyfaced.handlers.telnet_handler import (
     _strip_iac,
     extract_telnet_credentials,
-    generate_auth_failure,
     generate_auth_success,
     generate_password_prompt,
     generate_telnet_greeting,

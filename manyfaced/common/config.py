@@ -542,8 +542,6 @@ def validate_secrets(cfg: Config | None = None) -> None:
         )
 
     if errors:
-        import logging
-
         for error in errors:
             logging.getLogger().critical(error)
         raise ConfigValidationError(
