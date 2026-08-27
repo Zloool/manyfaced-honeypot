@@ -200,6 +200,46 @@ def test_memcached_version_responds():
     assert reply.startswith(b'VERSION'), f'memcached reply was {reply!r}'
 
 
+def test_memcached_stats_returns_stat_block():
+    # Issue #648: `stats` must return a multi-line STAT block, not a bare END,
+    # or scanners/tools see an empty server.
+    reply = _client_first_reply('memcached', b'stats' + CRLF)
+    assert b'STAT ' in reply, f'memcached stats reply had no STAT lines: {reply!r}'
+    assert reply.rstrip().endswith(b'END'), f'memcached stats block not END-terminated: {reply!r}'
+    assert b'STAT version 1.6.21' in reply, f'memcached stats missing version line: {reply!r}'
+
+
+def test_memcached_storage_commands_reply():
+    # Issue #648: mutations must return the real reply verbs so client state
+    # machines don't desync on a bare END.
+    assert _client_first_reply('memcached', b'set k 0 0 1' + CRLF + b'x' + CRLF).startswith(
+        b'STORED'
+    ), 'memcached set should STORED'
+    assert _client_first_reply('memcached', b'delete k' + CRLF).startswith(b'DELETED'), (
+        'memcached delete should DELETED'
+    )
+    assert _client_first_reply('memcached', b'flush_all' + CRLF).startswith(b'OK'), (
+        'memcached flush_all should OK'
+    )
+    # Stateless get with no store is correctly END (no VALUE lines).
+    assert _client_first_reply('memcached', b'get k' + CRLF).rstrip().endswith(b'END'), (
+        'memcached get with no store should END'
+    )
+
+
+def test_memcached_binary_protocol_reply():
+    # Issue #648: a binary-protocol request (magic 0x80) must get a valid
+    # binary response (magic 0x81), not an ASCII END that corrupts the wire.
+    from manyfaced.common import faces as _faces
+
+    pkt = bytes([0x80, 0x00, 0, 0, 0, 0, 0, 0]) + (0).to_bytes(4, 'big') + bytes(4) + bytes(8)
+    reply = _client_first_reply('memcached', pkt)
+    assert reply[:1] == b'\x81', f'memcached binary reply wrong magic: {reply!r}'
+    # version opcode 0x0b carries the emulated server name as body
+    ver = bytes([0x80, 0x0B, 0, 0, 0, 0, 0, 0]) + (0).to_bytes(4, 'big') + bytes(4) + bytes(8)
+    assert _faces._memcached_respond(ver, '127.0.0.1')[:1] == b'\x81'
+
+
 def test_postgres_startup_gets_auth_request():
     import struct
 
