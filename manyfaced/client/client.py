@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
-from manyfaced.common.status import BOT_TIMEOUT, EMPTY_CONNECTION, HTTP_ON_NONHTTP_PORT
+from manyfaced.common.status import BOT_TIMEOUT, EMPTY_CONNECTION, HTTP_ON_NONHTTP_PORT, NEXTJS_HTTP
 from manyfaced.common.utils import receive_first_frame, receive_timeout
 from manyfaced.handlers.http_handler import (
     HTTPHandler,
@@ -46,6 +46,41 @@ if TYPE_CHECKING:
     from manyfaced.common.faces import FaceSpec
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Next.js CVE-2025-29927 cross-port attribution (issue #638)
+# ---------------------------------------------------------------------------
+# The public PoC for the Next.js middleware-auth-bypass RCE sends an
+# ``x-middleware-subrequest`` header and/or a multipart body carrying the
+# ``$@0`` / ``__proto__:then`` / ``NEXT_REDIRECT`` markers. When such a frame
+# is sniffed out of an HTTP request on a NON-HTTP port (e.g. the SMB-redirect
+# port 10445), it must be attributed to the Next.js face rather than the
+# generic HTTP_ON_NONHTTP_PORT sentinel, so the attack family is queryable
+# across every port it appears on.
+def _is_nextjs_cve_2025_29927(raw: bytes) -> bool:
+    """Return True if *raw* looks like a CVE-2025-29927 Next.js RCE probe."""
+    low = raw.lower()
+    if b'x-middleware-subrequest' in low:
+        return True
+    if b'$@0' in raw:
+        return True
+    if b'__proto__:then' in raw:
+        return True
+    if b'next_redirect' in low:
+        return True
+    return False
+
+
+def _http_mismatch_detected_id(raw: bytes) -> int:
+    """detected_id for an HTTP frame arriving on a non-HTTP port.
+
+    Normally HTTP_ON_NONHTTP_PORT, but a CVE-2025-29927 body is attributed to
+    the Next.js face (issue #638).
+    """
+    if _is_nextjs_cve_2025_29927(raw):
+        return NEXTJS_HTTP
+    return HTTP_ON_NONHTTP_PORT
 
 
 # Protocols that can have interactive credential exchange (banner → auth)
@@ -493,7 +528,7 @@ def _handle_non_http_connection(
 
         detected_id = SSH_CLIENT
         if http_on_nonhttp:
-            detected_id = HTTP_ON_NONHTTP_PORT
+            detected_id = _http_mismatch_detected_id(raw_bytes)
             logger.info('HTTP-on-SSH-port mismatch from %s (flagged, not mislabeled)', bot_ip)
         creds = _capture_credentials(connection_socket, bot_ip, spec.greeting, spec)
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
@@ -560,7 +595,7 @@ def _handle_non_http_connection(
         # ssh branches. An HTTP request arriving on e.g. the Redis port is a
         # protocol mismatch, not a genuine Redis probe (issue #596).
         if http_on_nonhttp:
-            bs.isDetected = HTTP_ON_NONHTTP_PORT
+            bs.isDetected = _http_mismatch_detected_id(raw_bytes)
             logger.info(
                 'HTTP-on-%s-port mismatch from %s (flagged, not mislabeled)',
                 spec.name,
@@ -620,7 +655,7 @@ def _handle_non_http_connection(
     # seed-accumulation fallout).
     if http_on_nonhttp:
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
-        bs.isDetected = HTTP_ON_NONHTTP_PORT
+        bs.isDetected = _http_mismatch_detected_id(raw_bytes)
         logger.info(
             'HTTP-on-%s-port mismatch from %s (flagged, not mislabeled)',
             spec.name,
