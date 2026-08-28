@@ -124,12 +124,18 @@ class Route(NamedTuple):
         handler_cls:  Handler class (not instance) to instantiate on match.
         detected_id:  Integer detected-id for the report.
         name:  Human-readable name for debug/logging.
+        ports:  Optional tuple of listen ports this route is scoped to. When
+            set, the route only matches requests that arrived on one of those
+            ports (issue #633 — stops ES admin routes leaking onto unrelated
+            HTTP faces such as 9090/5000/7001). ``None`` (default) means the
+            route is universal and matches on every HTTP port.
     """
 
     matcher: Matcher
     handler_cls: type
     detected_id: int
     name: str
+    ports: tuple[int, ...] | None = None
 
 
 class Router:
@@ -163,6 +169,7 @@ class Router:
         raw_request: str,
         bot_ip: str,
         headers: dict[str, str] | None = None,
+        port: int | None = None,
     ) -> tuple[bytes, int] | None:
         """Return ``(response_bytes, detected_id)`` or ``None``.
 
@@ -172,9 +179,28 @@ class Router:
         The path is percent-decoded once here (issue #443) so encoded
         path-escape probes (``%2e``, ``%2f``) match the right route regardless
         of which caller invokes dispatch.
+
+        Args:
+            port: The listen port the request arrived on. When a route declares
+                an explicit ``ports`` scope (issue #633) it only matches if
+                ``port`` is one of them; an unknown/zero port disables the
+                filter so legacy port-less dispatch keeps its old behavior.
         """
         decoded_path = _decode_path(path)
         for idx, route in enumerate(self._routes):
+            # Port scoping (issue #633): a route with an explicit ``ports``
+            # tuple only matches when the request arrived on one of those ports.
+            # Universal routes (ports=None) always match. An unknown/zero port
+            # (port is None or 0) disables the filter so port-less dispatch and
+            # the replay harness (listen_port=0) keep their legacy behavior.
+            route_ports = route.ports
+            if (
+                route_ports is not None
+                and isinstance(port, int)
+                and port != 0
+                and port not in route_ports
+            ):
+                continue
             if route.matcher.match(decoded_path):
                 try:
                     # Reuse existing handler or create new one for this route
@@ -255,10 +281,20 @@ class Router:
         with self._lock:
             self._handler_instances.clear()
 
-    def explain(self, path: str) -> str:
+    def explain(self, path: str, port: int | None = None) -> str:
         """Return a debug string for the matched route."""
         decoded_path = _decode_path(path)
         for idx, route in enumerate(self._routes):
+            # Mirror dispatch's port scoping (issue #633) so explain() reports
+            # the route that would actually win for a given listen port.
+            route_ports = route.ports
+            if (
+                route_ports is not None
+                and isinstance(port, int)
+                and port != 0
+                and port not in route_ports
+            ):
+                continue
             if route.matcher.match(decoded_path):
                 return f'matched route {idx} ({route.name})'
         return 'no match'

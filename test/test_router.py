@@ -23,6 +23,7 @@ from manyfaced.handlers.router import (
     Route,
 )
 from manyfaced.handlers.routes import ROUTES
+from manyfaced.common.status import ELASTIC_HTTP, UNKNOWN_HTTP
 
 
 class TestMatchers(unittest.TestCase):
@@ -389,6 +390,85 @@ class TestMCPFaceClassifiability(unittest.TestCase):
         self.assertTrue(is_http_port(8000))
         # Sanity: a non-HTTP face port is still NOT an HTTP port.
         self.assertFalse(is_http_port(3389))
+
+
+class TestRoutePortScoping(unittest.TestCase):
+    """Issue #633: Elasticsearch admin routes must only match on the genuine
+    ES port (9200) and the RabbitMQ management port (15672, where scanners
+    fire ES-style probes the Elastic face intentionally answers). They must
+    NOT leak onto unrelated HTTP faces (9090/5000/7001) via the global router.
+    """
+
+    def _make_request(self, path: str) -> str:
+        crlf = chr(13) + chr(10)
+        return f'GET {path} HTTP/1.1{crlf}Host: example.com{crlf}{crlf}'
+
+    def test_es_route_matches_on_9200(self):
+        router = Router(ROUTES)
+        result = router.dispatch(
+            '/_cluster/stats', self._make_request('/_cluster/stats'), '1.2.3.4', port=9200
+        )
+        assert result is not None
+        _, detected = result
+        self.assertEqual(detected, ELASTIC_HTTP)
+
+    def test_es_route_matches_on_15672(self):
+        router = Router(ROUTES)
+        result = router.dispatch(
+            '/_cluster/stats', self._make_request('/_cluster/stats'), '1.2.3.4', port=15672
+        )
+        assert result is not None
+        _, detected = result
+        self.assertEqual(detected, ELASTIC_HTTP)
+
+    def test_es_route_does_not_leak_on_9090(self):
+        router = Router(ROUTES)
+        result = router.dispatch(
+            '/_cluster/stats', self._make_request('/_cluster/stats'), '1.2.3.4', port=9090
+        )
+        assert result is not None
+        _, detected = result
+        self.assertNotEqual(detected, ELASTIC_HTTP)
+        self.assertEqual(detected, UNKNOWN_HTTP)
+
+    def test_es_route_does_not_leak_on_5000_and_7001(self):
+        router = Router(ROUTES)
+        for port in (5000, 7001):
+            with self.subTest(port=port):
+                result = router.dispatch(
+                    '/_cat/indices', self._make_request('/_cat/indices'), '1.2.3.4', port=port
+                )
+                assert result is not None
+                _, detected = result
+                self.assertNotEqual(detected, ELASTIC_HTTP, f'ES route leaked on port {port}')
+                self.assertEqual(detected, UNKNOWN_HTTP, f'port {port} should hit catch-all')
+
+    def test_universal_route_matches_on_any_port(self):
+        router = Router(ROUTES)
+        for port in (9090, 5000, 7001, 9200, 15672, 80, 443):
+            with self.subTest(port=port):
+                result = router.dispatch(
+                    '/wp-login.php', self._make_request('/wp-login.php'), '1.2.3.4', port=port
+                )
+                assert result is not None
+                body, _ = result
+                self.assertIn(b'WordPress', body)
+
+    def test_explain_respects_port_scope(self):
+        router = Router(ROUTES)
+        self.assertIn('elasticsearch', router.explain('/_cluster/stats', port=9200).lower())
+        explain_9090 = router.explain('/_cluster/stats', port=9090)
+        self.assertNotIn('elasticsearch', explain_9090.lower())
+        self.assertIn('catchall', explain_9090.lower())
+
+    def test_portless_dispatch_keeps_legacy_behavior(self):
+        router = Router(ROUTES)
+        result = router.dispatch(
+            '/_cluster/stats', self._make_request('/_cluster/stats'), '1.2.3.4'
+        )
+        assert result is not None
+        _, detected = result
+        self.assertEqual(detected, ELASTIC_HTTP)
 
 
 if __name__ == '__main__':

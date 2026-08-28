@@ -79,3 +79,9 @@ ROUTES: list[Route] = [
     Route(PathPrefix('/kibana'), _elastic(), ELASTIC_HTTP, 'elastic_kibana_prefix'),
     Route(PathPrefix('/elastic'), _elastic(), ELASTIC_HTTP, 'elastic_elastic_prefix'),
 ]
+
+# Issue #633: Elasticsearch routes are served only on the genuine ES port
+# (9200) and the RabbitMQ management port (15672). See routes_elasticsearch.py
+# for the full rationale — these mirror of Bitrix-era ES paths must NOT leak
+# onto unrelated HTTP faces (9090/5000/7001) via the global router.
+ROUTES = [Route(r.matcher, r.handler_cls, r.detected_id, r.name, (9200, 15672)) for r in ROUTES]
