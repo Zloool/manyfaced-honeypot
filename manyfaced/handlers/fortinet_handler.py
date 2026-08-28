@@ -320,7 +320,7 @@ class FortinetHandler(HTTPHandlerBase):
         mac = hmac.new(  # codeql[py/weak-sensitive-data-hashing]
             self._FAKE_SVPN_COOKIE_SECRET, raw, 'sha256'
         )
-        return mac.hexdigest()[:48]
+        return mac.hexdigest()[:48]  # codeql[py/weak-sensitive-data-hashing]
 
     def _extract_json_body(self, raw_request: str) -> dict:
         """Extract the JSON body from a raw HTTP request (after blank line)."""
