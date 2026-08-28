@@ -190,9 +190,12 @@ class Config:
     DASHBOARD_ENABLED: bool = False
     DASHBOARD_PORT: int = _DEFAULT_DASHBOARD_PORT
     DASHBOARD_BIND: str = _DEFAULT_DASHBOARD_BIND
-    # Auto-generated URL secret (secrets.token_urlsafe). Persisted to config.toml
-    # by generate_config_file(); compared with hmac.compare_digest per request.
-    # Never a static default — empty/None means "not yet generated".
+    # Dashboard access secret, compared with hmac.compare_digest per request.
+    # Sourced at runtime from HONEY_DASHBOARD_SECRET (preferred) or a pinned
+    # [dashboard] secret in config.toml. It is NOT persisted by
+    # generate_config_file() (issue #659 - clear-text storage of a generated
+    # secret). When neither is set, Config.load() generates an ephemeral
+    # secret (rotates each process start; acceptable for a read-only view).
     DASHBOARD_SECRET: str = ''
     # Default time range for the stats view: '24h', '7d', '30d', or 'all'.
     DASHBOARD_TIME_RANGE: str = _DEFAULT_DASHBOARD_TIME_RANGE
@@ -225,6 +228,25 @@ class Config:
             toml = _load_toml(config_path)
 
         prefix = env_prefix()
+
+        # Dashboard secret resolution with ephemeral fallback (issue #659):
+        # env (HONEY_DASHBOARD_SECRET) > pinned TOML [dashboard] secret > a freshly
+        # generated ephemeral secret. generate_config_file() does NOT persist a
+        # clear-text secret to disk; the generated file carries only a comment.
+        _dashboard_secret = str(
+            resolve_setting(
+                'secret',
+                _DEFAULT_DASHBOARD_SECRET or '',
+                'dashboard',
+                toml,
+                prefix,
+                env_name='dashboard_secret',
+            )
+        )
+        if not _dashboard_secret:
+            import secrets as _secrets
+
+            _dashboard_secret = _secrets.token_urlsafe(32)
 
         return Config(
             HONEYPORT=int(
@@ -326,16 +348,7 @@ class Config:
                     env_name='dashboard_bind',
                 )
             ),
-            DASHBOARD_SECRET=str(
-                resolve_setting(
-                    'secret',
-                    _DEFAULT_DASHBOARD_SECRET or '',
-                    'dashboard',
-                    toml,
-                    prefix,
-                    env_name='dashboard_secret',
-                )
-            ),
+            DASHBOARD_SECRET=_dashboard_secret,
             DASHBOARD_TIME_RANGE=str(
                 resolve_setting(
                     'time_range',
@@ -450,8 +463,11 @@ class Config:
             'enabled = false',
             f'port = {self.DASHBOARD_PORT}',
             f'bind = {_toml_str(self.DASHBOARD_BIND)}',
-            '# Auto-generated on first --generate-config; rotate by deleting this line.',
-            f'secret = {_toml_str(self._generated_dashboard_secret())}',
+            '# Dashboard access secret is NOT persisted here (issue #659 - clear-text',
+            '# storage of a generated secret). Set HONEY_DASHBOARD_SECRET in the',
+            '# environment (preferred), or uncomment and pin a static value below.',
+            '# If neither is set, an ephemeral secret is generated per process start.',
+            '# secret = "pin-a-static-dashboard-secret-here-if-desired"',
             f'time_range = {_toml_str(self.DASHBOARD_TIME_RANGE)}',
             '',
         ]
@@ -467,16 +483,6 @@ class Config:
         if hasattr(os, 'chmod'):
             os.chmod(path, 0o600)
         return path
-
-    def _generated_dashboard_secret(self) -> str:
-        """Return a fresh unguessable dashboard secret for config generation.
-
-        Uses secrets.token_urlsafe (cryptographically strong, no static
-        fallback) so generated configs never ship with a known default token.
-        """
-        import secrets
-
-        return secrets.token_urlsafe(32)
 
     def resolve_ports(self) -> list[int]:
         """Return the list of ports to listen on based on the port mode.
