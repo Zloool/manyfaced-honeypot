@@ -25,7 +25,17 @@ from typing import TYPE_CHECKING
 
 from manyfaced.common.logging_setup import get_logger
 from manyfaced.common.ports import DEFAULT_TOP_PORTS as _DEFAULT_TOP_PORTS
-from manyfaced.common.status import BOT_TIMEOUT, EMPTY_CONNECTION, HTTP_ON_NONHTTP_PORT, NEXTJS_HTTP
+from manyfaced.common.status import (
+    BOT_TIMEOUT,
+    EMPTY_CONNECTION,
+    HTTP_ON_NONHTTP_PORT,
+    NEXTJS_HTTP,
+    UNKNOWN_AMQP,
+    UNKNOWN_EPMD,
+    UNKNOWN_MEMCACHED,
+    UNKNOWN_REDIS,
+    UNKNOWN_ZOOKEEPER,
+)
 from manyfaced.common.utils import receive_first_frame, receive_timeout
 from manyfaced.handlers.http_handler import (
     HTTPHandler,
@@ -81,6 +91,125 @@ def _http_mismatch_detected_id(raw: bytes) -> int:
     if _is_nextjs_cve_2025_29927(raw):
         return NEXTJS_HTTP
     return HTTP_ON_NONHTTP_PORT
+
+
+# ── Issue #639: protocol-payload re-sniff for non-canonical ports ──────────
+# A Redis/ZooKeeper/AMQP/Memcached/EPMD frame arriving on a NON-canonical port
+# (e.g. a Redis RESP array header such as '*1 $4 info' on the NFS port 2049, or an AMQP
+# ``AMQP\x00\x00\x09\x01`` header on the EPMD port 4369) is a probe of that
+# protocol, not a generic unknown binary. Previously every such frame collapsed
+# into UNKNOWN_NON_HTTP, hiding per-protocol attribution and credential capture.
+# Re-sniff the client's first frame and attribute it to the matching
+# UNKNOWN_<protocol> sentinel (already defined in status.py for issue #639) when
+# the frame clearly matches a known protocol that is NOT the current port's face.
+# This mirrors the HTTP-on-non-HTTP re-sniff (issues #596 / #638): same payload
+# signature → distinct detected_id, with no reply re-routing.
+_RESP_DIGITS = b'0123456789'
+_REDIS_VERBS = (
+    b'PING',
+    b'INFO',
+    b'AUTH',
+    b'CONFIG',
+    b'ECHO',
+    b'COMMAND',
+    b'CLIENT',
+    b'HELLO',
+    b'CLUSTER',
+    b'SCRIPT',
+    b'SUBSCRIBE',
+    b'PUBLISH',
+    b'SLAVEOF',
+    b'REPLICAOF',
+    b'PONG',
+)
+_ZOOKEEPER_4LW = (
+    b'ruok',
+    b'stat',
+    b'srvr',
+    b'mntr',
+    b'conf',
+    b'dump',
+    b'envi',
+    b'cons',
+    b'crst',
+    b'dirs',
+    b'isro',
+    b'wchs',
+    b'wchc',
+    b'wchp',
+    b'reqs',
+    b'kill',
+    b'gtmk',
+    b'stmk',
+    b'hash',
+    b'printwatches',
+    b'environment',
+    b'gettracemask',
+    b'settracemask',
+)
+_MEMCACHED_VERBS = (
+    b'version',
+    b'stats',
+    b'flush_all',
+    b'quit',
+    b'get',
+    b'gets',
+    b'set',
+    b'add',
+    b'replace',
+    b'delete',
+    b'append',
+    b'prepend',
+    b'cas',
+)
+
+
+def _first_token(raw: bytes) -> bytes:
+    """First whitespace-delimited token of *raw* (or the whole frame)."""
+    end = len(raw)
+    for i, ch in enumerate(raw):
+        if ch in (32, 9, 13, 10):  # space, tab, CR, LF
+            end = i
+            break
+    return raw[:end]
+
+
+def _sniff_nonhttp_protocol(raw: bytes) -> tuple[str, int] | None:
+    """Return (protocol_name, sentinel detected_id) when *raw* clearly probes a
+    known non-HTTP protocol, else None. Does NOT consult the current port.
+    """
+    if not raw:
+        return None
+    token = _first_token(raw)
+    # Redis RESP: array header (e.g. '*1 $4 info') or an upper-case redis command verb.
+    if (raw[:1] == b'*' and len(raw) >= 2 and raw[1] in _RESP_DIGITS) or token in _REDIS_VERBS:
+        return ('redis', UNKNOWN_REDIS)
+    if token in _ZOOKEEPER_4LW:
+        return ('zookeeper', UNKNOWN_ZOOKEEPER)
+    if raw.startswith(b'AMQP'):
+        return ('amqp', UNKNOWN_AMQP)
+    if token in _MEMCACHED_VERBS:
+        return ('memcached', UNKNOWN_MEMCACHED)
+    if b'PORT_PLEASE2' in raw or raw.startswith(b'\x00\x02\x7a') or raw.startswith(b'\x00\x01\x64'):
+        return ('epmd', UNKNOWN_EPMD)
+    return None
+
+
+def _protocol_mismatch_detected_id(raw: bytes, spec_name: str) -> int | None:
+    """detected_id for a non-HTTP protocol frame on a non-canonical port.
+
+    Returns the matching UNKNOWN_<protocol> sentinel when *raw* clearly probes a
+    known protocol that is NOT the current port's face (*spec_name*); returns None
+    when *raw* matches no known protocol or already matches *spec_name*, so a frame
+    on its canonical port keeps its canonical attribution (issue #639).
+    """
+    sniff = _sniff_nonhttp_protocol(raw)
+    if sniff is None:
+        return None
+    name, sentinel = sniff
+    if name == spec_name:
+        return None
+    return sentinel
 
 
 # Protocols that can have interactive credential exchange (banner → auth)
@@ -530,6 +659,18 @@ def _handle_non_http_connection(
         if http_on_nonhttp:
             detected_id = _http_mismatch_detected_id(raw_bytes)
             logger.info('HTTP-on-SSH-port mismatch from %s (flagged, not mislabeled)', bot_ip)
+        # ── Issue #639: protocol-payload re-sniff (SSH branch) ────────────
+        # A Redis/ZooKeeper/AMQP/Memcached/EPMD frame on the SSH port is also a
+        # protocol probe, not a generic unknown binary. Attribute it to the
+        # matching UNKNOWN_<protocol> sentinel (issue #639).
+        elif (pid := _protocol_mismatch_detected_id(raw_bytes, spec.name)) is not None:
+            detected_id = pid
+            logger.info(
+                'Protocol probe on %s-port mismatch from %s (flagged %s, not UNKNOWN_NON_HTTP)',
+                spec.name,
+                bot_ip,
+                pid,
+            )
         creds = _capture_credentials(connection_socket, bot_ip, spec.greeting, spec)
         bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
         bs.isDetected = detected_id
@@ -601,6 +742,21 @@ def _handle_non_http_connection(
                 spec.name,
                 bot_ip,
             )
+        # ── Issue #639: protocol-payload re-sniff (client-first faces) ────
+        # A Redis/ZooKeeper/AMQP/Memcached/EPMD frame on a non-canonical
+        # client-first port (e.g. NFS 2049, EPMD 4369) is a probe of that
+        # protocol, not a generic unknown binary: attribute it to the matching
+        # UNKNOWN_<protocol> sentinel so per-protocol analysis is possible
+        # (issue #639). Same payload-signature → distinct detected_id pattern as
+        # the HTTP re-sniff above; reply routing is unchanged.
+        elif (pid := _protocol_mismatch_detected_id(raw_bytes, spec.name)) is not None:
+            bs.isDetected = pid
+            logger.info(
+                'Protocol probe on %s-port mismatch from %s (flagged %s, not UNKNOWN_NON_HTTP)',
+                spec.name,
+                bot_ip,
+                pid,
+            )
         # ── Issue #601: client-first silent-capture guard ──────────────────
         # A client-first connect (redis/memcached/mongo/zookeeper/postgres/
         # epmd/nfs) that sends NO frame before idling is currently recorded as
@@ -660,6 +816,24 @@ def _handle_non_http_connection(
             'HTTP-on-%s-port mismatch from %s (flagged, not mislabeled)',
             spec.name,
             bot_ip,
+        )
+        _enrich_and_send_bear(bs, bot_ip)
+        return
+
+    # ── Issue #639: protocol-payload re-sniff (server-first faces) ────────
+    # A Redis/ZooKeeper/AMQP/Memcached/EPMD frame on a non-canonical server-first
+    # port (e.g. NFS 2049, EPMD 4369) is a probe of that protocol, not a generic
+    # unknown binary. Attribute it to the matching UNKNOWN_<protocol> sentinel and
+    # return before credential capture, exactly like the HTTP re-sniff above
+    # (issue #639) — the port's extractor must not mis-parse the foreign frame.
+    if (pid := _protocol_mismatch_detected_id(raw_bytes, spec.name)) is not None:
+        bs = _build_bear_storage(bot_ip, spec, raw_bytes, listen_port)
+        bs.isDetected = pid
+        logger.info(
+            'Protocol probe on %s-port mismatch from %s (flagged %s, not UNKNOWN_NON_HTTP)',
+            spec.name,
+            bot_ip,
+            pid,
         )
         _enrich_and_send_bear(bs, bot_ip)
         return
