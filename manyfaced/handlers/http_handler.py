@@ -380,8 +380,10 @@ class HTTPHandler:
         # so encoded path-escape probes (/ .env%2e -> /.env, /.htaccess,
         # /%2eenv) match the exploit/config-disclosure routes instead of
         # falling through to the monster page. Handlers receive the decoded
-        # path from the router.
-        result = router.dispatch(path, raw_request, bot_ip, headers or {})
+        # path from the router. The listen port is forwarded so port-scoped
+        # routes (e.g. Elasticsearch on 9200/15672, issue #633) do not leak
+        # onto unrelated HTTP faces.
+        result = router.dispatch(path, raw_request, bot_ip, headers or {}, port=self.listen_port)
 
         if result is not None:
             output_data, detected = result

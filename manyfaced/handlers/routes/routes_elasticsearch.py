@@ -50,3 +50,12 @@ ROUTES: list[Route] = [
     ),
     Route(PathPrefix('/elastic/'), _elasticsearch(), ELASTIC_HTTP, 'elasticsearch_elastic_prefix'),
 ]
+
+# Issue #633: Elasticsearch routes are served only on the genuine ES port
+# (9200) and the RabbitMQ management port (15672), where naive scanners fire
+# ES-style REST probes that the Elastic face intentionally answers (see
+# routes_rabbitmq.py / issue #643). On every other HTTP face (e.g. 9090/5000/
+# 7001) an ES probe must fall through to the catch-all instead of
+# impersonating a cluster — the previous global router matched these paths on
+# ALL HTTP ports, leaking fake ES JSON onto unrelated API/management faces.
+ROUTES = [Route(r.matcher, r.handler_cls, r.detected_id, r.name, (9200, 15672)) for r in ROUTES]
