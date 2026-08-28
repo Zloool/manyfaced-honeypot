@@ -271,7 +271,7 @@ def run() -> None:
                     _maybe_restart('dashboard_proc', _spawn_dashboard)
             time.sleep(1)
     except KeyboardInterrupt:
-        pass
+        logger.debug('supervisor loop interrupted; initiating graceful shutdown')
     finally:
         update_event.set()
         for p in procs.values():

@@ -312,6 +312,12 @@ class FortinetHandler(HTTPHandlerBase):
         identical to before (48 hex chars).
         """
         raw = f'{username}:{self.SERIAL}:{self.VERSION}'.encode('utf-8')
+        # CodeQL false positive: py/weak-sensitive-data-hashing. The hashed input is the
+        # bot-supplied username (an identifier), keyed by a honeypot secret via HMAC-SHA256 to
+        # mint a deterministic decoy SSL-VPN cookie -- not password storage. CodeQL's taint
+        # originates from the password field of the test login form, which over-taints the
+        # parsed credentials dict; the username input is not a secret.
+        # codeql[py/weak-sensitive-data-hashing]
         mac = hmac.new(self._FAKE_SVPN_COOKIE_SECRET, raw, 'sha256')
         return mac.hexdigest()[:48]
 
