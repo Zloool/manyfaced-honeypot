@@ -211,17 +211,15 @@ def test_generated_config_has_dashboard_section_with_secret():
     text = path.read_text()
     assert '[dashboard]' in text
     assert 'enabled = false' in text
-    # secret must be auto-generated and non-trivial (not a static default)
+    # Issue #659: the auto-generated secret must NOT be persisted in clear text.
     import re
 
-    m = re.search(r'secret = "([^"]+)"', text)
-    assert m, 'dashboard secret line missing from generated config'
-    secret = m.group(1)
-    assert len(secret) >= 32
-    # regenerate to confirm it's freshly generated each time
-    path2 = cfg.generate_config_file()
-    secret2 = re.search(r'secret = "([^"]+)"', path2.read_text()).group(1)
-    assert secret2 != secret  # secrets.token_urlsafe -> unique each call
+    m = re.search(r'^\s*secret = "([^"]+)"', text, re.MULTILINE)
+    assert not m, 'generated config must not persist a clear-text dashboard secret'
+    # The env var is documented and a commented placeholder is present.
+    assert 'HONEY_DASHBOARD_SECRET' in text
+    # Runtime resolution still yields a usable (ephemeral) secret when none set.
+    assert cfg.DASHBOARD_SECRET and len(cfg.DASHBOARD_SECRET) >= 32
 
 
 def test_config_loads_dashboard_fields_defaults():
