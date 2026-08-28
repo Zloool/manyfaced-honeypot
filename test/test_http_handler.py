@@ -1018,3 +1018,75 @@ class TestHTTPCoverageGaps:
         output = handler.handle_request(msg, bot_ip='1.2.3.4')
         assert isinstance(output, bytes)
         assert len(output) > 0
+
+
+class TestEnrichGeoSyncBackfill:
+    """Regression tests for issue #641: HTTP captures whose async geo lookup missed
+    on first contact must still get ASN/country via the blocking sync backfill,
+    mirroring the non-HTTP fix from #430/#449."""
+
+    @staticmethod
+    def _make_handler():
+        args = MagicMock()
+        args.verbose = False
+        args.server = None  # skip the report queue so the test stays offline
+        return HTTPHandler(args, MagicMock())
+
+    def test_enrich_backfills_geo_on_async_miss(self, monkeypatch):
+        handler = self._make_handler()
+        bs = BearStorage('5.6.7.8', '', '2026-08-28 00:00:00.000000', None, 0, 'honeypot')
+        # Async resolve_geo returns empty (simulating first-contact cache miss /
+        # background-worker scheduling) and does NOT mutate the record.
+        monkeypatch.setattr(
+            BearStorage, 'resolve_geo', lambda self, ip, timeout=2.0: ('', '', '', '')
+        )
+        monkeypatch.setattr(
+            BearStorage, 'resolve_dns_name', lambda self, ip, timeout=1.0: 'scanner.example.com'
+        )
+        # The blocking sync backfill returns a real result.
+        monkeypatch.setattr(
+            'manyfaced.common.geolocate.lookup_ip_geolocation_sync',
+            lambda ip, timeout=2.0: ('United States', 'NA', 'AS13335', 'Cloudflare, Inc.'),
+        )
+        monkeypatch.setattr(
+            'manyfaced.common.classification.classify', lambda **kw: ('unknown', '')
+        )
+        fake_router = MagicMock()
+        fake_router.get_all_profiles_for_ip.return_value = None
+        monkeypatch.setattr('manyfaced.handlers.http_handler._get_router', lambda: fake_router)
+
+        handler._enrich_and_send(bs, '5.6.7.8')
+
+        # Without the fix, bs.asn/country stay '' because resolve_geo is async-miss.
+        assert bs.asn == 'AS13335'
+        assert bs.country == 'United States'
+        assert bs.org == 'Cloudflare, Inc.'
+
+    def test_enrich_skips_sync_when_geo_already_present(self, monkeypatch):
+        handler = self._make_handler()
+        bs = BearStorage('5.6.7.8', '', '2026-08-28 00:00:00.000000', None, 0, 'honeypot')
+        # Simulate a cache-hit async pass: geo already populated on the record.
+        bs.asn = 'AS3320'
+        bs.org = 'Deutsche Telekom'
+        bs.country = 'Germany'
+        bs.continent = 'EU'
+        monkeypatch.setattr(
+            BearStorage, 'resolve_geo', lambda self, ip, timeout=2.0: ('', '', '', '')
+        )
+        monkeypatch.setattr(
+            BearStorage, 'resolve_dns_name', lambda self, ip, timeout=1.0: 'scanner.example.com'
+        )
+        sync = MagicMock(return_value=('United States', 'NA', 'AS13335', 'Cloudflare, Inc.'))
+        monkeypatch.setattr('manyfaced.common.geolocate.lookup_ip_geolocation_sync', sync)
+        monkeypatch.setattr(
+            'manyfaced.common.classification.classify', lambda **kw: ('unknown', '')
+        )
+        fake_router = MagicMock()
+        fake_router.get_all_profiles_for_ip.return_value = None
+        monkeypatch.setattr('manyfaced.handlers.http_handler._get_router', lambda: fake_router)
+
+        handler._enrich_and_send(bs, '5.6.7.8')
+
+        # Guard must skip the blocking sync lookup when asn/org are already set.
+        sync.assert_not_called()
+        assert bs.asn == 'AS3320'
