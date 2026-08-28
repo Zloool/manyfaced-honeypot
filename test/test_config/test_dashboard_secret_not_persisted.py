@@ -3,10 +3,6 @@ clear-text dashboard secret, and Config.load must fall back to an ephemeral
 secret when none is configured (env or pinned TOML secret).
 """
 
-from pathlib import Path
-
-import pytest
-
 from manyfaced.common.config import Config
 
 

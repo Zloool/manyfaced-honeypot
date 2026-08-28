@@ -982,7 +982,7 @@ def create_multiport_server(args, update_event: _MpEvent, ports: list[int]) -> N
         while not update_event.is_set():
             update_event.wait(timeout=1)
     except KeyboardInterrupt:
-        pass
+        logger.debug('client wait interrupted; shutting down honeypot threads')
 
     # Wait for all threads to finish
     for t in threads:
