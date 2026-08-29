@@ -1,8 +1,9 @@
 """Regression tests for generated config.toml permission hardening (issue #410).
 
-The generated config.toml carries secrets (DASHBOARD_SECRET, hivepass,
-pg_password, default_key) and must not be world-readable. On POSIX the file is
-chmod'd to 0o600 and the freshly-created parent dir to 0o700. These assertions
+The generated config.toml is now secret-free (secrets are sourced from HONEY_*
+env vars; see CodeQL #174 / dashboard-secret exclusion issue #659), but it is
+still chmod'd to 0o600 as defense-in-depth so any material written here is not
+world-readable, and the freshly-created parent dir to 0o700. These assertions
 are skipped on non-POSIX (Windows) where chmod is a no-op / unsupported, so the
 suite stays green on both this dev host and Linux CI.
 """

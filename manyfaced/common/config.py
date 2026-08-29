@@ -409,7 +409,9 @@ class Config:
             f'hivehost = {_toml_str(self.HIVEHOST)}',
             f'hiveport = {self.HIVEPORT}',
             f'hivelogin = {_toml_str(self.HIVELOGIN)}',
-            f'hivepass = {_toml_str(self.HIVEPASS or "")}',
+            '# HONEY_HIVEPASS (shared AES key) is REQUIRED — provide it via the HONEY_HIVEPASS',
+            '# env var. It is intentionally NOT written here in clear text (CodeQL #174;',
+            '# mirrors the dashboard-secret exclusion from issue #659).',
             '',
             '[database]',
             f'backend = {_toml_str(self.DB_BACKEND)}',
@@ -418,15 +420,16 @@ class Config:
             f'pg_port = {self.DB_PG_PORT}',
             f'pg_db = {_toml_str(self.DB_PG_DB)}',
             f'pg_user = {_toml_str(self.DB_PG_USER)}',
-            f'pg_password = {_toml_str(self.DB_PG_PASSWORD or "")}',
+            '# PostgreSQL password: provide via the HONEY_PG_PASSWORD env var. Not persisted',
+            '# in clear text (CodeQL #174).',
             f'pg_sslmode = {_toml_str(self.DB_PG_SSLMODE)}',
             f'pg_dsn = {_toml_str(self.DB_PG_DSN or "")}',
             '',
             '[security]',
             '# semicolon-separated bee_id:key pairs for client sensors; e.g. "sensor1:key1;sensor2:key2"',
             'authorized_bees = ""',
-            '# Default encryption key for unknown identifiers — MUST be set before starting',
-            f'default_key = {_toml_str(self.DEFAULT_KEY or "")}',
+            '# Default encryption key for unknown identifiers (MUST be set) — provide via the',
+            '# HONEY_DEFAULT_KEY env var. Not persisted in clear text (CodeQL #174).',
             '',
             '[logging]',
             '# Path to the JSON log file',
@@ -476,9 +479,10 @@ class Config:
         # em dash in the [security] comment above into a byte tomllib's strict
         # UTF-8 decode then rejects on load, crashing every future Config.load().
         path.write_text('\n'.join(lines), encoding='utf-8')
-        # Restrict the generated config file to 0o600 so the embedded secrets
-        # (DASHBOARD_SECRET, hivepass, pg_password, default_key) are not
-        # world-readable (issue #410). chmod is a POSIX concept; guard it so a
+        # Restrict the generated config file to 0o600 as defense-in-depth (issue #410)
+        # so any material written here is not world-readable. Secrets are no longer
+        # persisted to this file (see HONEY_* env guidance above; CodeQL #174 /
+        # dashboard-secret exclusion issue #659). chmod is a POSIX concept; guard it so a
         # Windows dev run does not crash if the platform lacks it.
         if hasattr(os, 'chmod'):
             os.chmod(path, 0o600)

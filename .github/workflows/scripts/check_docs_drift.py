@@ -92,6 +92,13 @@ TOML_TO_CONFIG_FIELD: dict[str, str] = {
 
 INTENTIONALLY_OMITTED: set[str] = {
     'DB_BACKENDS',  # tuple of allowed backends — internal validation only, not user-configurable
+    # Secrets sourced exclusively from HONEY_* env vars (highest-precedence layer) and
+    # intentionally NOT written to the generated config.toml in clear text (CodeQL #174 /
+    # dashboard-secret exclusion issue #659). generate_config_file() emits commented
+    # guidance to set these via env instead, so no TOML key is produced.
+    'HIVEPASS',
+    'DB_PG_PASSWORD',
+    'DEFAULT_KEY',
 }
 
 ENV_EXAMPLE_ALLOWLIST: set[str] = {
