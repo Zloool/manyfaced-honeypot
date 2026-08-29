@@ -160,7 +160,6 @@ class TestConfigGenerateConfigFile:
             'hivehost = "127.0.0.1"',
             'hiveport = 8080',
             'hivelogin = "honeybee"',
-            'hivepass = "beehive123"',
             '[database]',
             'backend = "sqlite"',
             'path = "bots/honeypot.db"',
@@ -168,10 +167,19 @@ class TestConfigGenerateConfigFile:
             'pg_port = 5432',
             'pg_db = "honeypot"',
             'pg_user = "postgres"',
-            'pg_password = "***"',
             '[security]',
         ]:
             assert check in content
+
+        # Sensitive secrets must not be persisted to the generated config (CodeQL #174).
+        assert 'hivepass =' not in content
+        assert 'pg_password =' not in content
+        assert 'default_key =' not in content
+        assert 'beehive123' not in content
+        # Guidance to supply secrets via env vars must be present.
+        assert 'HONEY_HIVEPASS' in content
+        assert 'HONEY_PG_PASSWORD' in content
+        assert 'HONEY_DEFAULT_KEY' in content
 
     def test_creates_file_at_custom_path(self, tmp_path):
         cfg = Config(
