@@ -537,13 +537,13 @@ def _build_bear_storage(bot_ip: str, spec, raw_bytes: bytes, listen_port: int, r
     # 7 JSON/masscan rows. Parse the first whitespace-delimited token of the
     # raw frame; fall back to the face name if it isn't a recognisable verb.
     wire_command = spec.name.upper()
-    try:
-        first_line = raw_bytes.decode('latin-1', errors='replace').splitlines()[0]
-        token = first_line.split()[0].upper()
-        if token and token.isalpha():
-            wire_command = token
-    except Exception:
-        logger.debug('swallowed exception', exc_info=True)
+    lines = raw_bytes.decode('latin-1', errors='replace').splitlines()
+    if lines:
+        tokens = lines[0].split()
+        if tokens:
+            token = tokens[0].upper()
+            if token.isalpha():
+                wire_command = token
 
     class _ParsedNonHTTP:
         command = wire_command
