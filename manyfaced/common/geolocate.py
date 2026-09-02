@@ -77,6 +77,19 @@ def normalize_org(org: str) -> str:
     return _ORG_CANONICAL_MAP.get(key, collapsed)
 
 
+def normalize_asn(asn: str) -> str:
+    """Return the canonical ASN token from an ip-api ``as`` response.
+
+    ip-api returns a provider description after the ASN (for example,
+    ``AS45102 Alibaba (US) Technology Co., Ltd.``). ``bot_asn`` is the compact,
+    exact-match network identifier used for classification and storage, so retain
+    only a leading ``AS`` followed by decimal digits. Unexpected values remain
+    empty rather than becoming an unverified identifier.
+    """
+    token = str(asn or '').strip().upper().split(maxsplit=1)[0] if asn else ''
+    return token if token.startswith('AS') and token[2:].isdigit() else ''
+
+
 def lookup_ip_geolocation(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
     """Look up geo + network attributes for an IP address.
 
@@ -154,7 +167,7 @@ def _do_geo_lookup(ip: str, timeout: float = 2.0) -> tuple[str, str, str, str]:
         else:
             country = data.get('country', '')
             continent = data.get('continent', '')
-            asn = data.get('as', '') or ''
+            asn = normalize_asn(data.get('as', '') or '')
             org = normalize_org(data.get('org', '') or '')
             result = (country, continent, asn, org)
 
