@@ -760,6 +760,19 @@ def test_build_bear_storage_always_emits_bot_profile_data():
     assert bs2.bot_profile_data['redis']['dialogue']
 
 
+@pytest.mark.parametrize('raw_bytes', [b'', b' \t' + CRLF])
+def test_build_bear_storage_empty_frame_does_not_log_index_error(caplog, raw_bytes):
+    """Zero-byte scans use the face fallback without a swallowed exception (#731)."""
+    from manyfaced.handlers.http_handler import _build_bear_storage
+
+    spec = get_face(6379)
+    with caplog.at_level('DEBUG', logger='manyfaced.handlers.http_handler'):
+        bs = _build_bear_storage('1.2.3.4', spec, raw_bytes, 6379)
+
+    assert bs.bot_profile_data['redis']['request_command'] == 'REDIS'
+    assert 'swallowed exception' not in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # Issue #596: HTTP-on-non-HTTP re-sniff for ALL non-HTTP faces
 #
