@@ -67,7 +67,7 @@ def test_normalize_asn_extracts_identifier_from_provider_value():
 
 def test_geo_lookup_stores_only_provider_asn_identifier(monkeypatch):
     """The provider's descriptive suffix must not reach PostgreSQL storage."""
-    import manyfaced.common.geolocate as geo
+    from manyfaced.common import geolocate
 
     class Response:
         def read(self):
@@ -79,10 +79,10 @@ def test_geo_lookup_stores_only_provider_asn_identifier(monkeypatch):
         def __exit__(self, exc_type, exc_value, traceback):
             return False
 
-    monkeypatch.setattr(geo, '_last_geo_lookup_time', 0)
-    monkeypatch.setattr(geo.urllib.request, 'urlopen', lambda request, timeout: Response())
+    monkeypatch.setattr(geolocate, '_last_geo_lookup_time', 0)
+    monkeypatch.setattr(geolocate.urllib.request, 'urlopen', lambda request, timeout: Response())
 
-    country, continent, asn, org = geo._do_geo_lookup('43.108.54.39')
+    country, continent, asn, org = geolocate._do_geo_lookup('43.108.54.39')
 
     assert (country, continent, asn, org) == (
         'United States',
@@ -382,15 +382,15 @@ def test_start_geo_worker_serialized_by_lock() -> None:
     """
     import threading
 
-    import manyfaced.common.geolocate as geo
+    from manyfaced.common import geolocate
 
-    lock = geo._geo_state_lock
+    lock = geolocate._geo_state_lock
     lock.acquire()
     try:
         done = []
 
         def caller():
-            geo.start_geo_worker()
+            geolocate.start_geo_worker()
             done.append(True)
 
         th = threading.Thread(target=caller, daemon=True)
@@ -405,7 +405,7 @@ def test_start_geo_worker_serialized_by_lock() -> None:
         lock.release()
     th.join(timeout=2)
     assert done, 'start_geo_worker must complete once the lock is released'
-    geo.stop_geo_worker()
+    geolocate.stop_geo_worker()
 
 
 def test_stop_worker_does_not_crash_producer_or_consumer():
