@@ -58,11 +58,11 @@ def test_normalize_org_unknown_passthrough():
 
 def test_normalize_asn_extracts_identifier_from_provider_value():
     """ip-api returns an AS number plus a provider name, not only an ASN."""
-    from manyfaced.common.geolocate import normalize_asn
+    from manyfaced.common import geolocate
 
-    assert normalize_asn('AS45102 Alibaba (US) Technology Co., Ltd.') == 'AS45102'
-    assert normalize_asn('as398324 Censys, Inc.') == 'AS398324'
-    assert normalize_asn('not-an-asn') == ''
+    assert geolocate.normalize_asn('AS45102 Alibaba (US) Technology Co., Ltd.') == 'AS45102'
+    assert geolocate.normalize_asn('as398324 Censys, Inc.') == 'AS398324'
+    assert geolocate.normalize_asn('not-an-asn') == ''
 
 
 def test_geo_lookup_stores_only_provider_asn_identifier(monkeypatch):
