@@ -56,6 +56,42 @@ def test_normalize_org_unknown_passthrough():
     assert normalize_org('Hetzner Online GmbH') == 'Hetzner Online GmbH'
 
 
+def test_normalize_asn_extracts_identifier_from_provider_value():
+    """ip-api returns an AS number plus a provider name, not only an ASN."""
+    from manyfaced.common.geolocate import normalize_asn
+
+    assert normalize_asn('AS45102 Alibaba (US) Technology Co., Ltd.') == 'AS45102'
+    assert normalize_asn('as398324 Censys, Inc.') == 'AS398324'
+    assert normalize_asn('not-an-asn') == ''
+
+
+def test_geo_lookup_stores_only_provider_asn_identifier(monkeypatch):
+    """The provider's descriptive suffix must not reach PostgreSQL storage."""
+    import manyfaced.common.geolocate as geo
+
+    class Response:
+        def read(self):
+            return b'{"status":"success","country":"United States","continent":"North America","as":"AS45102 Alibaba (US) Technology Co., Ltd.","org":"Alibaba.com LLC"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(geo, '_last_geo_lookup_time', 0)
+    monkeypatch.setattr(geo.urllib.request, 'urlopen', lambda request, timeout: Response())
+
+    country, continent, asn, org = geo._do_geo_lookup('43.108.54.39')
+
+    assert (country, continent, asn, org) == (
+        'United States',
+        'North America',
+        'AS45102',
+        'Alibaba.com LLC',
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
