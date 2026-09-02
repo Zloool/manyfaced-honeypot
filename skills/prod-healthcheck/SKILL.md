@@ -20,43 +20,42 @@ Use this skill when you need a quick answer: **is the honeypot alive and healthy
 
 ## Prerequisites
 
-- SSH access to production droplet (`~/.ssh/dohp`, port from `.deploy_config`)
-- `.deploy_config` file with connection details at repo root
+- SSH access to production droplet (`~/.ssh/dohp`)
+- `$HOME/.deploy_config` with connection details
 
 ## Loading config
 
-Before running any SSH commands, source the deploy config:
+Before running any SSH commands, source the deployment config:
 
 ```bash
-# Source connection variables from .deploy_config
-source .deploy_config
 # Variables available: SERVER_IP, SSH_PORT, SSH_USER, SSH_KEY, REMOTE_DB, REMOTE_LOG
+source "$HOME/.deploy_config"
 ```
 
 ## Health Check Procedure
 
-Run all checks in a single SSH session for speed:
+Run all checks in a single SSH session for speed. The slim production image deliberately does not include `ps`; inspect its process tree from the Docker host with `docker top` instead.
 
 ```bash
-source .deploy_config
+source "$HOME/.deploy_config"
 ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" "
-echo '=== Container Status ===' && docker ps --filter name=manyfaced --format '{{.Names}} {{.Status}}' 2>&1
-echo '=== Processes ===' && docker exec \$(docker ps -q --filter name=manyfaced) ps aux 2>/dev/null | grep -E 'mfh|python' | grep -v grep
-echo '=== Listening Ports ===' && docker exec \$(docker ps -q --filter name=manyfaced) ss -tlnp 2>/dev/null | grep -c LISTEN
+echo '=== Container Status ===' && docker inspect --format '{{.State.Status}} restartCount={{.RestartCount}} started={{.State.StartedAt}}' manyfaced
+echo '=== Processes ===' && docker top manyfaced -eo pid,ppid,comm,args
+echo '=== Listening Ports ===' && docker exec manyfaced sh -c 'ss -tln 2>/dev/null | grep -c LISTEN'
 echo '=== Disk Space ===' && df -h /opt/manyfaced
 "
 ```
 
-**Expected:** 3 processes (main + client + server), 47 ports, <50% disk usage.
+**Expected:** container `running`, restartCount stable at `0`, a manager plus worker `manyfaced` processes in `docker top`, and the configured honeypot/dashboard sockets listening. Assess disk by remaining free space and trend; do not use a fixed percentage threshold.
 
 ## Transient Error Check
 
-Pull recent errors from journalctl for immediate context — output to stdout only, no file:
+Pull recent container errors for immediate context — output to stdout only, no file:
 
 ```bash
-source .deploy_config
+source "$HOME/.deploy_config"
 ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SERVER_IP}" \
-  "journalctl -u manyfaced --no-pager --since '24 hours ago' | grep -E 'error|exception|fail|crash' | tail -30"
+  "docker logs --since 24h manyfaced 2>&1 | grep -Ei 'error|exception|fail|crash' | tail -30"
 ```
 
 ## Interpreting Results — Health-Diagnosable Findings
@@ -65,16 +64,18 @@ Only the following findings from the full analysis are actionable at the health-
 
 | Finding | Severity | Action |
 |---------|----------|--------|
-| Process count > 3 | Critical | Process explosion — child processes crashing and restarting (see LimitNOFILE fix) |
-| Report send failures in journal | Medium | SERVER process not ready or port mismatch — check server-side config |
+| Container not running or restart count increasing | Critical | Escalate for deployment/recovery; do not restart it from this read-only check |
+| Expected worker processes absent | Critical | Inspect container logs and deployment state |
+| Report send failures in container logs | Medium | SERVER process may not be ready or port configuration may mismatch |
+| Materially falling disk headroom | Medium | Escalate for log/data retention investigation |
 
 ## Quick Decision Tree
 
-1. **Service inactive/crashing** → Restart the container: `docker restart manyfaced` (or push to master to redeploy; the deploy pipeline restarts it)
-2. **Process count > 3** → Investigate child process crashes (check journal for repeated start/stop cycles)
-3. **Ports < expected** → Client process may not be listening on all HONEYTOP_PORTS
-4. **Disk > 50%** → Clean up old logs or expand volume
-5. **All green** → Service is healthy; if deeper analysis needed, use **prod-analysis** skill
+1. **Container inactive/crashing** → inspect container logs and latest deployment; escalate through the verified deployment/recovery workflow.
+2. **Unexpected process tree** → investigate child process crashes and repeated restarts.
+3. **Sockets missing** → client process may not be listening on all configured honeypot ports.
+4. **Disk headroom declining** → investigate old logs and retention; do not mutate production from this read-only check.
+5. **All green** → service is healthy; if deeper analysis is needed, use **prod-analysis**.
 
 ## Cross-Reference
 
